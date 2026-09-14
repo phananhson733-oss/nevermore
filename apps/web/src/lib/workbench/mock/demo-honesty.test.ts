@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { demoFields } from "../store/demo-fields.ts";
 import { initialProjectState, reduce } from "../store/reducer.ts";
 import { PERSISTED_VERSION, parsePersistedState } from "../store/schema.ts";
 import type { DemoPayload, GscRow, Profile, VisResult } from "../types.ts";
@@ -9,7 +10,7 @@ import { PROFILES, SAMPLE_FILL_EVIDENCE, TRICKY_PROFILE, provenanceLine, require
 import { kbGapCount } from "./kb.ts";
 import { SERP_POOL } from "./keywords.ts";
 import { DEFAULT_LINK_TYPES } from "./links.ts";
-import { SAMPLE_CSV_MARKER } from "./provenance.ts";
+import { PROVENANCE_CSV_MARKER } from "./provenance.ts";
 import { COMPETITOR_PLACEHOLDERS, competitorNames, domainOf, normQ, splitList } from "./text.ts";
 
 /** Invariants the sample site must hold for any profile (plan Task 13 checks 1-12, review checks 13-14, cross-model counterexamples). */
@@ -90,7 +91,8 @@ for (const [name, profile] of PROFILES) {
       const seed = { url: profile.url, brand: profile.brand, market: profile.market };
       for (const level of LEVELS) {
         const demo = makeDemoSite(profile, level, DEMO_SEEDS, testDeps());
-        const state = reduce(initialProjectState(seed), { type: "loadDemo", payload: demo });
+        const blank = initialProjectState(seed);
+        const state = reduce(blank, { type: "loadDemo", payload: demo, expected: demoFields(blank) });
         expect(parsePersistedState(JSON.parse(JSON.stringify({ v: PERSISTED_VERSION, state }))), level).not.toBeNull();
         expect(state.artifacts.map((artifact) => [artifact.title, artifact.content, artifact.filename]), level).toEqual(
           demo.artifacts.map((artifact) => [artifact.title, artifact.content, artifact.filename]),
@@ -136,7 +138,7 @@ for (const [name, profile] of PROFILES) {
       expect(artifacts.map((artifact) => artifact.type).sort()).toEqual(["csv", "csv", "md", "prompt", "prompt"]);
       for (const artifact of artifacts) {
         const lines = artifact.content.split("\n");
-        const expected = artifact.type === "csv" ? [SAMPLE_CSV_MARKER, `# ${provenanceLine(artifact.at)}`] : [provenanceLine(artifact.at)];
+        const expected = artifact.type === "csv" ? [PROVENANCE_CSV_MARKER, `# ${provenanceLine(artifact.at)}`] : [provenanceLine(artifact.at)];
         expect(lines.slice(0, expected.length), artifact.id).toEqual(expected);
       }
     });

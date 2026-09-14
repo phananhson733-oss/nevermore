@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GscRow } from "../types.ts";
+import type { ParsedGsc } from "./gsc.ts";
 import { parseGsc } from "./gsc.ts";
 
 /** Cell-level parsing: delimiter choice and locale numbers. Record structure lives in gsc.test.ts, headers in gsc-columns.test.ts. */
@@ -13,6 +14,16 @@ const row = (
 
 const lines = (...parts: readonly string[]): string => parts.join("\n");
 
+/**
+ * `rows` and `skipped` only. The header metadata `parseGsc` also returns (Q7)
+ * has its own cases in `gsc-columns.test.ts`, so leaving it out here keeps each
+ * of these assertions about the records it is named for.
+ */
+function rowsAndSkipped(text: string): Pick<ParsedGsc, "rows" | "skipped"> {
+  const { rows, skipped } = parseGsc(text);
+  return { rows, skipped };
+}
+
 describe("parseGsc: delimiters", () => {
   it("reads a semicolon export with comma decimals", () => {
     const text = lines(
@@ -21,7 +32,7 @@ describe("parseGsc: delimiters", () => {
       "geo;7;1.000.000;0,01 %;1,5",
       "",
     );
-    expect(parseGsc(text)).toEqual({
+    expect(rowsAndSkipped(text)).toEqual({
       rows: [
         row("ai seo", 1234, 56, 0.8, 12.3),
         row("geo", 7, 1000000, 0.01, 1.5),
@@ -38,7 +49,7 @@ describe("parseGsc: delimiters", () => {
 
   it("scores several records: commas in the first query do not beat a consistent semicolon layout", () => {
     const text = "seo, geo, aeo;1;2;0,8%;12,3\nnext;5;6;7,5%;8,2";
-    expect(parseGsc(text)).toEqual({
+    expect(rowsAndSkipped(text)).toEqual({
       rows: [
         row("seo, geo, aeo", 1, 2, 0.8, 12.3),
         row("next", 5, 6, 7.5, 8.2),
@@ -91,7 +102,7 @@ describe("parseGsc: counts are quantities, not spellings", () => {
     expect([impressionsOf("0,5"), impressionsOf("0,123"), impressionsOf("0,005")]).toEqual([0.5, 0.123, 0.005]);
     expect([impressionsOf("0,12,345"), impressionsOf("0,123.5")]).toEqual([null, null]);
     expect([impressionsOf("1,23,456"), impressionsOf("10,00,000")]).toEqual([123456, 1000000]);
-    expect(parseGsc(lines("Query;Clicks;Impressions;CTR;Position", "shoes;0,005;0,123;5%;7"))).toEqual({
+    expect(rowsAndSkipped(lines("Query;Clicks;Impressions;CTR;Position", "shoes;0,005;0,123;5%;7"))).toEqual({
       rows: [row("shoes", 0.005, 0.123, 5, 7)],
       skipped: 0,
     });
@@ -164,8 +175,8 @@ describe("parseGsc: percent signs", () => {
   const ctrOf = (cell: string): number | null => parseGsc(`q\t1\t2\t${cell}\t4`).rows[0]?.ctr ?? null;
 
   it("does not stitch digits together across a stray or repeated percent sign", () => {
-    expect(parseGsc("x;1%2;100;5%%;0%5")).toEqual({ rows: [row("x", null, 100, null, null)], skipped: 0 });
-    expect(parseGsc(lines("Query;Clicks;Impressions;CTR;Position", "x;1%2;100;5%%;0%5"))).toEqual({
+    expect(rowsAndSkipped("x;1%2;100;5%%;0%5")).toEqual({ rows: [row("x", null, 100, null, null)], skipped: 0 });
+    expect(rowsAndSkipped(lines("Query;Clicks;Impressions;CTR;Position", "x;1%2;100;5%%;0%5"))).toEqual({
       rows: [row("x", null, 100, null, null)],
       skipped: 0,
     });
@@ -180,7 +191,7 @@ describe("parseGsc: percent signs", () => {
   });
 
   it("returns null for a percent sign in clicks, impressions or position", () => {
-    expect(parseGsc("q\t5%\t60%\t3%\t4%")).toEqual({ rows: [row("q", null, null, 3, null)], skipped: 0 });
+    expect(rowsAndSkipped("q\t5%\t60%\t3%\t4%")).toEqual({ rows: [row("q", null, null, 3, null)], skipped: 0 });
   });
 });
 

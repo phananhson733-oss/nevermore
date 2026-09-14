@@ -7,6 +7,133 @@ repository and its customer-facing GenGrowth product. It replaces the retired
 v0.2 progress narrative. It deliberately separates commands rerun on the current
 convergence worktree from older evidence recorded in checked-in stop gates.
 
+## 2026-09-14: workbench UI port PR-3 first five views (in review on the integration branch, not in production)
+
+PR-3「首批五页」is on branch `feat/workbench-pr3-first-views`, opened for
+review against the integration branch `feat/workbench-ui-port`; nothing
+reaches production before PR-3b (integration branch → `main`). Plan and
+rulings Q1-Q37: `docs/plans/2026-09-13-workbench-pr3-first-views.md`; design
+doc rev8 carries them back. Final code for this entry: `27c7798a` (the copy
+ruling list below was written against `60acf7a0`). The copy rulings of
+2026-09-14 are in (`d6d3764c`, `23c0fe53`, `fae6e640`, `db074fd0`,
+`ac74b802`, `a8c89b6e`, `60acf7a0`):
+- the sample-data chip title now says module results are samples and imported
+  GSC rows are not, and the imported-rows footnote adds "not a sample";
+- the weekly-report notification description says "近 7 天";
+- the week page's empty title and the disabled-report hint describe the current
+  state without a date range, because emptiness is judged on the whole store;
+- the borderline band is written ">10 且 ≤30" instead of "11-30";
+- exported documents print `n/a` for unavailable values;
+- two dead i18n keys are gone.
+
+Done on the branch (each task: one implementation agent plus a Claude review
+with mutations in a detached worktree, and gpt-6-astra surfaces per the plan's
+review section):
+
+- Views: overview with「载入示例站点」(`6ec05d23`), week covering today and the
+  previous 6 local dates with a weekly-report artifact (`dd01a8cc`, window
+  `0796e043`), site profile (`188d248b`), data sources — real GSC / GA4
+  connection read-only plus a local GSC import (`98895420`), settings —
+  notification preferences and a sources summary next to the unchanged real
+  delete (`96057413`). The other ten segments still render the placeholder.
+- Shell: the site card's GSC row reads the real connection state on the client,
+  and unknown is never shown as "not connected" (`e048be6a`); topbar「清除示例」
+  with a confirmation (`3f058f8c`).
+- UI primitives and the artifact pipeline (`2ccb6c69`, `a5d686c7`,
+  `4dbbeb96`): one stamping point (`useAddArtifact`); the provenance sentence
+  follows the GSC source of each artifact's own body, in three versions (Q36:
+  `b2c7a015`, `aa89896b`, `f4fb8ad2`, `d5909ada`); an artifact over the size cap
+  or into a full basket is refused and explained, never truncated or evicting
+  the oldest (Q37, `76f6aaa8`, `65462c15`).
+- Store: `gscRowsSource` and `ProfileDoc.gscSource` (pre-ship exemptions 4 and
+  5, `PERSISTED_VERSION` stays 1), `hasDemoOverwrite` by value, confirmations
+  bound to the content they showed (`11c5abb8`, `0143d341`, `79268c3a`);
+  `parseGsc` reports header recognition (`29c2b654`); GSC import dedupes by
+  query and caps at 2 MB / 5000 rows (`fb2adde3`).
+- PR-1 leftovers A-F: font and `workbench.css` mounted by the project layout
+  with `@theme inline` (`0c278c60`); drawer and bare-link touch targets
+  (`02a0ed03`); ⌘K hint by platform (`b0931ba4`); Tailwind `source(none)` plus
+  a value-flow scan-scope guard (`407d291d` and follow-ups); dead `AppShell`
+  project variant removed (`b40804e5`); `useGlobalShortcut` latest-ref
+  (`51682fad`, `0a5e10ce`, `736f2b78`). The mutation evidence for each goes into
+  the PR description at delivery.
+- Client import-graph guard extended to the view entries (`08e96d53`,
+  `9cb0e217`); `ui/` may not import `shell/`, and non-literal loads fail the
+  gate (Q35, `37ae84c2`, `6d2e4e71`, split into three files `b7e852a7`).
+- T17 mock e2e: specs `pr3-flow`, `pr3-views`, `pr3-a11y` plus additions to
+  `shell` and `parity` (`5881ee7b`, `9467da01`, `2ebc37e6`, `de68031d`,
+  `536cf97d`, `ac03bd88`, `e08ae173`, `3d41f46f`, `dcf60040`, `67a7d8ad`).
+  Running them in a real browser found a production defect: below 1280px the
+  sample chip covered the hamburger at 390px and the topbar overflowed at
+  768-1024px. The topbar now splits into two rows below `xl` in unchanged DOM
+  order (`4af1ef6c`, `b8915323`, `bb8eadbc`); the switcher focus ring, the 1px
+  overhang and the 40px switcher height below 768 were fixed in the same pass.
+- T18 docs sync: design doc rev8 (§4.3 two-row topbar and Dialog focus-return
+  rules, §14 PR-3 review dispositions), the PR-2 plan residual table, the PR-3
+  plan residual table.
+- Pre-delivery acceptance (three gpt-6-astra surfaces: honesty, real vs sample
+  partition, a11y and CSP, each with a re-review round): the week page says only
+  what it can prove and its clock follows midnight (`3a64da98`, `d9522ed1`);
+  visible GSC source footnotes next to imported rows (`9dc7c575`); Dialog focus
+  return validates each target and falls back to `<main>` (`72c5792f`,
+  `4f491a57`, `7caf8cd9`, `49b1f269`); Tabs no longer claims a selection for a
+  value outside the list (`0f1c78b7`). Seven no-parameter honesty sentences are
+  pinned as whole strings in en and zh (`8654235e`, `6b3f3df5`).
+
+History is not rewritten (plan T19 Step 7b): 114 branch shas (as of `27c7798a`)
+are cited in the plan, the design doc and this file. Two commits are red on
+their own and should be skipped in `git bisect`: `b7cba98b` (2 tests, green at
+`2f5b836b`) and `23c0fe53` (1 test, green at `fae6e640`).
+
+Verification on `27c7798a` (T19; later commits are docs-only and re-ran
+`pnpm verify:docs`):
+
+- typecheck / lint / typecheck:e2e / lint:e2e: exit 0.
+- `pnpm test`: 1401 files, 25034 tests, 25030 passed and 4 failed; all 4 are the
+  pre-existing `apps/marketing/e2e/geo-kb-v2-fixtures.test.ts` failures
+  (`store_unavailable`), none outside that baseline.
+- Unit coverage: global lines 89.7%, statements 87.55%, branches 82.7%,
+  functions 91.01%; `lib/workbench` 99.81%, `components/workbench` 99.31%, no
+  file below 80% lines. Of the 130 non-test files under those two directories
+  only `components/workbench/shell/WorkbenchShell.tsx` is absent from the report
+  (an async server component with no branches, rendered by every workbench mock
+  e2e). With baseline failures present vitest 4 writes no report unless
+  `--coverage.reportOnFailure=true` is passed.
+- `pnpm --filter @sf/web build`: exit 0 (Next 16.2.11, Turbopack). Purity greps
+  and the Tailwind scan-scope check on the built CSS pass.
+- Mock e2e, one lane, no reruns: 10 specs, 123 passed, 0 failed, 0 flaky.
+- Production smoke on `/login` (`next start`, placeholder env): 200, no
+  `unsafe-inline`, every script carries the nonce, no `<style>` and no style
+  attributes in the server HTML, 0 console messages. One
+  `securitypolicyviolation` event: `script-src` blocks zod v4's `Function("")`
+  probe, which zod catches itself; no CSP report endpoint is configured, and the
+  base `423ebfaf` already loads zod on `/login` through the same import chain.
+- Build-artifact checks: `mock/demo.ts` is only in its own async chunk, not in
+  the overview's initial JS; `workbench.css` does not reach `/login` or
+  `/new-project`. **The workbench font does**: Turbopack merges the Plus Jakarta
+  `@font-face` into a CSS chunk shared with eleven CSS modules, and
+  `next-font-manifest.json` preloads its 27 KB woff2 on 28 of 30 entries,
+  including `/login` and `/new-project` (the `/login` response carries the
+  preload header). At the base the face sat in the root layout and every entry
+  preloaded it, and `/login` loaded all of `workbench.css`, so this is better
+  than the base but PR-1 leftover A is only partly closed in production. The
+  mock e2e runs on `next dev --webpack` and cannot see this.
+
+Still open:
+
+- Owner decision pending: the artifact basket's「清空」and per-item「删除」have
+  no confirmation and no undo. If a confirmation is chosen, `ui/Dialog.tsx`
+  must first return focus to the lower dialog when the upper one closes (plan
+  residual table).
+- The workbench font preload on `/login` and `/new-project` (candidate
+  `preload: false`, unverified under Turbopack), to decide before PR-3b.
+- Known gaps, stated as such: authenticated workbench pages have no
+  production-mode fixture, so the production smoke covers `/login` only and does
+  not verify the workbench pages' CSP, fonts or dynamic chunks at runtime;
+  headless Chromium does not paint native `title` tooltips or native `select`
+  menus.
+- Residuals for PR-4/PR-5 and PR-3b are in the PR-3 plan's「不在本 PR」table.
+
 ## 2026-09-13: workbench UI port PR-2 mock domain layer (integration branch, not in production)
 
 PR-2「mock 域层」is on branch `feat/workbench-pr2-mock-domain`, targeting the

@@ -1,10 +1,10 @@
 /** @vitest-environment jsdom */
 
-import { act, useRef, type ReactNode } from "react";
+import { act, useRef, useState, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createRoot } from "react-dom/client";
 import { Dialog } from "./Dialog.tsx";
-import { WB_APP_ROOT_ID } from "./ids.ts";
+import { WB_APP_ROOT_ID, WB_MAIN_ID } from "./ids.ts";
 
 // React only suppresses false-positive concurrent-render warnings when a test
 // harness explicitly declares that state transitions are wrapped in `act`.
@@ -190,6 +190,147 @@ function EmptyDialog({ open }: { readonly open: boolean }) {
   );
 }
 
+/**
+ * Opened by a state update while nothing has focus, so the opener Dialog
+ * records is `<body>`; no `returnFocusTo`.
+ */
+function BodyOpenerHarness({
+  open,
+  withFallback = false,
+}: {
+  readonly open: boolean;
+  readonly withFallback?: boolean;
+}) {
+  const fallbackRef = useRef<HTMLButtonElement>(null);
+  return (
+    <>
+      <div id={WB_APP_ROOT_ID}>
+        <button type="button" id="fallback" ref={fallbackRef}>
+          fallback
+        </button>
+        <main id={WB_MAIN_ID} tabIndex={-1}>
+          page
+        </main>
+      </div>
+      <Dialog
+        open={open}
+        onClose={() => {}}
+        labelledBy="body-title"
+        fallbackFocus={withFallback ? fallbackRef : undefined}
+      >
+        <h2 id="body-title">Body</h2>
+        <button type="button" id="inside">
+          inside
+        </button>
+      </Dialog>
+    </>
+  );
+}
+
+/**
+ * Three stops, A, B and C, where B is `hidden` unless told otherwise; the
+ * initial focus can be pointed at B.
+ */
+function StopsHarness({
+  initialOnB = false,
+  bHidden = true,
+}: {
+  readonly initialOnB?: boolean;
+  readonly bHidden?: boolean;
+}) {
+  const bRef = useRef<HTMLButtonElement>(null);
+  return (
+    <>
+      <div id={WB_APP_ROOT_ID} />
+      <Dialog
+        open
+        onClose={() => {}}
+        labelledBy="stops-title"
+        initialFocus={initialOnB ? bRef : undefined}
+      >
+        <h2 id="stops-title">Stops</h2>
+        <button type="button" id="a">
+          a
+        </button>
+        <button type="button" id="b" ref={bRef} hidden={bHidden}>
+          b
+        </button>
+        <button type="button" id="c">
+          c
+        </button>
+      </Dialog>
+    </>
+  );
+}
+
+function byId(view: ReturnType<typeof mount>, id: string): HTMLElement {
+  const el = view.container.querySelector<HTMLElement>(`#${id}`);
+  if (el === null) throw new Error(`no #${id} rendered`);
+  return el;
+}
+
+/**
+ * The confirm removes the button that opened the dialog in the same commit, as
+ * "clear sample" and "clear GSC rows" do, and no `returnFocusTo` is given.
+ */
+function RemovedOpenerHarness({ withFallback = false }: { readonly withFallback?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [openerPresent, setOpenerPresent] = useState(true);
+  const fallbackRef = useRef<HTMLButtonElement>(null);
+  return (
+    <>
+      <div id={WB_APP_ROOT_ID}>
+        {openerPresent ? (
+          <button type="button" id="opener" onClick={() => setOpen(true)}>
+            open
+          </button>
+        ) : null}
+        <button type="button" id="fallback" ref={fallbackRef}>
+          fallback
+        </button>
+        <main id={WB_MAIN_ID} tabIndex={-1}>
+          page
+        </main>
+      </div>
+      <Dialog
+        open={open}
+        onClose={() => setOpen(false)}
+        labelledBy="removed-title"
+        fallbackFocus={withFallback ? fallbackRef : undefined}
+      >
+        <h2 id="removed-title">Removed</h2>
+        <button
+          type="button"
+          id="confirm"
+          onClick={() => {
+            setOpenerPresent(false);
+            setOpen(false);
+          }}
+        >
+          confirm
+        </button>
+      </Dialog>
+    </>
+  );
+}
+
+/** Opens the harness from its opener, then confirms; returns the removed opener. */
+function confirmRemovingOpener(view: ReturnType<typeof mount>): HTMLElement {
+  const opener = view.container.querySelector<HTMLElement>("#opener");
+  if (opener === null) throw new Error("no opener rendered");
+  act(() => opener.focus());
+  act(() => opener.click());
+  expect(document.activeElement?.id).toBe("confirm");
+  const focus = vi.spyOn(opener, "focus");
+
+  act(() => view.container.querySelector<HTMLElement>("#confirm")?.click());
+
+  expect(opener.isConnected).toBe(false);
+  // A node that has left the document is not tried at all.
+  expect(focus).not.toHaveBeenCalled();
+  return opener;
+}
+
 describe("Dialog", () => {
   it("makes the app root inert and moves focus to the first focusable child", () => {
     mount(<Harness open onClose={() => {}} />);
@@ -358,6 +499,98 @@ describe("Dialog", () => {
     expect(document.activeElement).toBe(panel);
 
     expect(keydown(panel as HTMLElement, "Tab")).toBe(true);
+
+    expect(document.activeElement).toBe(panel);
+  });
+
+  it("sends focus to <main> when the confirm removed the opener, not to <body>", () => {
+    const view = mount(<RemovedOpenerHarness />);
+
+    confirmRemovingOpener(view);
+
+    expect(document.activeElement).toBe(view.container.querySelector(`#${WB_MAIN_ID}`));
+  });
+
+  it("prefers the caller's fallbackFocus to <main> when the opener is gone", () => {
+    const view = mount(<RemovedOpenerHarness withFallback />);
+
+    confirmRemovingOpener(view);
+
+    expect(document.activeElement?.id).toBe("fallback");
+  });
+
+  it.each([
+    ["<main>", false, WB_MAIN_ID],
+    ["fallbackFocus", true, "fallback"],
+  ] as const)(
+    "does not return focus to <body> when the dialog opened with nothing focused; %s gets it",
+    (_name, withFallback, expected) => {
+      const view = mount(<BodyOpenerHarness open={false} withFallback={withFallback} />);
+      expect(document.activeElement).toBe(document.body);
+
+      view.rerender(<BodyOpenerHarness open withFallback={withFallback} />);
+      expect(document.activeElement?.id).toBe("inside");
+      view.rerender(<BodyOpenerHarness open={false} withFallback={withFallback} />);
+
+      expect(document.activeElement?.id).toBe(expected);
+    },
+  );
+
+  it("passes over a hidden control on Tab and Shift+Tab", () => {
+    const view = mount(<StopsHarness />);
+    expect(document.activeElement?.id).toBe("a");
+
+    keydown(byId(view, "a"), "Tab");
+    expect(document.activeElement?.id).toBe("c");
+
+    keydown(byId(view, "c"), "Tab", true);
+    expect(document.activeElement?.id).toBe("a");
+  });
+
+  it("puts initial focus on the first stop that can take it when initialFocus is hidden", () => {
+    mount(<StopsHarness initialOnB />);
+
+    expect(document.activeElement?.id).toBe("a");
+  });
+
+  it("passes over a control with no box once the panel is laid out", () => {
+    // A laid-out document where A is `display: none` by a class: the panel has
+    // a box and so do B and C; A does not.
+    vi.spyOn(Element.prototype, "getClientRects").mockImplementation(function (this: Element) {
+      return (this.id === "a" ? [] : [{}]) as unknown as DOMRectList;
+    });
+
+    const view = mount(<StopsHarness bHidden={false} />);
+    expect(document.activeElement?.id).toBe("b");
+
+    // From C, Tab wraps past A to B.
+    act(() => byId(view, "c").focus());
+    keydown(byId(view, "c"), "Tab");
+    expect(document.activeElement?.id).toBe("b");
+  });
+
+  it("passes over a stop whose focus() does not take", () => {
+    const view = mount(<StopsHarness bHidden={false} />);
+    vi.spyOn(byId(view, "b"), "focus").mockImplementation(() => {});
+
+    keydown(byId(view, "a"), "Tab");
+
+    expect(document.activeElement?.id).toBe("c");
+  });
+
+  it("puts focus on the panel when no stop takes it", () => {
+    // Focus is on B, which is hidden after it took focus (a control can be
+    // hidden while the dialog is open), and A and C refuse focus. Staying on B
+    // would leave focus on a control no one can see.
+    const view = mount(<StopsHarness bHidden={false} />);
+    const panel = view.container.querySelector<HTMLElement>('[role="dialog"]');
+    const b = byId(view, "b");
+    act(() => b.focus());
+    act(() => b.setAttribute("hidden", ""));
+    vi.spyOn(byId(view, "a"), "focus").mockImplementation(() => {});
+    vi.spyOn(byId(view, "c"), "focus").mockImplementation(() => {});
+
+    expect(keydown(b, "Tab")).toBe(true);
 
     expect(document.activeElement).toBe(panel);
   });

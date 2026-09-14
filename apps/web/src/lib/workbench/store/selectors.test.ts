@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { buildRows } from "../mock/keywords.ts";
-import type { VisResult, WorkbenchProjectState } from "../types.ts";
+import type { DemoPayload, VisResult, WorkbenchProjectState } from "../types.ts";
+import { demoFields } from "./demo-fields.ts";
 import { initialProjectState, reduce } from "./reducer.ts";
-import { gatedRows, keywordRows, savedQueries, seedList, selectCounts, splitSeeds } from "./selectors.ts";
+import { PERSISTED_VERSION, parsePersistedState } from "./schema.ts";
+import { formatShare, gatedRows, hasDemoOverwrite, keywordRows, savedQueries, seedList, selectCounts, splitSeeds } from "./selectors.ts";
+import { populatedProjectState } from "./test-fixtures.ts";
 
 const seed = { url: "https://example.test", brand: "Example", market: "US" };
 const base = initialProjectState(seed);
@@ -90,7 +93,7 @@ describe("selectCounts", () => {
     });
     s = reduce(s, { type: "addArtifact", artifact: { id: "1", at: "t", module: "audit", type: "md", engine: "seo", title: "t", content: "" } });
     s = reduce(s, { type: "setSaved", saved: [{ q: "k", addedAt: "t", source: "manual" }] });
-    s = reduce(s, { type: "setGscRows", rows: [{ query: "q", clicks: 1, impressions: 1, ctr: 1, position: 1 }] });
+    s = reduce(s, { type: "setGscRows", rows: [{ query: "q", clicks: 1, impressions: 1, ctr: 1, position: 1 }], source: "user" });
     s = reduce(s, { type: "setKb", kb: { at: "t", entries: [
       { id: "1", cat: "pricing", statement: "", evidence: "", source: "", from: "gap" },
       { id: "2", cat: "capability", statement: "has", evidence: "", source: "", from: "crawl" },
@@ -228,5 +231,127 @@ describe("selectCounts kb badge", () => {
 
   it("shows no badge without a knowledge base", () => {
     expect(selectCounts(reduce(base, { type: "setKb", kb: null }), null).kb).toBeNull();
+  });
+});
+
+describe("formatShare (Q9: one share for the badge, the overview card and the week tile)", () => {
+  it("is exported, keeps a measured zero and never rounds away a miss", () => {
+    expect(formatShare(0, 3)).toBe("0%");
+    expect(formatShare(1, 300)).toBe("<1%");
+    expect(formatShare(1, 100)).toBe("1%");
+    expect(formatShare(299, 300)).toBe(">99%");
+    expect(formatShare(99, 100)).toBe("99%");
+    expect(formatShare(3, 3)).toBe("100%");
+    // 23/40 is exactly 57.5%; (23 / 40) * 100 is 57.49999999999999 in floating point.
+    expect(formatShare(23, 40)).toBe("58%");
+  });
+
+  it("is the same function behind the sidebar badge, so the two surfaces cannot drift", () => {
+    for (const [hits, total] of [[0, 3], [1, 3], [1, 300], [23, 40], [299, 300], [3, 3]] as const) {
+      expect(visibilityBadge(hits, total)).toBe(formatShare(hits, total));
+    }
+  });
+});
+
+/**
+ * Q11. One case per field `loadDemo` writes, sourced from the populated
+ * fixture. A `Record` keyed by `keyof DemoPayload` makes a field missing from
+ * this table a compile error, so the table cannot silently shrink while the
+ * predicate grows. `conns` is split further in its own case below.
+ */
+const FILLED = populatedProjectState(seed);
+const ONE_FIELD_STATES = {
+  conns: { ...base, conns: FILLED.conns },
+  gscRows: { ...base, gscRows: FILLED.gscRows, gscRowsSource: "user" },
+  seeds: { ...base, seeds: FILLED.seeds },
+  built: { ...base, built: true },
+  saved: { ...base, saved: FILLED.saved },
+  audit: { ...base, audit: FILLED.audit },
+  auditHistory: { ...base, auditHistory: FILLED.auditHistory },
+  lastAudit: { ...base, lastAudit: FILLED.lastAudit },
+  visResults: { ...base, visResults: FILLED.visResults },
+  visHistory: { ...base, visHistory: FILLED.visHistory },
+  lastVis: { ...base, lastVis: FILLED.lastVis },
+  compData: { ...base, compData: FILLED.compData },
+  plans: { ...base, plans: FILLED.plans },
+  targets: { ...base, targets: FILLED.targets },
+  kb: { ...base, kb: FILLED.kb },
+  artifacts: { ...base, artifacts: FILLED.artifacts },
+  profileDoc: { ...base, profileDoc: FILLED.profileDoc },
+} as const satisfies Readonly<Record<keyof DemoPayload, WorkbenchProjectState>>;
+
+describe("hasDemoOverwrite (Q11: by value, never by reference)", () => {
+  it("is false for a fresh project", () => {
+    expect(hasDemoOverwrite(base)).toBe(false);
+  });
+
+  it("is false for a second initial state: a reference comparison would call every project non-empty", () => {
+    const other = initialProjectState(seed);
+    // `initialProjectState` builds a new [] / {} on every call, so these are the
+    // references a `state.gscRows !== blank.gscRows` implementation would compare.
+    expect(other).not.toBe(base);
+    expect(other.gscRows).not.toBe(base.gscRows);
+    expect(other.saved).not.toBe(base.saved);
+    expect(other.plans).not.toBe(base.plans);
+    expect(other.conns).not.toBe(base.conns);
+    expect(hasDemoOverwrite(other)).toBe(false);
+  });
+
+  it("is false for an empty project that came back through storage (hydration replaces every object)", () => {
+    const envelope: unknown = JSON.parse(JSON.stringify({ v: PERSISTED_VERSION, state: base }));
+    const hydrated = parsePersistedState(envelope);
+    if (hydrated === null) throw new Error("the empty state must round-trip through the schema");
+    expect(hydrated).not.toBe(base);
+    expect(hydrated.gscRows).not.toBe(base.gscRows);
+    expect(hydrated.conns).not.toBe(base.conns);
+    expect(hasDemoOverwrite(hydrated)).toBe(false);
+  });
+
+  it("reads whitespace-only seeds as empty, and separator-only seeds as typing", () => {
+    expect(hasDemoOverwrite({ ...base, seeds: "  \n \t " })).toBe(false);
+    expect(hasDemoOverwrite({ ...base, seeds: " a " })).toBe(true);
+    // `seeds.trim() === ""` (Q11), not `splitSeeds(seeds).length === 0`: a box
+    // holding only a comma yields no seed word, but the user did type into it,
+    // and the cheap error here is one extra confirm rather than a silent
+    // overwrite.
+    expect(splitSeeds(" , ")).toEqual([]);
+    expect(hasDemoOverwrite({ ...base, seeds: " , " })).toBe(true);
+  });
+
+  it("ignores everything outside the fields loadDemo writes", () => {
+    // `profile` and `notify` are never part of the payload (types.ts DemoPayload),
+    // `visPartial` and `demo` are set by the reducer itself, and a row provenance
+    // without rows is unreachable (they move together, Q6) — none of them is
+    // content a confirm dialog should ask about.
+    expect(hasDemoOverwrite({ ...base, profile: { ...base.profile, positioning: "mine" } })).toBe(false);
+    expect(hasDemoOverwrite({ ...base, notify: { weekly: false, drop: false, mention: true, gsc: false } })).toBe(false);
+    expect(hasDemoOverwrite({ ...base, visPartial: true })).toBe(false);
+    expect(hasDemoOverwrite({ ...base, demo: true })).toBe(false);
+    expect(hasDemoOverwrite({ ...base, gscRowsSource: "sample" })).toBe(false);
+  });
+
+  it.each(Object.entries(ONE_FIELD_STATES))("is true when only %s carries content", (_field, state) => {
+    expect(hasDemoOverwrite(state)).toBe(true);
+  });
+
+  it("is true for either half of conns on its own", () => {
+    expect(hasDemoOverwrite({ ...base, conns: { GSC: true, GA4: false } })).toBe(true);
+    expect(hasDemoOverwrite({ ...base, conns: { GSC: false, GA4: true } })).toBe(true);
+  });
+
+  it("is true for a fully populated project and for one carrying the sample site", () => {
+    expect(hasDemoOverwrite(FILLED)).toBe(true);
+    const demo = reduce(base, {
+      type: "loadDemo",
+      expected: demoFields(base),
+      payload: {
+        conns: FILLED.conns, gscRows: FILLED.gscRows, seeds: FILLED.seeds, built: FILLED.built,
+        saved: FILLED.saved, audit: FILLED.audit, auditHistory: FILLED.auditHistory, lastAudit: FILLED.lastAudit,
+        visResults: FILLED.visResults, visHistory: FILLED.visHistory, lastVis: FILLED.lastVis,
+        compData: FILLED.compData, plans: FILLED.plans, targets: FILLED.targets, kb: FILLED.kb,
+        artifacts: FILLED.artifacts, profileDoc: FILLED.profileDoc,
+      },
+    });
+    expect(hasDemoOverwrite(demo)).toBe(true);
   });
 });

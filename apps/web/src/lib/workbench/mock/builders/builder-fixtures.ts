@@ -89,6 +89,10 @@ export const FIXTURE_DOC: ProfileDoc = {
       },
     ],
   },
+  // The fixture's GSC numbers are generated, so a document built from it carries
+  // the sample label (Q6). `profileDocMarkdown` reads this, so a test that wants
+  // the user-sourced wording overrides it rather than passing a second argument.
+  gscSource: "sample",
   ai: FIXTURE_AI,
   at: "2026-09-13 10:30",
 };

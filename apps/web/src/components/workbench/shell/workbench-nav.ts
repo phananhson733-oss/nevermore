@@ -50,6 +50,9 @@ export const WORKBENCH_NAV: readonly NavGroup[] = [
     id: "site",
     items: [
       { id: "profile", tone: "neutral", badge: null },
+      // Q6④: the badge is a bare count of `state.gscRows` (`selectCounts`),
+      // sample and imported rows alike, and never says which. Sample data is
+      // marked by the topbar chip and the data-sources rows table (Q6).
       { id: "dataSources", tone: "neutral", badge: "dataSources" },
       { id: "links", tone: "seo", badge: "links" },
     ],

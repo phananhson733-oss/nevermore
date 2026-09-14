@@ -27,7 +27,7 @@ const FOUR_RIVALS: SeedProfile = { ...EMPTY, competitors: "Sortly, inFlow, Zoho 
 
 function docWith(facts: readonly string[]): ProfileDoc {
   const ai = { ...demoAiDoc({ ...EMPTY, url: "", market: "" }), facts };
-  return { crawl: null, gsc: null, third: null, ai, at: AT };
+  return { crawl: null, gsc: null, third: null, gscSource: null, ai, at: AT };
 }
 
 function demoDoc(): ProfileDoc {

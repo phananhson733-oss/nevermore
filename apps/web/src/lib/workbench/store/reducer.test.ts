@@ -1,14 +1,16 @@
 import { describe, expect, it } from "vitest";
-import type { Artifact, AuditReport, DemoPayload, VisResult } from "../types.ts";
+import type { Artifact, AuditReport, DemoPayload, VisResult, WorkbenchProjectState } from "../types.ts";
 import {
   ARTIFACT_CONTENT_MAX,
   ARTIFACT_LIMIT,
   ARTIFACT_TITLE_MAX,
   HISTORY_LIMIT,
 } from "../types.ts";
+import { demoFields, type DemoFields } from "./demo-fields.ts";
 import { PERSISTED_VERSION, parsePersistedState } from "./schema.ts";
 import type { WorkbenchAction } from "./reducer.ts";
-import { initialProjectState, normalizeInterrupted, reduce, withProjectSeed } from "./reducer.ts";
+import { profileDocBasis, DEFAULT_NOTIFY, initialProjectState, normalizeInterrupted, reduce, withProjectSeed } from "./reducer.ts";
+import { clearDemoOver, loadDemoOver, otherThan, populatedProjectState } from "./test-fixtures.ts";
 
 const seed = { url: "https://example.test", brand: "Example", market: "US" };
 
@@ -41,7 +43,10 @@ describe("initialProjectState", () => {
     expect(s.artifacts).toEqual([]);
     expect(s.demo).toBe(false);
     expect(s.visPartial).toBe(false);
-    expect(s.notify).toEqual({ weekly: true, drop: true, mention: false, gsc: true });
+    expect(s.gscRowsSource).toBeNull();
+    // DEFAULT_NOTIFY is exported for the settings page; its literal is pinned here.
+    expect(s.notify).toEqual(DEFAULT_NOTIFY);
+    expect(DEFAULT_NOTIFY).toEqual({ weekly: true, drop: true, mention: false, gsc: true });
   });
 });
 
@@ -192,14 +197,36 @@ describe("saved keywords", () => {
 });
 
 describe("artifacts", () => {
-  it("prepends and caps at ARTIFACT_LIMIT", () => {
+  it("prepends, and refuses an artifact once the basket is full instead of evicting the oldest", () => {
     let s = initialProjectState(seed);
-    for (let i = 0; i < ARTIFACT_LIMIT + 2; i += 1) {
+    for (let i = 0; i < ARTIFACT_LIMIT; i += 1) {
       s = reduce(s, { type: "addArtifact", artifact: artifact(`a${i}`) });
     }
     expect(s.artifacts).toHaveLength(ARTIFACT_LIMIT);
-    expect(s.artifacts[0]?.id).toBe(`a${ARTIFACT_LIMIT + 1}`);
-    expect(s.artifacts.at(-1)?.id).toBe("a2");
+    expect(s.artifacts[0]?.id).toBe(`a${ARTIFACT_LIMIT - 1}`);
+
+    const full = s;
+    const after = reduce(full, { type: "addArtifact", artifact: artifact("late") });
+
+    // The same object back, so no new reducer state is produced, and every
+    // earlier artifact is still there — the oldest included.
+    expect(after).toBe(full);
+    expect(after.artifacts.map((a) => a.id)).not.toContain("late");
+    expect(after.artifacts.at(-1)?.id).toBe("a0");
+  });
+
+  it("ignores an artifact whose id is already in the basket, wherever it sits: same state back, one copy", () => {
+    // A save retried after its answer could not be read back (useAddArtifact)
+    // dispatches the same id again. Not at the head, so a check that only looks
+    // at the newest entry would still let a second copy in.
+    let s = reduce(initialProjectState(seed), { type: "addArtifact", artifact: artifact("a") });
+    s = reduce(s, { type: "addArtifact", artifact: artifact("b") });
+
+    const again = reduce(s, { type: "addArtifact", artifact: { ...artifact("a"), content: "another" } });
+
+    expect(again).toBe(s);
+    expect(again.artifacts.map((x) => x.id)).toEqual(["b", "a"]);
+    expect(again.artifacts[1]?.content).toBe("x");
   });
 
   it("clamps an oversized artifact to the persisted bounds instead of storing it whole", () => {
@@ -231,12 +258,9 @@ describe("artifacts", () => {
   });
 
   it("applies the same bounds to a demo payload", () => {
-    const s = reduce(initialProjectState(seed), {
-      type: "loadDemo",
-      payload: {
-        ...demoPayload,
-        artifacts: [{ ...artifact("demo"), content: "c".repeat(ARTIFACT_CONTENT_MAX + 5) }],
-      },
+    const s = loadDemoOver(initialProjectState(seed), {
+      ...demoPayload,
+      artifacts: [{ ...artifact("demo"), content: "c".repeat(ARTIFACT_CONTENT_MAX + 5) }],
     });
 
     expect(s.artifacts[0]?.content).toHaveLength(ARTIFACT_CONTENT_MAX);
@@ -246,17 +270,52 @@ describe("artifacts", () => {
     let s = reduce(initialProjectState(seed), { type: "addArtifact", artifact: artifact("a") });
     s = reduce(s, { type: "addArtifact", artifact: artifact("b") });
     expect(reduce(s, { type: "removeArtifact", id: "a" }).artifacts.map((x) => x.id)).toEqual(["b"]);
-    expect(reduce(s, { type: "clearArtifacts" }).artifacts).toEqual([]);
+    expect(reduce(s, { type: "clearArtifacts", ids: ["b", "a"] }).artifacts).toEqual([]);
+  });
+
+  // codex S6r3 #1: the drawer's clear covers the artifacts it rendered, by id.
+  it("clears only the ids it was given, keeping one added after the drawer rendered", () => {
+    const shown = reduce(initialProjectState(seed), { type: "addArtifact", artifact: artifact("a") });
+    const ids = shown.artifacts.map((x) => x.id);
+    const queued = reduce(shown, { type: "addArtifact", artifact: artifact("b") });
+
+    expect(reduce(queued, { type: "clearArtifacts", ids }).artifacts.map((x) => x.id)).toEqual(["b"]);
+  });
+
+  it("returns the very same state when none of the ids is in the basket", () => {
+    const s = reduce(initialProjectState(seed), { type: "addArtifact", artifact: artifact("b") });
+    expect(reduce(s, { type: "clearArtifacts", ids: ["a"] })).toBe(s);
+
+    const empty = initialProjectState(seed);
+    expect(reduce(empty, { type: "clearArtifacts", ids: [] })).toBe(empty);
   });
 });
 
 describe("demo", () => {
+  it("loadDemo writes only the declared payload keys, even when handed a wider object", () => {
+    const own = initialProjectState(seed);
+    // Type-checks: `DemoPayload` is a `Pick`, and only a fresh literal gets the excess-key check.
+    const wider = {
+      ...demoPayload,
+      profile: { ...own.profile, positioning: "from the payload" },
+      notify: { weekly: false, drop: false, mention: true, gsc: false },
+    };
+
+    const loaded = reduce(own, { type: "loadDemo", payload: wider, expected: demoFields(own) });
+
+    expect(loaded.demo).toBe(true);
+    expect(loaded.seeds).toBe(demoPayload.seeds);
+    expect(loaded.profile).toBe(own.profile);
+    expect(loaded.notify).toBe(own.notify);
+  });
+
   it("loadDemo writes the payload fields, flags demo, and never touches profile or notify", () => {
     let s = reduce(initialProjectState(seed), {
       type: "patchProfile", patch: { positioning: "mine" },
     });
-    s = reduce(s, { type: "setNotify", notify: { weekly: false, drop: false, mention: false, gsc: false } });
-    s = reduce(s, { type: "loadDemo", payload: demoPayload });
+    for (const key of ["weekly", "drop", "gsc"] as const) s = reduce(s, { type: "setNotify", key, value: false });
+    expect(s.notify).toEqual({ weekly: false, drop: false, mention: false, gsc: false });
+    s = loadDemoOver(s, demoPayload);
     expect(s.demo).toBe(true);
     expect(s.seeds).toBe("a\nb");
     expect(s.audit?.at).toBe("d");
@@ -269,9 +328,8 @@ describe("demo", () => {
     const history = Array.from({ length: HISTORY_LIMIT + 1 }, (_, i) => report(`h${i}`));
     const snapshots = Array.from({ length: HISTORY_LIMIT + 1 }, (_, i) => ({ at: `v${i}`, results: [vis(`q${i}`)] }));
     const many = Array.from({ length: ARTIFACT_LIMIT + 1 }, (_, i) => artifact(`x${i}`));
-    const s = reduce(initialProjectState(seed), {
-      type: "loadDemo",
-      payload: { ...demoPayload, auditHistory: history, visHistory: snapshots, artifacts: many },
+    const s = loadDemoOver(initialProjectState(seed), {
+      ...demoPayload, auditHistory: history, visHistory: snapshots, artifacts: many,
     });
     expect(s.auditHistory).toHaveLength(HISTORY_LIMIT);
     expect(s.auditHistory[0]?.at).toBe("h1");
@@ -285,14 +343,54 @@ describe("demo", () => {
 
   it("clearDemo is symmetric to loadDemo and keeps profile edits and notify", () => {
     let s = reduce(initialProjectState(seed), { type: "patchProfile", patch: { features: "a, b" } });
-    s = reduce(s, { type: "loadDemo", payload: demoPayload });
-    s = reduce(s, { type: "clearDemo" });
+    s = loadDemoOver(s, demoPayload);
+    s = clearDemoOver(s);
     expect(s).toEqual({ ...initialProjectState(seed), profile: { ...initialProjectState(seed).profile, features: "a, b" } });
     expect(s.demo).toBe(false);
   });
 
+  it("clearDemo does nothing once the state is not the sample: a queued stale confirm cannot wipe real rows", () => {
+    // The interleaving codex S5 found: this tab's confirm box opened over the
+    // sample, another tab wrote real data, the `storage` door queued
+    // `loadPersisted` for it, and the old screen's callback then dispatched
+    // `clearDemo`. React reduces them in exactly that order.
+    const gscRow = { query: "acme seo", clicks: 3, impressions: 90, ctr: 3.3, position: 7.5 } as const;
+    const sample = loadDemoOver(initialProjectState(seed), demoPayload);
+    const real = reduce(
+      reduce(initialProjectState(seed), { type: "setGscRows", rows: [gscRow], source: "user" }),
+      { type: "addArtifact", artifact: artifact("mine") },
+    );
+    expect(sample.demo).toBe(true);
+    expect(real.demo).toBe(false);
+
+    let s = reduce(sample, { type: "loadPersisted", state: real });
+    // The confirm was raised over the sample, so that is what it carries.
+    s = reduce(s, { type: "clearDemo", expected: demoFields(sample) });
+
+    // The same reference: no new reducer state is produced.
+    expect(s).toBe(real);
+    expect(s.gscRows).toEqual([gscRow]);
+    expect(s.gscRowsSource).toBe("user");
+    expect(s.artifacts.map((a) => a.id)).toEqual(["mine"]);
+  });
+
+  it("clearDemo still clears while the sample is loaded, rows added on top of it included", () => {
+    const gscRow = { query: "acme seo", clicks: 3, impressions: 90, ctr: 3.3, position: 7.5 } as const;
+    let s = loadDemoOver(initialProjectState(seed), demoPayload);
+    s = reduce(s, { type: "setGscRows", rows: [gscRow], source: "user" });
+    expect(s.demo).toBe(true);
+
+    const cleared = clearDemoOver(s);
+
+    expect(cleared).not.toBe(s);
+    expect(cleared.demo).toBe(false);
+    expect(cleared.gscRows).toEqual([]);
+    expect(cleared.gscRowsSource).toBeNull();
+    expect(cleared.artifacts).toEqual([]);
+  });
+
   it("reset returns to the initial state for the same seed", () => {
-    let s = reduce(initialProjectState(seed), { type: "loadDemo", payload: demoPayload });
+    let s = loadDemoOver(initialProjectState(seed), demoPayload);
     s = reduce(s, { type: "reset", seed });
     expect(s).toEqual(initialProjectState(seed));
   });
@@ -300,6 +398,111 @@ describe("demo", () => {
   it("loadPersisted replaces the whole state", () => {
     const other = { ...initialProjectState(seed), seeds: "persisted" };
     expect(reduce(initialProjectState(seed), { type: "loadPersisted", state: other })).toBe(other);
+  });
+});
+
+/**
+ * The confirmation snapshot (codex S6r2 #1 #2). A load or a clear carries the
+ * overwritable fields as the operator saw them, and the reducer is the last
+ * place that can tell they moved: a component cannot see an update queued
+ * behind the render it was clicked in.
+ */
+describe("demo: a confirmation covers the content it was given for", () => {
+  const FIELDS = Object.keys(demoFields(populatedProjectState(seed))) as (keyof DemoFields)[];
+  const ownData = (): WorkbenchProjectState => ({ ...populatedProjectState(seed), demo: false });
+
+  it("loads and clears while nothing has moved", () => {
+    const own = ownData();
+    const loaded = reduce(own, { type: "loadDemo", payload: demoPayload, expected: demoFields(own) });
+    expect(loaded.demo).toBe(true);
+    expect(loaded.seeds).toBe(demoPayload.seeds);
+
+    const cleared = reduce(loaded, { type: "clearDemo", expected: demoFields(loaded) });
+    expect(cleared.demo).toBe(false);
+    expect(cleared.artifacts).toEqual([]);
+  });
+
+  it.each(FIELDS)("refuses a load once %s holds other content, returning the very same state", (key) => {
+    const own = ownData();
+    const expected = demoFields(own);
+    const moved = { ...own, [key]: otherThan(own[key]) } as WorkbenchProjectState;
+
+    expect(reduce(moved, { type: "loadDemo", payload: demoPayload, expected })).toBe(moved);
+  });
+
+  it.each(FIELDS)("refuses a clear once %s holds other content, returning the very same state", (key) => {
+    const sample = populatedProjectState(seed);
+    expect(sample.demo).toBe(true);
+    const expected = demoFields(sample);
+    const moved = { ...sample, [key]: otherThan(sample[key]) } as WorkbenchProjectState;
+
+    expect(reduce(moved, { type: "clearDemo", expected })).toBe(moved);
+  });
+
+  it("refuses a clear over a newer sample with the operator's additions, though it is still sample mode", () => {
+    const first = loadDemoOver(initialProjectState(seed), demoPayload);
+    const expected = demoFields(first);
+    const second = reduce(first, { type: "loadPersisted", state: { ...first, seeds: "sample two\nmy own seed" } });
+    expect(second.demo).toBe(true);
+
+    expect(reduce(second, { type: "clearDemo", expected })).toBe(second);
+  });
+
+  it("stays valid across changes outside those fields", () => {
+    const toggles = { weekly: false, drop: false, mention: true, gsc: false } as const;
+    const sample = loadDemoOver(initialProjectState(seed), demoPayload);
+    const sampleExpected = demoFields(sample);
+    let s = sample;
+    for (const [key, value] of Object.entries(toggles) as [keyof typeof toggles, boolean][]) {
+      s = reduce(s, { type: "setNotify", key, value });
+    }
+    expect(s.notify).toEqual(toggles);
+    s = reduce(s, { type: "patchProfile", patch: { positioning: "mine" } });
+
+    const notifyBeforeClear = s.notify;
+    const cleared = reduce(s, { type: "clearDemo", expected: sampleExpected });
+    expect(cleared.demo).toBe(false);
+    expect(cleared.seeds).toBe("");
+    expect(cleared.notify).toBe(notifyBeforeClear);
+
+    const own = reduce(initialProjectState(seed), { type: "setSeeds", seeds: "geo audit" });
+    const ownExpected = demoFields(own);
+    const toggled = reduce(own, { type: "setNotify", key: "mention", value: true });
+    expect(toggled).not.toBe(own);
+    expect(reduce(toggled, { type: "loadDemo", payload: demoPayload, expected: ownExpected }).demo).toBe(true);
+  });
+});
+
+/**
+ * `clearGscRows` compares with `sameContent`, as the demo snapshot does: the
+ * cases on stale rows live in `reducer-clear-gsc.test.ts`; these two pin the
+ * round-trip and one content change against it.
+ */
+describe("clearGscRows: the same rows after a JSON round-trip", () => {
+  const rows = [{ query: "acme seo", clicks: 3, impressions: 90, ctr: 3.3, position: 7.5 }] as const;
+
+  it("clears rows re-parsed with the same content", () => {
+    const shown = reduce(initialProjectState(seed), { type: "setGscRows", rows, source: "user" });
+    const expected = { rows: shown.gscRows, source: shown.gscRowsSource };
+    const reparsed = JSON.parse(JSON.stringify(shown)) as WorkbenchProjectState;
+    expect(reparsed.gscRows).not.toBe(shown.gscRows);
+
+    const cleared = reduce(reparsed, { type: "clearGscRows", expected });
+
+    expect(cleared).not.toBe(reparsed);
+    expect(cleared.gscRows).toEqual([]);
+    expect(cleared.gscRowsSource).toBeNull();
+  });
+
+  it("refuses rows with other content, returning the very same state", () => {
+    const shown = reduce(initialProjectState(seed), { type: "setGscRows", rows, source: "user" });
+    const expected = { rows: shown.gscRows, source: shown.gscRowsSource };
+    const other = reduce(
+      JSON.parse(JSON.stringify(shown)) as WorkbenchProjectState,
+      { type: "setGscRows", rows: [{ ...rows[0], clicks: 4 }], source: "user" },
+    );
+
+    expect(reduce(other, { type: "clearGscRows", expected })).toBe(other);
   });
 });
 
@@ -352,9 +555,9 @@ describe("immutability", () => {
 
     const everyAction = [
       { type: "patchProfile", patch: { positioning: "p" } },
-      { type: "setProfileDoc", doc: null },
+      { type: "setProfileDoc", doc: null, basis: profileDocBasis(populated) },
       { type: "setConns", conns: { GSC: true, GA4: false } },
-      { type: "setGscRows", rows: [] },
+      { type: "setGscRows", rows: [], source: "user" },
       { type: "setSeeds", seeds: "s" },
       { type: "setBuilt", built: true },
       { type: "setSaved", saved: [{ q: "k", addedAt: "t1", source: "gap" }] },
@@ -362,7 +565,7 @@ describe("immutability", () => {
       { type: "setPlans", plans: {} },
       { type: "setTargets", targets: [] },
       { type: "setKb", kb: null },
-      { type: "setNotify", notify: { weekly: false, drop: false, mention: false, gsc: false } },
+      { type: "setNotify", key: "weekly", value: false },
       { type: "auditStart" },
       { type: "auditComplete", report: report("z") },
       { type: "auditCancel" },
@@ -372,9 +575,10 @@ describe("immutability", () => {
       { type: "visCancel" },
       { type: "addArtifact", artifact: artifact("z") },
       { type: "removeArtifact", id: "a1" },
-      { type: "clearArtifacts" },
-      { type: "loadDemo", payload: demoPayload },
-      { type: "clearDemo" },
+      { type: "clearArtifacts", ids: ["a1"] },
+      { type: "loadDemo", payload: demoPayload, expected: demoFields(populated) },
+      { type: "clearDemo", expected: demoFields(populated) },
+      { type: "clearGscRows", expected: { rows: populated.gscRows, source: populated.gscRowsSource } },
       { type: "loadPersisted", state: initialProjectState(seed) },
       { type: "reset", seed },
     ] as const satisfies readonly WorkbenchAction[];

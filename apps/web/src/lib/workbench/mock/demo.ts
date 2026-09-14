@@ -175,6 +175,8 @@ function demoProfileDoc(profile: Profile, shared: SharedInit, at: StampAt): Prof
   return {
     crawl: crawlSignals(profile, "crawl", shared.audit),
     gsc: gscSignals(profile, shared.gscRows),
+    // The sample site's rows are the sample's, frozen into the snapshot (Q6).
+    gscSource: shared.gscRows.length === 0 ? null : "sample",
     third: crawlSignals(profile, "third"),
     ai: demoAiDoc(profile),
     at: at(3, 15),

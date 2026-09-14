@@ -1,6 +1,15 @@
 import { defineConfig, devices } from "@playwright/test";
+import {
+  getMockE2eLanePaths,
+  requireMockE2ePort,
+} from "./e2e/mock-e2e-lane.ts";
 
-const PORT = Number(process.env["E2E_MOCK_PORT"] ?? 3200);
+// One lane per port: E2E_MOCK_PORT=3201 gets its own Next dist, blob and
+// Playwright output directories, so lanes can run side by side.
+const LANE = getMockE2eLanePaths(
+  requireMockE2ePort(process.env["E2E_MOCK_PORT"]),
+);
+const PORT = LANE.port;
 const BASE_URL = `http://localhost:${PORT}`;
 
 /**
@@ -11,6 +20,9 @@ const BASE_URL = `http://localhost:${PORT}`;
 export default defineConfig({
   testDir: "./e2e",
   testMatch: "**/*.mock.spec.ts",
+  // Playwright empties outputDir at startup; a shared one would wipe another
+  // lane's in-flight traces.
+  outputDir: LANE.outputDir,
   fullyParallel: false,
   workers: 1,
   forbidOnly: !!process.env["CI"],
@@ -50,10 +62,10 @@ export default defineConfig({
       RAW_IMPORT_BUCKET: "e2e-local-only",
       EXPORT_BUCKET: "e2e-local-only",
       SF_BLOB_BACKEND: "local",
-      SF_BLOB_DIR: "/tmp/signalframe-e2e-mock-blobs",
+      SF_BLOB_DIR: LANE.blobDir,
       SF_DEV_AUTH: "true",
       SF_E2E_MOCK_API: "true",
-      NEXT_DIST_DIR: ".next-e2e-mock",
+      NEXT_DIST_DIR: LANE.distDirectoryName,
       PORT: String(PORT),
     },
   },

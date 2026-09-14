@@ -1,27 +1,129 @@
-import type { ArtifactType } from "../types.ts";
+import type { ArtifactType, GscRowsSource } from "../types.ts";
 
-export const SAMPLE_CSV_MARKER = "# sample-data";
+/**
+ * The first line of every csv artifact (Q36). Neutral on purpose: all three
+ * versions of the declaration sit under it, including the two that carry the
+ * operator's own or unrecorded GSC rows, so it must not say "sample". A json
+ * artifact's declaration key, `_provenance`, is neutral for the same reason.
+ */
+export const PROVENANCE_CSV_MARKER = "# provenance";
+
+/**
+ * Where an artifact's GSC-derived content came from (Q36), which picks its
+ * provenance declaration: `none` (it shows no GSC data) and `sample` share the
+ * sample sentence, `user` and `unknown` each have their own.
+ */
+export type ArtifactGscData = "none" | "sample" | "user" | "unknown";
+
+/**
+ * `present` is whether the artifact shows any GSC-derived data; `source` is the
+ * provenance of the rows that data came from. Rows whose source was never
+ * recorded are `unknown`, never guessed as `sample` or `user` (Q6).
+ */
+export function artifactGscData(
+  present: boolean,
+  source: GscRowsSource | null,
+): ArtifactGscData {
+  if (!present) return "none";
+  switch (source) {
+    case "sample":
+      return "sample";
+    case "user":
+      return "user";
+    case null:
+      return "unknown";
+  }
+}
+
+const LINE_FEED = 10;
+
+/**
+ * The one text shape every stamped artifact leaves this module in: LF line
+ * endings and no trailing newline. Design §6.8 states it for csv; it holds for
+ * all four types because the AI wrapper needs it (Q23). `fenceBlock` rewrites
+ * every CR to LF and absorbs a body's final LF into its closing fence, so for
+ * any other shape the AI payload differs from what copy, export and save hand
+ * over, and "x" and "x\n" wrap to the same prompt. On this shape both rewrites
+ * are no-ops, so payload === content holds by construction instead of by every
+ * builder happening to emit the right bytes. `fenceBlock` itself is shared by
+ * the prompt builders and stays as it is.
+ *
+ * Applied to the whole stamped text, not to the body alone: an empty or
+ * newline-only body would otherwise leave the notice's own separator trailing.
+ * The trailing strip is a backwards scan, not `/\n+$/`, which re-scans a long
+ * newline run from every start position (quadratic). Only line endings change —
+ * U+2028, trailing spaces and everything else are content and are kept.
+ *
+ * One consequence worth knowing: a CR inside a quoted CSV cell becomes LF. A CSV
+ * reader treats both as a line break inside the cell, and keeping the CR would
+ * break the one-text invariant for every artifact that carries one.
+ */
+function canonicalText(text: string): string {
+  const unified = text.replace(/\r\n?/g, "\n");
+  let end = unified.length;
+  while (end > 0 && unified.charCodeAt(end - 1) === LINE_FEED) end -= 1;
+  return unified.slice(0, end);
+}
+
+declare const stampedBrand: unique symbol;
+
+/**
+ * Text that came out of `stampArtifact`, and therefore already carries its one
+ * provenance declaration. Compile-time only: nothing at runtime tells it apart
+ * from any other string, and nothing should try (S2 #2) — a user's own paste can
+ * contain the declaration sentence word for word, and treating that as "already
+ * stamped" would throw inside a view.
+ */
+export type StampedText = string & { readonly [stampedBrand]: true };
+
+/**
+ * A body that has not been stamped. Every plain `string` is one — a builder's
+ * return value, a template literal, a user's paste — and a value still typed
+ * `StampedText` is not, so handing stamped text straight back to be stamped is a
+ * compile error instead of two declarations in one artifact.
+ *
+ * That direct hand-back is all it blocks. The brand exists only on the type, and
+ * every ordinary string operation drops it: `${stamped}`, `.trim()`, `.slice()`,
+ * `String(stamped)`, `concat`, or a detour through a variable typed `string` all
+ * yield a plain `string` that this type accepts, with no cast. Nothing at runtime
+ * looks for a declaration either (S2 #2), so text that went through any of those
+ * — or came back out of the basket, where `state.artifacts` holds plain strings —
+ * can still be stamped a second time.
+ *
+ * Measured with `tsc`, not assumed: this optional-`never` brand intersected with
+ * `string` still accepts a plain string (weak-type detection does not fire on
+ * the `string & {…}` form), and rejects `StampedText` in a direct assignment, an
+ * object-literal property and a spread alike. `useAddArtifact.test.tsx` holds
+ * both directions under `tsc --noEmit`.
+ */
+export type UnstampedBody = string & { readonly [stampedBrand]?: never };
 
 /**
  * Stamps the §6.8 provenance onto an artifact body (R5). `line` is already
  * localised by the caller; one that folds to nothing throws rather than ship an
- * artifact without its declaration. For json, `JSON.stringify` always lists
- * integer-like keys first, so such a top-level key lands ahead of
- * `_sampleData` (pinned by the "integer-like top-level keys" case in
- * `provenance.test.ts`).
+ * artifact without its declaration. Every result is in the canonical shape
+ * above: json by re-serialisation, the other three by `canonicalText`. For json,
+ * `JSON.stringify` always lists integer-like keys first, so such a top-level key
+ * lands ahead of `_provenance` (pinned by the "integer-like top-level keys" case
+ * in `provenance.test.ts`).
  */
 export function stampArtifact(
   type: ArtifactType,
-  body: string,
+  body: UnstampedBody,
   line: string,
-): string {
+): StampedText {
+  // The one place the brand is conferred: everything `stampText` returns is stamped.
+  return stampText(type, body, line) as StampedText;
+}
+
+function stampText(type: ArtifactType, body: string, line: string): string {
   const notice = line.replace(/[\r\n]+/g, " ").trim();
   if (notice === "") {
     throw new Error("stampArtifact: provenance line is empty");
   }
   switch (type) {
     case "csv":
-      return `${SAMPLE_CSV_MARKER}\n# ${notice}\n${body}`;
+      return canonicalText(`${PROVENANCE_CSV_MARKER}\n# ${notice}\n${body}`);
     case "json": {
       const parsed: unknown = JSON.parse(body);
       if (
@@ -31,21 +133,23 @@ export function stampArtifact(
       ) {
         throw new Error("stampArtifact: json artifacts must be a JSON object");
       }
-      // A body key named _sampleData must not overwrite the declaration, so drop it before spreading.
-      const { _sampleData: _ignored, ...rest } = parsed as Record<
+      // A body key named _provenance must not overwrite the declaration, and one
+      // named _sampleData (the key before Q36) must not sit beside it as a second,
+      // older declaration, so both are dropped before spreading.
+      const { _provenance: _ignored, _sampleData: _legacy, ...rest } = parsed as Record<
         string,
         unknown
       >;
       // `<`, U+2028 and U+2029 can only occur inside JSON strings, so escaping them keeps the parsed value
       // identical while the text stays safe to paste into <script type="application/ld+json">. This is the
       // one place every json artifact's final text is produced; a builder cannot do it (this re-serializes).
-      return JSON.stringify({ _sampleData: notice, ...rest }, null, 2)
+      return JSON.stringify({ _provenance: notice, ...rest }, null, 2)
         .replace(/</g, "\\u003c")
         .replace(/\u2028/g, "\\u2028")
         .replace(/\u2029/g, "\\u2029");
     }
     case "md":
     case "prompt":
-      return `${notice}\n\n${body}`;
+      return canonicalText(`${notice}\n\n${body}`);
   }
 }

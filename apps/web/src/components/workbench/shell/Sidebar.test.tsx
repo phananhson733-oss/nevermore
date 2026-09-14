@@ -18,9 +18,10 @@ import { WORKBENCH_PAGE_IDS, WORKBENCH_SEGMENTS, type WorkbenchPageId } from "@/
 import { useWorkbench } from "@/lib/workbench/store/hooks";
 import {
   WorkbenchProvider,
+  type PublicWorkbenchAction,
   type WorkbenchContextValue,
 } from "@/lib/workbench/store/WorkbenchProvider";
-import type { ProjectSeed, WorkbenchAction } from "@/lib/workbench/store/reducer";
+import type { ProjectSeed } from "@/lib/workbench/store/reducer";
 import type { AuditReport, SavedKeyword } from "@/lib/workbench/types";
 import { WORKBENCH_NAV } from "./workbench-nav.ts";
 
@@ -108,7 +109,7 @@ function render(props: Parameters<typeof Harness>[0] = {}, pathname = `/p/${PROJ
   return view;
 }
 
-function dispatch(action: WorkbenchAction): void {
+function dispatch(action: PublicWorkbenchAction): void {
   const send = store.current?.dispatch;
   if (!send) throw new Error("the provider never rendered");
   act(() => send(action));
@@ -131,6 +132,18 @@ function badges(scope: ParentNode): Readonly<Record<string, string>> {
       node.textContent,
     ]),
   );
+}
+
+/**
+ * jsdom reports `navigator.platform` as "" and ships no `userAgentData`, so the
+ * rail would otherwise always render the non-Mac spelling. The own property is
+ * deleted in `afterEach`, which puts the prototype's answer back.
+ */
+function fakePlatform(platform: string): void {
+  Object.defineProperty(window.navigator, "platform", {
+    value: platform,
+    configurable: true,
+  });
 }
 
 function rail(scope: ParentNode): HTMLElement {
@@ -175,6 +188,7 @@ afterEach(() => {
   cleanup?.();
   cleanup = null;
   vi.restoreAllMocks();
+  Reflect.deleteProperty(window.navigator, "platform");
 });
 
 describe("Sidebar navigation", () => {
@@ -229,7 +243,6 @@ describe("Sidebar navigation", () => {
   it("shows the site count and the brand tagline through the rail token", () => {
     const view = render({ siteCount: 2 });
     expect(view.container.textContent).toContain("2 sites");
-    expect(view.container.textContent).toContain(en.workbench.shell.shortcutHint);
 
     view.rerender({ siteCount: 1 });
     expect(view.container.textContent).toContain("1 site");
@@ -240,6 +253,26 @@ describe("Sidebar navigation", () => {
     // workbench-tokens.test.ts guards the token's contrast; this pins that the
     // tagline actually uses it rather than a bare Tailwind grey.
     expect(tagline?.className).toMatch(/\btext-wb-rail-muted\b/);
+  });
+
+  // The shortcut hint is ICU with a `{key}` the platform fills in, so what is
+  // pinned here is the whole rendered sentence at the consumer. Pinning the
+  // message string instead would survive a hint that never interpolates (it
+  // would still contain `{key}`), and pinning "⌘K" alone is three characters a
+  // `<kbd>` next to an untranslated key path also satisfies.
+  it("spells the palette shortcut for a Mac reader, as a whole sentence", () => {
+    fakePlatform("MacIntel");
+
+    expect(render().container.textContent).toContain("Press ⌘K to jump");
+  });
+
+  it("spells it Ctrl+K off a Mac, with nothing left uninterpolated", () => {
+    fakePlatform("Win32");
+    const text = render().container.textContent ?? "";
+
+    expect(text).toContain("Press Ctrl+K to jump");
+    expect(text).not.toContain("{key}");
+    expect(text).not.toContain("workbench.shell.shortcutHint");
   });
 });
 

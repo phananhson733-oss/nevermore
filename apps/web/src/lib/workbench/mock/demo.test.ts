@@ -349,6 +349,10 @@ describe("levels", () => {
       expect(payload.profileDoc).toStrictEqual({
         crawl: crawlSignals(profile, "crawl", required(payload.audit, "audit")),
         gsc: gscSignals(profile, payload.gscRows),
+        // The sample's own rows, frozen into the snapshot (Q6). `loadDemo` marks
+        // the project's current rows the same way, but this one must not follow
+        // the project once the user imports their own.
+        gscSource: "sample",
         third: crawlSignals(profile, "third"),
         ai: demoAiDoc(profile),
         at: at(3, 15),

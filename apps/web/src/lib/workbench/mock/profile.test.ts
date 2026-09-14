@@ -247,6 +247,9 @@ describe("profile document round-trip", () => {
       const profileDoc: ProfileDoc = {
         crawl: crawlSignals(profile, "crawl", DOCS_AND_BLOG),
         gsc: gscSignals(profile, rows),
+        // What the rows were when this snapshot was generated (Q6); here they are
+        // the fixture's, and the round trip has to carry either value through.
+        gscSource: rows.length === 0 ? null : "user",
         third: crawlSignals(profile, "third"),
         ai: demoAiDoc(profile),
         at: AT,

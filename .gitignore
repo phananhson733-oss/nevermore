@@ -3,7 +3,7 @@ node_modules/
 dist/
 build/
 .next/
-.next-e2e-mock/
+.next-e2e-mock*/
 .next-e2e-real/
 .swc/
 apps/web/.next-*/

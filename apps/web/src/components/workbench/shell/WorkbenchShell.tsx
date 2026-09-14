@@ -48,11 +48,7 @@ export async function WorkbenchShell({
       </a>
       <ShellChrome
         projectId={project.id}
-        site={{
-          host: project.host,
-          marketCode: project.marketCode,
-          gscConnected: null,
-        }}
+        site={{ host: project.host, marketCode: project.marketCode }}
         projectOptions={shell.projectOptions}
         projectControl={projectControl}
         accountControl={accountControl}

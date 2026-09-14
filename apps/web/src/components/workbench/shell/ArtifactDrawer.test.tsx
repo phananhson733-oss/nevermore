@@ -30,7 +30,7 @@ const mocks = vi.hoisted(() => ({
 // jsdom implements; the contract under test is only what name it is handed.
 vi.mock("@/lib/workbench/download", () => ({ downloadText: mocks.downloadText }));
 
-const { ArtifactDrawer, downloadName } = await import("./ArtifactDrawer.tsx");
+const { ArtifactDrawer } = await import("./ArtifactDrawer.tsx");
 
 const en = getMessages("en");
 
@@ -281,34 +281,10 @@ describe("ArtifactDrawer", () => {
     );
   });
 
-  it("sanitises a hostile name that reached it anyway and forces the type's extension", () => {
-    // Defence in depth for a stored envelope the reducer never saw: nothing
-    // outside `[\p{L}\p{N}_ .()-]` reaches the save dialog (dots are allowed,
-    // slashes and angle brackets are not), leading dots are dropped so the
-    // file is not hidden, and `.csv` becomes `.md`.
-    expect(
-      downloadName({ ...ARTIFACT, type: "md", filename: "../../report<1>.csv" }),
-    ).toBe("_.._report_1_.md");
-  });
-
-  it.each([
-    [{ type: "csv", title: "Keyword library" }, "Keyword library.csv"],
-    [{ type: "prompt", title: "Discover prompts" }, "Discover prompts.txt"],
-    [{ type: "json", title: "Answer plan.json" }, "Answer plan.json"],
-    [{ type: "md", title: "Release 1.2" }, "Release 1.2.md"],
-    [{ type: "md", title: "brief.txt", filename: "brief.TXT" }, "brief.md"],
-    [{ type: "csv", title: "关键词库" }, "关键词库.csv"],
-    [{ type: "md", title: "報告/草稿：v2" }, "報告_草稿_v2.md"],
-    [{ type: "csv", title: "///" }, "___.csv"],
-    [{ type: "csv", title: "   " }, "artifact.csv"],
-    [{ type: "md", title: ".env" }, "env.md"],
-    [{ type: "md", title: ".." }, "artifact.md"],
-    [{ type: "csv", title: "x".repeat(150) }, `${"x".repeat(100)}.csv`],
-    // The 100th code unit would split "𠮷" in half; the cut backs off instead.
-    [{ type: "csv", title: `${"x".repeat(99)}𠮷y` }, `${"x".repeat(99)}.csv`],
-  ] as const)("names %j as %s", (patch, expected) => {
-    expect(downloadName({ ...ARTIFACT, filename: undefined, ...patch })).toBe(expected);
-  });
+  // `downloadName`'s own contract — the sanitiser table and the extension
+  // forcing — moved to `lib/workbench/artifact-file.test.ts` with the function
+  // (裁决 Q35). What stays here is what only the rendered drawer can show: that
+  // its download button hands the sink that name and that type's MIME.
 
   it("returns to the empty state when the last artifact is removed", () => {
     const view = render();
@@ -318,5 +294,27 @@ describe("ArtifactDrawer", () => {
 
     expect(view.container.querySelectorAll("[data-wb-artifact]")).toHaveLength(0);
     expect(view.container.textContent).toContain(COPY.empty);
+  });
+
+  it("clears the artifacts it rendered and keeps one queued behind that render (codex S6r3 #1)", () => {
+    const view = render();
+    addArtifact({ ...ARTIFACT, id: "a1" });
+    addArtifact({ ...ARTIFACT, id: "a2" });
+    const rendered = [...view.container.querySelectorAll<HTMLElement>("[data-wb-artifact]")].map(
+      (node) => node.dataset["wbArtifact"],
+    );
+    expect(rendered).toEqual(["a2", "a1"]);
+    const clear = buttonWith(view.container, en.workbench.shell.drawer.clear);
+    const dispatch = store.current?.dispatch;
+    if (!dispatch) throw new Error("the provider never rendered");
+
+    act(() => {
+      // Queued, not rendered: the click below still runs in the render that
+      // showed a2 and a1, so those are the ids it can dispatch.
+      dispatch({ type: "addArtifact", artifact: { ...ARTIFACT, id: "a3" } });
+      clear.click();
+    });
+
+    expect(store.current?.state.artifacts.map((a) => a.id)).toEqual(["a3"]);
   });
 });

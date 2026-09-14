@@ -1,6 +1,6 @@
 "use client";
 
-import { Menu, Search } from "lucide-react";
+import { AlertTriangle, Eraser, Menu, Search } from "lucide-react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import type { ReactNode, RefObject } from "react";
@@ -9,7 +9,10 @@ import {
   useWorkbenchArtifacts,
 } from "@/lib/workbench/store/hooks";
 import type { StorageMode } from "@/lib/workbench/store/WorkbenchProvider";
+import { useShortcutLabel } from "../hooks/useShortcutLabel.ts";
+import { ConfirmDialog } from "../ui/ConfirmDialog.tsx";
 import { DemoChip } from "../ui/DemoChip.tsx";
+import { useClearSample } from "./useClearSample.ts";
 import { useContextNavigationConfirm } from "./useContextNavigationConfirm.ts";
 
 /**
@@ -17,7 +20,9 @@ import { useContextNavigationConfirm } from "./useContextNavigationConfirm.ts";
  * makes a new mode a type error here rather than a silent fallthrough to some
  * other sentence. `swept` says nothing: that state was discarded on purpose.
  */
-const STORAGE_NOTICE: Readonly<Record<StorageMode, "volatile" | "quota" | "readonly" | null>> = {
+const STORAGE_NOTICE: Readonly<
+  Record<StorageMode, "volatile" | "quota" | "readonly" | null>
+> = {
   ok: null,
   volatile: "volatile",
   quota: "quota",
@@ -25,7 +30,11 @@ const STORAGE_NOTICE: Readonly<Record<StorageMode, "volatile" | "quota" | "reado
   swept: null,
 };
 
-/** The workbench topbar (opengengrowth `Header.tsx`). */
+/**
+ * The workbench topbar (opengengrowth `Header.tsx`). "Clear sample" and its
+ * confirmation live in `useClearSample`: what the yes covers, and where focus
+ * goes when the control disappears under it.
+ */
 export function Topbar({
   projectControl,
   accountControl,
@@ -48,87 +57,182 @@ export function Topbar({
   readonly sidebarOpen: boolean;
 }) {
   const t = useTranslations("workbench.shell");
-  const { state, storageMode, ready } = useWorkbench();
+  // `clearSampleConfirm` carries a title, a body and the action; cancel is the
+  // app-wide word.
+  const tCommon = useTranslations("common");
+  const { state, storageMode, ready, dispatch } = useWorkbench();
   const storageNotice = ready ? STORAGE_NOTICE[storageMode] : null;
   const artifacts = useWorkbenchArtifacts();
   // Called here rather than threaded down from ShellChrome: the topbar owns the
   // only link it guards, and the hook is already used the same way one level
   // over in CommandPalette — both sit in the same client tree.
   const { confirmNavigation } = useContextNavigationConfirm();
+  // ⌘K only on a Mac: on a PC it names a chord that does not exist.
+  const shortcutKey = useShortcutLabel();
+  // Before storage is read `state.demo` is the seed's `false`, not an answer.
+  const sampleLoaded = ready && state.demo;
+  const clear = useClearSample({ state, sampleLoaded, dispatch, drawerButtonRef });
+
   return (
     <header
       data-app-shell-topbar=""
-      className="wb-reset sticky top-0 z-10 flex h-14 shrink-0 items-center justify-between gap-2 border-b border-slate-200/80 bg-wb-paper px-4 font-sans text-slate-900"
+      // Two rows below `xl`, one row from `xl` up. One row does not fit below
+      // 1280 (T17, measured at nowrap widths, en with the sample: menu 44, chip
+      // 85, clear 44 / 93, artifacts 83, account 130, search 178, "+ New site"
+      // 59): at 390 the switcher had -84px and the chip covered the menu
+      // button; at 768-1024 the account group ran 17px past the viewport. The
+      // rows are two containers cut from the DOM in order, not a flex-wrap, so
+      // which control sits on which row never depends on the text: row 1 is
+      // menu, switcher, "+ New site", search and the sample chip; row 2 is
+      // clear, artifacts and the account group. Visual order is DOM order and
+      // Tab order in both layouts. From `xl` up only the first row is
+      // `display: contents`; the second stays a flex group and keeps the gap
+      // to the chip with the header's gap-2 plus its own `xl:ml-1`, so the
+      // one-row header keeps today's order and geometry. Below `xl` the
+      // switcher is the only control that shrinks; from `xl` up the storage
+      // sentence gives way first (truncated, whole in its `title`) and the
+      // switcher stops at its 64px floor.
+      className="wb-reset sticky top-0 z-10 flex shrink-0 flex-col border-b border-slate-200/80 bg-wb-paper px-4 font-sans text-slate-900 xl:h-14 xl:flex-row xl:items-center xl:gap-2"
     >
-      <div className="flex min-w-0 items-center gap-2">
-        <button
-          type="button"
-          onClick={onMenu}
-          aria-label={sidebarOpen ? t("closeMenu") : t("openMenu")}
-          aria-expanded={sidebarOpen}
-          aria-controls={sidebarId}
-          className="mr-1 rounded-md p-1.5 text-slate-500 hover:bg-slate-200/50 hover:text-slate-700 md:hidden"
-        >
-          <Menu className="h-5 w-5" aria-hidden="true" />
-        </button>
-        {projectControl}
-        <Link
-          href="/new-project"
-          // Leaving for a new site discards a dirty Context editor exactly like
-          // a rail link or a palette jump does, so it asks the same question.
-          // `current` is false: this destination is never the current page.
-          onClick={(event) => confirmNavigation(event, false)}
-          className="hidden text-xs font-medium text-slate-500 hover:text-slate-900 sm:inline"
-        >
-          + {t("newSite")}
-        </Link>
-        <button
-          ref={paletteButtonRef}
-          type="button"
-          onClick={onPalette}
-          className="ml-2 hidden w-64 items-center gap-2 rounded-md border border-slate-200 bg-white py-1.5 pl-2.5 pr-1.5 text-xs text-slate-500 hover:border-slate-300 md:flex"
-        >
-          <Search className="h-4 w-4" aria-hidden="true" />
-          <span className="flex-1 text-left">{t("search")}</span>
-          <kbd className="rounded border border-slate-200 bg-slate-50 px-1.5 text-[10px] font-medium text-slate-500">
-            ⌘K
-          </kbd>
-        </button>
-      </div>
-      <div className="flex items-center gap-3">
-        {/* Exactly one status element, rendered on every viewport and before it
-            has anything to say: a live region has to exist in the accessibility
-            tree BEFORE its text changes, or the announcement is lost (and a
-            second one would break the shell e2e's single-status locator).
-            Below `lg` the topbar has no room for the sentence, so it is
-            `sr-only` there — still announced, just not painted (the compact
-            label below is what sighted users see); `sr-only` takes it out of
-            the flex flow, so it adds no gap and `empty:-mr-3` only has to
-            cancel one from `lg` up. `swept` is deliberately silent: that state
-            was discarded on purpose. `readonly` is not: nothing this session
-            does will be saved (R14). */}
-        <span
-          role="status"
-          className="max-lg:sr-only text-xs text-amber-700 empty:-mr-3 lg:max-w-[40vw] lg:truncate"
-        >
-          {storageNotice ? t(storageNotice) : null}
-        </span>
-        {/* The visible counterpart below `lg`, for every mode with a notice.
-            `aria-hidden`: the live region above already announces the full
-            sentence, so this is not read twice and is never a second status.
-            Absent (not merely hidden) when there is nothing to say, so it adds
-            no flex gap; `lg:hidden` is display:none, which adds none either. */}
-        {storageNotice ? (
-          <span
-            aria-hidden="true"
-            data-wb-storage-compact=""
-            title={t(storageNotice)}
-            className="shrink-0 whitespace-nowrap rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-800 ring-1 ring-amber-200 lg:hidden"
+      <div data-wb-topbar-row="1" className="flex h-14 min-w-0 items-center gap-2 xl:contents">
+        {/* No `min-w-0`: the group's automatic minimum is its content with
+            the switcher at its floor, so when the one-row header runs out of
+            room (a storage sentence at 1280) the status group gives way, not
+            the switcher and the fixed controls beside it. */}
+        <div className="flex flex-1 items-center gap-2">
+          <button
+            type="button"
+            onClick={onMenu}
+            aria-label={sidebarOpen ? t("closeMenu") : t("openMenu")}
+            aria-expanded={sidebarOpen}
+            aria-controls={sidebarId}
+            // `md:hidden`, so this control only ever exists on a touch viewport:
+            // 44px (the iOS/Material figure), not the 24px WCAG 2.5.8 floor.
+            // A flex box rather than padding around the icon, so the size is the
+            // button's own and does not move when the icon does.
+            // `shrink-0` is load bearing here and was not needed before: the
+            // topbar row is tight at 390px, and the old `p-1.5` held 32px only
+            // because padding does not shrink. With the size on the button and an
+            // svg the reset gives `max-width: 100%`, min-content is zero, and
+            // flex squeezed the only way into the navigation to 0x44 (measured).
+            className="mr-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-slate-500 hover:bg-slate-200/50 hover:text-slate-700 md:hidden"
           >
-            {t("notSavingShort")}
+            <Menu className="h-5 w-5" aria-hidden="true" />
+          </button>
+          {projectControl}
+          <Link
+            href="/new-project"
+            // Leaving for a new site discards a dirty Context editor exactly like
+            // a rail link or a palette jump does, so it asks the same question.
+            // `current` is false: this destination is never the current page.
+            onClick={(event) => confirmNavigation(event, false)}
+            // A bare `text-xs` link is a 16px line box, which is under the 24px
+            // WCAG 2.5.8 minimum: `-my-1 py-1` gets there without changing the
+            // margin box, so nothing in the topbar moves. Vertical only — the
+            // label is already wider than 24px.
+            className="-my-1 hidden shrink-0 whitespace-nowrap py-1 text-xs font-medium text-slate-500 hover:text-slate-900 sm:inline"
+          >
+            + {t("newSite")}
+          </Link>
+          <button
+            ref={paletteButtonRef}
+            type="button"
+            onClick={onPalette}
+            // `w-48` until `lg`: the label and shortcut need 178px (measured
+            // max-content), and 256px left the 768px row no room for the switcher.
+            className="ml-2 hidden w-48 shrink-0 items-center gap-2 rounded-md border border-slate-200 bg-white py-1.5 pl-2.5 pr-1.5 text-xs text-slate-500 hover:border-slate-300 md:flex lg:w-64"
+          >
+            <Search className="h-4 w-4" aria-hidden="true" />
+            <span className="flex-1 whitespace-nowrap text-left">{t("search")}</span>
+            <kbd className="rounded border border-slate-200 bg-slate-50 px-1.5 text-[10px] font-medium text-slate-500">
+              {shortcutKey}
+            </kbd>
+          </button>
+        </div>
+        {/* Shrinks: from `xl` up the status sentence is the one thing here
+            that can give way (truncated below); the chip keeps its text. */}
+        <div className="flex min-w-0 items-center gap-3">
+          {/* Exactly one status element, rendered on every viewport and before it
+              has anything to say: a live region has to exist in the accessibility
+              tree BEFORE its text changes, or the announcement is lost (and a
+              second one would break the shell e2e's single-status locator).
+              Below `xl` the topbar has no room for the sentence, so it is
+              `sr-only` there — still announced, just not painted (the compact
+              label below is what sighted users see); `sr-only` takes it out of
+              the flex flow, so it adds no gap and `empty:-mr-3` only has to
+              cancel one from `xl` up. `swept` is deliberately silent: that state
+              was discarded on purpose. `readonly` is not: nothing this session
+              does will be saved (R14). */}
+          <span
+            role="status"
+            // The live region reads the whole sentence; `title` is how a
+            // sighted user reads it once `truncate` has cut it.
+            title={storageNotice ? t(storageNotice) : undefined}
+            className="max-xl:sr-only text-xs text-amber-700 empty:-mr-3 xl:min-w-0 xl:max-w-[40vw] xl:truncate"
+          >
+            {storageNotice ? t(storageNotice) : null}
           </span>
+          {/* The visible counterpart below `xl`, for every mode with a notice.
+              `aria-hidden`: the live region above already announces the full
+              sentence, so this is not read twice and is never a second status.
+              Absent (not merely hidden) when there is nothing to say, so it adds
+              no flex gap; `xl:hidden` is display:none, which adds none either. */}
+          {storageNotice ? (
+            <span
+              aria-hidden="true"
+              data-wb-storage-compact=""
+              title={t(storageNotice)}
+              // An icon from 768px to 1023px and the words elsewhere: with the
+              // rail and the search box on that band, "Not saved" left the
+              // switcher 34px (en, measured). Both are presentation only: this
+              // element is aria-hidden, the status above announces the sentence,
+              // and the title shows it on hover.
+              className="inline-flex shrink-0 items-center whitespace-nowrap rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-800 ring-1 ring-amber-200 xl:hidden"
+            >
+              <AlertTriangle aria-hidden="true" className="hidden h-4 w-4 md:max-lg:block" />
+              <span className="md:max-lg:hidden">{t("notSavingShort")}</span>
+            </span>
+          ) : null}
+          <DemoChip demo={sampleLoaded} />
+        </div>
+      </div>
+      {/* Row 2, right-aligned below `xl`. From `xl` up it is the tail of the
+          one-row header: header gap-2 plus ml-1 is the gap-3 the chip had to
+          the next control when these sat in one group. `shrink-0`: every
+          control here is fixed, but the group's min-content counts "Clear
+          sample" and "Log out" as wrappable, so without it the group gave way
+          beside a storage sentence at 1280 and, being `justify-end`, spilled
+          left over the chip (en, measured). The sentence gives way instead. */}
+      <div data-wb-topbar-row="2" className="flex shrink-0 items-center justify-end gap-3 pb-2 xl:ml-1 xl:pb-0">
+        {sampleLoaded ? (
+          <button
+            ref={clear.attachButton}
+            type="button"
+            onClick={clear.ask}
+            // Only while the project holds the sample; absent otherwise, so it
+            // adds no flex gap. Below `md` it is a touch target: 44x44 of its
+            // own (a size on the button, not padding round a label) with an
+            // icon, the label kept for assistive tech, and `shrink-0` so a
+            // tight row cannot squeeze it the way it once squeezed the menu
+            // button to 0x44. From `md` up it is text at the chip's 26px.
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded border border-amber-200/60 bg-white text-amber-800 hover:bg-amber-50 md:h-[26px] md:w-auto md:px-2 md:text-xs md:font-medium"
+          >
+            <Eraser className="h-4 w-4 md:hidden" aria-hidden="true" />
+            <span className="sr-only md:not-sr-only">{t("clearSample")}</span>
+          </button>
         ) : null}
-        <DemoChip demo={ready && state.demo} />
+        {/* Renders nothing while closed and portals out when open (Q32), so it
+            is never a flex item here. */}
+        <ConfirmDialog
+          open={clear.boxOpen}
+          onClose={clear.cancel}
+          onConfirm={clear.confirm}
+          title={t("clearSampleConfirm.title")}
+          body={t("clearSampleConfirm.body")}
+          confirmLabel={t("clearSampleConfirm.ok")}
+          cancelLabel={tCommon("cancel")}
+          returnFocusTo={clear.returnFocusRef}
+        />
         <button
           ref={drawerButtonRef}
           type="button"
@@ -139,7 +243,10 @@ export function Topbar({
           aria-busy={!ready}
           // `.wb-reset :focus-visible` draws the ring in `currentColor`, which
           // is white on this inverted button and invisible on the cream topbar.
-          className="h-[26px] rounded bg-wb-ink px-3 text-xs font-medium text-white shadow-sm transition-colors hover:bg-black focus-visible:outline-slate-900"
+          // 44px below `md`, where this is a touch target, and the prototype's
+          // 26px pill from `md` up, where it is not: the rail is permanent
+          // there and the topbar keeps the density the design asks for.
+          className="h-11 shrink-0 whitespace-nowrap rounded bg-wb-ink px-3 text-xs font-medium text-white shadow-sm transition-colors hover:bg-black focus-visible:outline-slate-900 md:h-[26px]"
         >
           {t("artifacts", { count: ready ? artifacts.length : 0 })}
         </button>

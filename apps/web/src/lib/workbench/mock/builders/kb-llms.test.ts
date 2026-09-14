@@ -1,3 +1,4 @@
+import { marked } from "marked";
 import { describe, expect, it } from "vitest";
 import type { KbEntry, Profile } from "../../types.ts";
 import { FIXTURE_PROFILE } from "./builder-fixtures.ts";
@@ -163,6 +164,16 @@ describe("llmsTxt", () => {
     expect(text.endsWith("## Contact\n- https://www.Acme.io/pricing?x=1")).toBe(
       true,
     );
+  });
+
+  // codex S9r2b: the host ends the H1, so a lone `#` run closing it was read as the closing sequence.
+  it("keeps a host ending in a lone `#` whole in its H1", () => {
+    // `a #` is no parseable URL, so domainOf keeps the typed slice.
+    const text = llmsTxt({ ...BASE, profile: { ...FIXTURE_PROFILE, url: "a #" } });
+    expect(text.split("\n")[0]).toBe("# a \\#");
+    for (const gfm of [true, false]) {
+      expect(marked.parse(text, { gfm, async: false }), `gfm ${String(gfm)}`).toContain("<h1>a #</h1>\n");
+    }
   });
 
   it("uses placeholders instead of an empty host when the URL is blank", () => {

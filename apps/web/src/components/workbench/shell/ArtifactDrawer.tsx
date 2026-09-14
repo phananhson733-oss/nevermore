@@ -3,57 +3,13 @@
 import { X } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState, type RefObject } from "react";
+import { ARTIFACT_MIME, downloadName } from "@/lib/workbench/artifact-file";
 import { downloadText } from "@/lib/workbench/download";
-import { truncateUtf16 } from "@/lib/workbench/truncate";
 import { useWorkbench } from "@/lib/workbench/store/hooks";
-import type { Artifact, ArtifactType } from "@/lib/workbench/types";
 import { Dialog } from "../ui/Dialog.tsx";
 
 /** How long the "Copied" label stays up (jsx `flash()`). */
 const COPY_FLASH_MS = 1300;
-
-const MIME: Readonly<Record<ArtifactType, string>> = {
-  csv: "text/csv;charset=utf-8",
-  md: "text/markdown;charset=utf-8",
-  json: "application/json;charset=utf-8",
-  prompt: "text/plain;charset=utf-8",
-};
-
-/** The extension always follows `type`, never whatever the stored name ends in. */
-const EXT: Readonly<Record<ArtifactType, string>> = {
-  csv: "csv",
-  md: "md",
-  json: "json",
-  prompt: "txt",
-};
-
-/** Longest stem the download name keeps; the schema already caps a stored `filename` at 120. */
-const STEM_MAX = 100;
-
-/**
- * The name the browser is handed for a download. The stored `filename` (or the
- * title) is only a suggestion: everything outside `[\p{L}\p{N}_ .()-]` (the
- * same class as `ARTIFACT_FILENAME_PATTERN`, so a Chinese title survives)
- * becomes `_`, so no path separator or control character reaches the save
- * dialog, the stem is cut at `STEM_MAX`, and a text extension it carried is
- * replaced by the one the artifact `type` dictates — a `.md` artifact named
- * `report.csv` is `report.md`. Only the known text extensions are stripped, so
- * a title such as `Release 1.2` keeps its `.2`. Leading dots go too: `.env`
- * would otherwise be handed over as the hidden file `.env.md`, and `..` as
- * `...md`. A stem that sanitises to nothing falls back to `artifact` so the
- * file never ends up as a bare, hidden `.csv`.
- */
-export function downloadName(artifact: Artifact): string {
-  const stem = truncateUtf16(
-    (artifact.filename ?? artifact.title)
-      .replace(/[^\p{L}\p{N}_ .()-]/gu, "_")
-      .replace(/\.(?:csv|md|markdown|json|txt|prompt)$/i, "")
-      .trim()
-      .replace(/^[. ]+/, ""),
-    STEM_MAX,
-  );
-  return `${stem === "" ? "artifact" : stem}.${EXT[artifact.type]}`;
-}
 
 /**
  * The artifact basket (jsx L2485–2526). Producers write the "sample data"
@@ -122,8 +78,15 @@ export function ArtifactDrawer({
           {state.artifacts.length > 0 ? (
             <button
               type="button"
-              onClick={() => dispatch({ type: "clearArtifacts" })}
-              className="text-xs text-slate-600 hover:text-slate-900"
+              // The ids this render shows: the click covers those, not an
+              // artifact queued behind it (codex S6r3 #1).
+              onClick={() => dispatch({ type: "clearArtifacts", ids: state.artifacts.map((a) => a.id) })}
+              // `-my-1 py-1` raises the 16px line box of `text-xs` to the 24px
+              // WCAG 2.5.8 minimum without moving anything: the margin box is
+              // the size it was. Vertical only — every label here is already
+              // wider than 24px, and `-mx-1` would leave the hit areas of
+              // neighbouring buttons 4px apart instead of the visible 12.
+              className="-my-1 py-1 text-xs text-slate-600 hover:text-slate-900"
             >
               {t("clear")}
             </button>
@@ -133,7 +96,9 @@ export function ArtifactDrawer({
             type="button"
             onClick={onClose}
             aria-label={t("close")}
-            className="rounded p-1 hover:bg-slate-100"
+            // p-1.5, not p-1: a 16px icon plus p-1 lands exactly on the 24px
+            // minimum, with nothing left for a rounding difference.
+            className="rounded p-1.5 hover:bg-slate-100"
           >
             <X className="h-4 w-4" aria-hidden="true" />
           </button>
@@ -155,27 +120,36 @@ export function ArtifactDrawer({
                     {a.at}
                   </span>
                 </div>
+                {/* Same `-my-1 py-1` as the header's "clear": 24px tall hit
+                    areas, unchanged layout, and the visible 12px gap between
+                    them left alone. */}
                 <div className="mt-2 flex gap-3 text-xs">
                   <button
                     type="button"
                     onClick={() => void copy(a.id, a.content)}
-                    className="text-slate-600 hover:text-slate-900"
+                    className="-my-1 py-1 text-slate-600 hover:text-slate-900"
                   >
                     {copied === a.id ? t("copied") : t("copy")}
                   </button>
                   <button
                     type="button"
                     onClick={() =>
-                      downloadText(downloadName(a), a.content, MIME[a.type])
+                      downloadText(
+                        downloadName(a),
+                        a.content,
+                        ARTIFACT_MIME[a.type],
+                      )
                     }
-                    className="text-slate-600 hover:text-slate-900"
+                    className="-my-1 py-1 text-slate-600 hover:text-slate-900"
                   >
                     {t("download")}
                   </button>
                   <button
                     type="button"
-                    onClick={() => dispatch({ type: "removeArtifact", id: a.id })}
-                    className="text-rose-600 hover:text-rose-800"
+                    onClick={() =>
+                      dispatch({ type: "removeArtifact", id: a.id })
+                    }
+                    className="-my-1 py-1 text-rose-600 hover:text-rose-800"
                   >
                     {t("remove")}
                   </button>

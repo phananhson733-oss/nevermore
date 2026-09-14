@@ -6,7 +6,13 @@ import type { AuditReport } from "@/lib/workbench/types";
 export interface SidebarSite {
   readonly host: string;
   readonly marketCode: string | null;
-  /** null = not wired yet (PR-3 reads sources readiness). */
+  /**
+   * `null` is "this could not be settled" — the first read, a failed read, no
+   * gsc slot, or a state that is not a finished connection — and is rendered
+   * as the not-known dash, never as "not connected" (Q4). A background refetch
+   * keeps the previous reading. `ShellChrome` derives it; `gsc-connection.ts`
+   * states exactly what maps where.
+   */
   readonly gscConnected: boolean | null;
 }
 
@@ -40,7 +46,15 @@ export function SiteCard({
           {site.marketCode ?? t("siteCard.none")}
         </dd>
         <dt className="text-wb-rail-label">{t("siteCard.gsc")}</dt>
-        <dd className="text-zinc-300">
+        {/* The dash is two characters wide and the same glyph the other two
+            rows use for their own kind of nothing. The title is the only place
+            this row can say which nothing it means. */}
+        <dd
+          className="text-zinc-300"
+          title={
+            site.gscConnected === null ? t("siteCard.unknownHint") : undefined
+          }
+        >
           {site.gscConnected === null
             ? t("siteCard.none")
             : site.gscConnected

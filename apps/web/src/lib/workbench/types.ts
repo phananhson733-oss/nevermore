@@ -268,6 +268,9 @@ export interface GscSignals {
   readonly near: number | null;
 }
 
+/** Where the GSC rows in play came from (Q6). Labels derived from GSC data read this, never `state.demo`. */
+export type GscRowsSource = "sample" | "user";
+
 export interface IcpSegment {
   readonly seg: string;
   readonly role: string;
@@ -289,6 +292,8 @@ export interface AiDoc {
 export interface ProfileDoc {
   readonly crawl: CrawlSignals | null;
   readonly gsc: GscSignals | null;
+  /** Provenance of the rows behind `gsc`, frozen at generation (Q6) so a later import cannot relabel a written document; `null` when there were none, or when `gsc` has numbers but the source is unknown (only a tampered envelope), which renders as 来源未知. */
+  readonly gscSource: GscRowsSource | null;
   readonly third: CrawlSignals | null;
   readonly ai: AiDoc;
   readonly at: string;
@@ -320,8 +325,25 @@ export interface Connections {
 export interface WorkbenchProjectState {
   readonly profile: Profile;
   readonly profileDoc: ProfileDoc | null;
+  /**
+   * Dead field (Q31): only `loadDemo` / `clearDemo` write it, no view renders it,
+   * removing it would need a `PERSISTED_VERSION` bump, and rendering it as "GSC
+   * connected" lies both ways (true for the sample, false after a real import).
+   */
   readonly conns: Connections;
   readonly gscRows: readonly GscRow[];
+  /**
+   * Provenance of `gscRows` (Q6). Enforced in one direction: no rows, no source.
+   * The reducer writes the two together (`sourceFor`); a stored envelope with a
+   * source and no rows is normalised to `null` where persisted state is parsed
+   * (`classifyPersistedState`), which both load paths go through.
+   * The other direction is not enforced: rows with a `null` source can exist
+   * (only a tampered envelope makes them). No rule can tell sample rows from the
+   * user's, so neither a guessed source nor `state.demo` nor dropping the rows is
+   * honest. Readers render `null` as unknown provenance, never as either source;
+   * a profile snapshot frozen from it says 「（来源未知）」 (`profileDocMarkdown`).
+   */
+  readonly gscRowsSource: GscRowsSource | null;
   readonly seeds: string;
   readonly built: boolean;
   readonly saved: readonly SavedKeyword[];

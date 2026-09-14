@@ -1,0 +1,187 @@
+/** @vitest-environment jsdom */
+
+/**
+ * The week cards' own dates and deltas (codex S7a #6 / #7, S7r2 #3). A card
+ * under the page's date range names when its check ran and, when that check is
+ * outside the range, says that of the check itself, instead of letting an old
+ * score read as this week's; it never says the range holds no check, which
+ * the archived runs can contradict. A mention share printed as a band carries
+ * no point delta.
+ */
+
+import { getMessages } from "@sf/i18n";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { WorkbenchProjectState } from "@/lib/workbench/types";
+import {
+  BLANK_WEEK,
+  type RenderedWeek,
+  type WeekLocale,
+  gsc,
+  hits,
+  one,
+  renderWeek,
+  report,
+  text,
+} from "./week-view-test-harness.tsx";
+
+const NOW = new Date(2026, 8, 14, 12, 0, 0);
+const en = getMessages("en").workbench;
+const zh = getMessages("zh-CN").workbench;
+
+let rendered: RenderedWeek | null = null;
+
+function show(state: WorkbenchProjectState, locale: WeekLocale = "en"): HTMLElement {
+  rendered = renderWeek(state, { locale });
+  return rendered.container;
+}
+
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(NOW);
+});
+
+afterEach(() => {
+  rendered?.unmount();
+  rendered = null;
+  vi.useRealTimers();
+});
+
+const THIS_WEEK: WorkbenchProjectState = {
+  ...BLANK_WEEK,
+  lastAudit: report("2026-09-13 10:00", 56, []),
+  lastVis: { at: "2026-09-13 11:00", results: hits(14, 40) },
+};
+
+// codex S7a #6's state: both checks ran on 2026-08-25, under a 2026-09-08 to 2026-09-14 range.
+const OLD: WorkbenchProjectState = {
+  ...BLANK_WEEK,
+  lastAudit: report("2026-08-25 10:00", 80, []),
+  auditHistory: [report("2026-08-24 10:00", 60, [])],
+  lastVis: { at: "2026-08-25 11:00", results: hits(1, 2) },
+};
+
+describe("week cards: when their check ran", () => {
+  it("print the latest check's stamp, and no range sentence when it is inside the range (en)", () => {
+    const scope = show(THIS_WEEK);
+    const health = one(scope, "[data-wb-week-card='health']");
+    const mention = one(scope, "[data-wb-week-card='mention']");
+    expect(text(health, "[data-wb-foot='at']")).toBe("Checked 2026-09-13 10:00");
+    expect(text(mention, "[data-wb-foot='at']")).toBe("Checked 2026-09-13 11:00");
+    expect(scope.querySelector("[data-wb-foot='outside']")).toBeNull();
+    expect(scope.querySelector("[data-wb-foot='rangeUnknown']")).toBeNull();
+  });
+
+  it("say the check is outside the range when the latest is older than it (zh)", () => {
+    const scope = show(OLD, "zh-CN");
+    expect(scope.textContent).toContain("2026-09-08 至 2026-09-14");
+    const health = one(scope, "[data-wb-week-card='health']");
+    expect(health.textContent?.startsWith(`80+20${zh.week.cards.health.label}`)).toBe(true);
+    expect(text(health, "[data-wb-foot='at']")).toBe("检查于 2026-08-25 10:00");
+    expect(text(health, "[data-wb-foot='outside']")).toBe("这次检查不在上面的日期范围内");
+    expect(text(health, "[data-wb-foot='since']")).toBe("较上次（2026-08-24 10:00）");
+    const mention = one(scope, "[data-wb-week-card='mention']");
+    expect(mention.textContent?.startsWith(`50%${zh.week.cards.mention.label}`)).toBe(true);
+    expect(text(mention, "[data-wb-foot='at']")).toBe("检查于 2026-08-25 11:00");
+    expect(text(mention, "[data-wb-foot='outside']")).toBe("这次检查不在上面的日期范围内");
+    expect(scope.querySelector("[data-wb-foot='rangeUnknown']")).toBeNull();
+  });
+
+  it("say the same in en", () => {
+    const scope = show(OLD);
+    expect(text(scope, "[data-wb-week-card='health'] [data-wb-foot='outside']")).toBe(
+      "This check falls outside the date range above",
+    );
+  });
+
+  // codex S7r2 #3: the latest check is stamped a minute after now, and an
+  // archived check inside the range is on the same page's feed. 「这段日期内没有
+  // 新的检查」 was false there.
+  it.each<[WeekLocale, string]>([
+    ["zh-CN", "这次检查不在上面的日期范围内"],
+    ["en", "This check falls outside the date range above"],
+  ])("say nothing about the rest of the range when the latest check is in the future (%s)", (locale, sentence) => {
+    const scope = show(
+      { ...BLANK_WEEK, auditHistory: [report("2026-09-14 10:00", 60, [])], lastAudit: report("2026-09-14 12:01", 80, []) },
+      locale,
+    );
+    const health = one(scope, "[data-wb-week-card='health']");
+    expect(text(health, "[data-wb-foot='at']")).toBe(locale === "en" ? "Checked 2026-09-14 12:01" : "检查于 2026-09-14 12:01");
+    expect(text(health, "[data-wb-foot='outside']")).toBe(sentence);
+    expect(scope.textContent).not.toMatch(/没有新的检查|没有检查|no new check|no check/iu);
+    const stamps = [...scope.querySelectorAll("[data-wb-event] time")].map((time) => time.textContent);
+    expect(stamps).toEqual(["2026-09-14 10:00"]);
+  });
+
+  // The stamp does not parse, so the page cannot tell whether the check is in the
+  // range; the card says exactly that and names no cause.
+  it.each<[WeekLocale, string]>([
+    ["zh-CN", "无法确认这次检查是否在上面的日期范围内。"],
+    ["en", "It can't be confirmed whether this check falls within the date range above."],
+  ])("say it cannot be confirmed when the check's stamp does not parse (%s)", (locale, sentence) => {
+    const outside = locale === "en" ? "This check falls outside the date range above" : "这次检查不在上面的日期范围内";
+    const scope = show(
+      { ...BLANK_WEEK, lastAudit: report("2026-02-30 10:00", 80, []), lastVis: { at: "2026-09-14 9:00", results: hits(1, 2) } },
+      locale,
+    );
+    for (const name of ["health", "mention"]) {
+      const card = one(scope, `[data-wb-week-card='${name}']`);
+      expect(text(card, "[data-wb-foot='rangeUnknown']"), name).toBe(sentence);
+      expect(card.querySelector("[data-wb-foot='outside']"), name).toBeNull();
+      // By text, not by marker (codex S8r3): the outside sentence in an element
+      // without the marker would read beside this one and pass the line above.
+      expect(card.textContent, name).not.toContain(outside);
+    }
+  });
+
+  it("have no stamp and no range sentence when nothing was checked", () => {
+    const scope = show({ ...BLANK_WEEK, gscRows: [gsc("a", 50)], gscRowsSource: "user" });
+    expect(scope.querySelector("[data-wb-foot='at']")).toBeNull();
+    expect(scope.querySelector("[data-wb-foot='outside']")).toBeNull();
+    expect(scope.querySelector("[data-wb-foot='rangeUnknown']")).toBeNull();
+  });
+});
+
+describe("week cards: a mention share printed as a band", () => {
+  // codex S7a #7: two <1% shares used to draw "+1pt".
+  it("names the earlier run but draws no point delta", () => {
+    const scope = show({
+      ...BLANK_WEEK,
+      lastVis: { at: "2026-09-13 11:00", results: hits(2, 201) },
+      visHistory: [{ at: "2026-09-08 11:00", results: hits(1, 201) }],
+    });
+    const card = one(scope, "[data-wb-week-card='mention']");
+    expect(card.textContent?.startsWith(`<1%${en.week.cards.mention.label}`)).toBe(true);
+    expect(card.textContent).not.toMatch(/[+\-−]\s*\d+\s*pt/u);
+    expect(text(card, "[data-wb-foot='since']")).toBe("vs. the previous run (2026-09-08 11:00)");
+  });
+});
+
+describe("week cards: borderline queries with some positions unknown", () => {
+  // codex S7a #4: a known 5 and an unknown row printed "0" over "no queries in that range".
+  it.each<[WeekLocale, string]>([
+    ["zh-CN", "另有 1 条排名未知"],
+    ["en", "1 more query has no known position"],
+  ])("counts the known positions and names the unknown rows (%s)", (locale, sentence) => {
+    const scope = show(
+      { ...BLANK_WEEK, gscRows: [gsc("known", 5), gsc("unknown", null)], gscRowsSource: "user" },
+      locale,
+    );
+    const card = one(scope, "[data-wb-week-card='borderline']");
+    expect(card.textContent?.startsWith("0")).toBe(true);
+    expect(text(card, "[data-wb-foot='unknownRows']")).toBe(sentence);
+  });
+
+  it("adds nothing when every position is known", () => {
+    const scope = show({ ...BLANK_WEEK, gscRows: [gsc("a", 5), gsc("b", 12)], gscRowsSource: "user" });
+    const card = one(scope, "[data-wb-week-card='borderline']");
+    expect(card.textContent?.startsWith("1")).toBe(true);
+    expect(card.querySelector("[data-wb-foot='unknownRows']")).toBeNull();
+  });
+
+  it("stays a dash with no footnote when no position is known", () => {
+    const scope = show({ ...BLANK_WEEK, gscRows: [gsc("x", null), gsc("y", null)], gscRowsSource: "user" });
+    const card = one(scope, "[data-wb-week-card='borderline']");
+    expect(card.textContent?.startsWith("—")).toBe(true);
+    expect(card.querySelector("[data-wb-foot]")).toBeNull();
+  });
+});

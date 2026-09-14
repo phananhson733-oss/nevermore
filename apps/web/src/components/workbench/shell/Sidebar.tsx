@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { activeWorkbenchPage, workbenchHref } from "@/lib/workbench/routes";
 import { useWorkbench, useWorkbenchCounts } from "@/lib/workbench/store/hooks";
+import { useShortcutLabel } from "../hooks/useShortcutLabel.ts";
 import { cn } from "../ui/cn.ts";
 import { SiteCard, type SidebarSite } from "./SiteCard.tsx";
 import { TONE_DOT, WORKBENCH_NAV } from "./workbench-nav.ts";
@@ -39,6 +40,9 @@ export function Sidebar({
   const counts = useWorkbenchCounts();
   const { state, ready } = useWorkbench();
   const { confirmNavigation } = useProjectShellEffects();
+  // ⌘ on a Mac, Ctrl everywhere else. The sentence is the translated part;
+  // the chord is a key name and goes in through ICU `{key}`.
+  const shortcutKey = useShortcutLabel();
 
   return (
     <aside
@@ -148,7 +152,8 @@ export function Sidebar({
 
         <div className="mt-4 border-t border-wb-rail-3/50 px-2 pt-4 text-[11px] leading-relaxed text-wb-rail-muted">
           <span className="block font-medium">
-            {t("shell.sites", { count: siteCount })} · {t("shell.shortcutHint")}
+            {t("shell.sites", { count: siteCount })} ·{" "}
+            {t("shell.shortcutHint", { key: shortcutKey })}
           </span>
           <span className="mt-1 block text-[10px] text-wb-rail-dim">
             {t("shell.footerNote")}

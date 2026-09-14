@@ -204,6 +204,12 @@ const crawlSignals = z.strictObject({
   refdomains: z.number(),
 });
 
+/**
+ * `GscRowsSource | null` (types.ts), used twice: the project's current rows and
+ * the provenance a profile snapshot froze when it was generated.
+ */
+const gscRowsSource = z.enum(["sample", "user"]).nullable();
+
 const profileDoc = z.strictObject({
   crawl: crawlSignals.nullable(),
   gsc: z
@@ -220,6 +226,15 @@ const profileDoc = z.strictObject({
       near: nullableNumber,
     })
     .nullable(),
+  // Pre-ship exemption 5, and the reason it is worth a field at all (Q6): a
+  // document generated from the sample rows and then left alone while the user
+  // imports real ones must keep saying "sample", and the reverse must not start
+  // saying it. Only the value frozen here can answer that, so it is persisted
+  // with the document. Adding a field otherwise follows the reader-first rule in
+  // the file header; PR-1/PR-2 never shipped, so no envelope without this key
+  // exists outside a developer's browser and PERSISTED_VERSION stays 1. After
+  // release, a change like this needs the reader-first release or a bump.
+  gscSource: gscRowsSource,
   third: crawlSignals.nullable(),
   ai: z.strictObject({
     summary: z.string(),
@@ -263,6 +278,11 @@ export const projectStateSchema = z.strictObject({
   profileDoc: profileDoc.nullable(),
   conns: z.strictObject({ GSC: z.boolean(), GA4: z.boolean() }),
   gscRows: z.array(gscRow),
+  // Pre-ship exemption 4: same reasoning as the `profileDoc.gscSource` note
+  // above. An envelope written before this field existed is `invalid` (the
+  // missing key is a real defect, not an unknown one), so it is discarded and
+  // overwritten rather than freezing the project read-only.
+  gscRowsSource,
   seeds: z.string(),
   built: z.boolean(),
   saved: z.array(savedKeyword),
@@ -313,14 +333,54 @@ export type PersistedParse =
   | { readonly kind: "incompatible" | "invalid" };
 
 /**
+ * "No rows, no source" (Q6), re-applied to what came off disk. The reducer keeps
+ * it for everything it writes (`sourceFor`), but the schema checks each field on
+ * its own, so stored bytes can hold `{gscRows: [], gscRowsSource: "sample"}`. The
+ * realistic writer is not the dev tools: `PERSISTED_VERSION` does not change
+ * across a deploy, so during a deploy window a tab still running another build
+ * writes the same key, and the `storage` event hands its state to this tab.
+ *
+ * What such a mark can mislead is narrow, and worth stating exactly: it never
+ * reaches the next paste, because `setGscRows` always rewrites the source. The
+ * exposure is any reader that looks at the source while there are no rows, and
+ * — through the cross-tab path — this tab writing the mark back to disk on its
+ * next local edit.
+ *
+ * Normalised, not rejected: the failure radius has to match where the failure
+ * is. A MISSING key is `invalid` and the envelope goes, because it was written by
+ * a build without the field; an envelope with every key that disagrees with
+ * itself in one of them is not another version of the format, and condemning it
+ * would take the basket, the profile snapshot and the seed words with it. A
+ * `.refine` only looks more thorough because it would sit on this same read
+ * layer that both load paths share; the fix is to normalise at that layer, not
+ * to switch to rejecting.
+ *
+ * Only this direction. Rows with a `null` source stay as they are: nothing can
+ * tell sample rows from the user's by looking at them, and inventing either (or
+ * reading `state.demo`, or dropping the user's rows) would be a guess written
+ * down as a fact. Readers render `null` as unknown provenance (types.ts).
+ *
+ * Returns the same object when there is nothing to fix.
+ */
+function withoutOrphanedGscSource(state: WorkbenchProjectState): WorkbenchProjectState {
+  return state.gscRows.length === 0 && state.gscRowsSource !== null ? { ...state, gscRowsSource: null } : state;
+}
+
+/**
  * `incompatible`: every issue, at any depth, is a key this build does not know
  * (a newer build's addition, or a field this build removed). Callers must not
  * write over it. `invalid`: anything else, including an unknown key next to a
  * real defect.
+ *
+ * `ok` carries a normalised state (`withoutOrphanedGscSource`). This is the exit
+ * every read of persisted bytes goes through — first hydration and the cross-tab
+ * `storage` event both read via `readProjectState` — so no load path has to
+ * remember to normalise, and the one that must NOT settle interrupted runs
+ * (cross-tab) still gets this.
  */
 export function classifyPersistedState(raw: unknown): PersistedParse {
   const result = persistedSchema.safeParse(raw);
-  if (result.success) return { kind: "ok", state: result.data.state };
+  if (result.success) return { kind: "ok", state: withoutOrphanedGscSource(result.data.state) };
   const { issues } = result.error;
   const onlyUnknownKeys = issues.length > 0 && issues.every((issue) => issue.code === "unrecognized_keys");
   return { kind: onlyUnknownKeys ? "incompatible" : "invalid" };

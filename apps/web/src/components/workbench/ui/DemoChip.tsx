@@ -7,7 +7,7 @@ export function DemoChip({ demo = false }: { readonly demo?: boolean }) {
   return (
     <span
       title={t("sampleTitle")}
-      className="inline-flex h-[26px] items-center rounded border border-amber-200/60 bg-amber-50 px-2 text-xs font-medium text-amber-700"
+      className="inline-flex h-[26px] shrink-0 items-center whitespace-nowrap rounded border border-amber-200/60 bg-amber-50 px-2 text-xs font-medium text-amber-700"
     >
       {demo ? t("sampleSite") : t("sampleData")}
     </span>

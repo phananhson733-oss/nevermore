@@ -1,21 +1,61 @@
-/* @input  — tailwindcss theme + utilities（刻意不引 preflight）
- * @output — 工作台 token、字体绑定、只作用于 .wb-reset 的最小 reset、仪表规则、
+/* @input  — tailwindcss theme + utilities（刻意不引 preflight；自动扫描关闭，只扫 @source 列出的
+ *           components/workbench 与读主题变量的 app-shell.module.css，app/tailwind-source-scope.test.ts
+ *           守住范围）
+ * @output — 工作台 token、字体绑定（@theme inline）、只作用于 .wb-reset 的最小 reset、仪表规则、
  *           旧页专用的 #main-content 内边距（components 层，只在 <main> 没有 .wb-reset
  *           直接子节点时生效，等价于旧壳 app-shell.module.css 的 .main）、
  *           打印时去掉内容列的侧栏留白（在 utilities 层、且排在 Tailwind utilities 之后，
  *           否则同特异度下赢不了 md:ml-64）
- * @pos    — app/layout.tsx 在 globals.css 之后引入；旧页面在 <main> 内不带 .wb-reset，
- *           reset 不波及它们，而旧壳的内容区留白由上面那条 :has() 规则接管
+ * @pos    — 由 app/p/[projectId]/layout.tsx 引入（根 layout 只引 globals.css，按布局嵌套
+ *           排在其后）；/login、/new-project 不加载本文件。字体变量类挂在项目 layout 的
+ *           #wb-root 上而非 <html>，所以 @theme 必须是 inline。旧页面在 <main> 内不带
+ *           .wb-reset，reset 不波及它们，而旧壳的内容区留白由上面那条 :has() 规则接管
  * 一旦本文件被更新，务必更新开头注释
  */
 @layer theme, base, components, utilities;
 @import "tailwindcss/theme.css" layer(theme);
-@import "tailwindcss/utilities.css" layer(utilities);
+@import "tailwindcss/utilities.css" layer(utilities) source(none);
+/* Scan scope. Without `source(none)` Tailwind detects sources automatically:
+   it walks all of apps/web and emits a utility for every class-shaped word it
+   meets, prose and legacy pages included. Now only the roots below are scanned.
+   A utility class written in any other file is not generated and its element
+   renders unstyled, with no error; app/tailwind-source-scope.test.ts walks every
+   module under src/ and fails when that happens. Paths are relative to this
+   file, and a path with [brackets] is a glob to Tailwind, not a literal name. */
+@source "../components/workbench";
+/* components/app-shell/app-shell.module.css styles the project switcher inside
+   the workbench topbar (`:global(.wb-reset) ...`) with Tailwind theme colours
+   read through var(), e.g. var(--color-slate-400, #94a3b8). Under `@theme inline`
+   a theme variable reaches :root only while a scanned file or this stylesheet
+   mentions it, so without this line that module silently drops to its hex
+   fallbacks. The scope test fails for any file outside these roots that reads a
+   Tailwind theme variable which does not reach :root. */
+@source "../components/app-shell/app-shell.module.css";
 /* No tw-animate-css: nothing in PR-1 uses an `animate-in` utility. The PR that
    first needs one adds the dependency back with `@import "tw-animate-css";`
    here (no layer — it ships only @property / @theme inline / @utility). */
 
-@theme {
+/* `inline` is load-bearing. The next/font class that defines --font-wb is on the
+   project layout root (app/p/[projectId]/layout.tsx), not <html>. A plain `@theme`
+   resolves --font-sans at :root, where --font-wb does not exist, and every
+   `font-sans` element silently falls back to the system stack. `inline` writes
+   the value into the utility, so var(--font-wb) resolves where it is used.
+   Side effect: Tailwind now emits a token to :root only while something it
+   compiles or scans reads it through var(): a rule in this file (today only
+   --color-wb-seo, from the <progress> rules below), or an arbitrary value or the
+   bare variable name in a file under the @source roots. Such a read does get its
+   token. What gets nothing, with no error, is a read of a name @theme does not
+   declare (workbench-css.test.ts fails for a --color-wb-* one in this file; other
+   names are not checked) or a read Tailwind never compiles or scans, such as a
+   stylesheet outside the @source roots (none today;
+   app/tailwind-source-scope.test.ts fails for one). The same rule works against
+   the font: any such read of --font-sans emits it to :root, where --font-wb is
+   undefined, and that element falls back, as does any other token whose value
+   reads var(--font-wb), such as an alias --font-mono: var(--font-wb, ...).
+   workbench-css.test.ts fails when --font-sans, or any variable reading
+   --font-wb, reaches :root; e2e/legacy-style-parity.mock.spec.ts fails when
+   --font-sans is declared on <html>. */
+@theme inline {
   --font-sans: var(--font-wb, ui-sans-serif), "PingFang SC", "Hiragino Sans GB",
     "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif;
   --color-wb-paper: #faf9f6;

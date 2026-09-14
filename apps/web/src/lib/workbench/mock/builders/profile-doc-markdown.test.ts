@@ -10,10 +10,11 @@ import {
   type Token,
   type Tokens,
   lexer,
+  marked,
   walkTokens,
 } from "marked";
 import { describe, expect, it } from "vitest";
-import type { CrawlSignals, GscSignals, ProfileDoc } from "../../types.ts";
+import type { CrawlSignals, GscSignals, Profile, ProfileDoc } from "../../types.ts";
 import { FIXTURE_DOC, FIXTURE_PROFILE } from "./builder-fixtures.ts";
 import { bulletLines } from "./compose.ts";
 import {
@@ -89,6 +90,15 @@ function headingTexts(markdown: string, depth: number): readonly string[] {
   return found;
 }
 
+/** The raw text of every html token, block or inline, anywhere in the document. */
+function htmlTokens(markdown: string): readonly string[] {
+  let found: readonly string[] = [];
+  walkTokens(lexer(markdown), (token) => {
+    if (token.type === "html") found = [...found, token.raw];
+  });
+  return found;
+}
+
 /** Top-level tokens without the blank-line `space` tokens. */
 function blocks(markdown: string): readonly Token[] {
   return lexer(markdown).filter((token) => token.type !== "space");
@@ -125,13 +135,22 @@ function nestedBlocks(item: Tokens.ListItem): readonly string[] {
   return found;
 }
 
-/** The text a renderer shows for an item holding only inline content (backslash escapes resolved); null otherwise. */
+const ENTITIES: Readonly<Record<string, string>> = { lt: "<", gt: ">", amp: "&", quot: '"', "#39": "'" };
+
+/**
+ * The text a reader shows for an item holding only inline content; null
+ * otherwise. Backslash escapes are resolved by the renderer, and the entities
+ * it leaves for the browser are decoded: docText writes a tag-shaped `<` as
+ * `&lt;` (codex S7r3), which a reader shows as `<`.
+ */
 function itemText(item: Tokens.ListItem): string | null {
   const [only, ...rest] = item.tokens;
   if (item.task || only === undefined || rest.length > 0) return null;
   if (only.type !== "text") return null;
   const inline = (only as Tokens.Text).tokens ?? [];
-  return new Parser().parseInline(inline, new TextRenderer());
+  return new Parser()
+    .parseInline(inline, new TextRenderer())
+    .replace(/&(lt|gt|amp|quot|#39);/gu, (_match, name: string) => ENTITIES[name] ?? "");
 }
 
 describe("profileDocMarkdown numbers", () => {
@@ -148,8 +167,9 @@ describe("profileDocMarkdown numbers", () => {
     expect(doc).toContain(
       [
         "## 搜索表现（示例数据）",
+        "- 查询 3 条，其中品牌词 n/a 条",
         "- 品牌词点击 n/a，非品牌词点击 n/a",
-        "- 临界词（11-30 名）n/a 条",
+        "- 临界词（排名 >10 且 ≤30）n/a 条",
         "- 点击最多：",
       ].join("\n"),
     );
@@ -178,37 +198,83 @@ describe("profileDocMarkdown H1", () => {
   });
 });
 
-describe("profileDocMarkdown with a block opener as the positioning", () => {
-  const baseline = profileDocMarkdown({
-    profile: FIXTURE_PROFILE,
-    doc: FIXTURE_DOC,
-  });
+function withSegmentName(seg: string): ProfileDoc {
+  const [first, ...rest] = FIXTURE_DOC.ai.icp;
+  if (first === undefined) throw new Error("fixture has no ICP segment");
+  return { ...FIXTURE_DOC, ai: { ...FIXTURE_DOC.ai, icp: [{ ...first, seg }, ...rest] } };
+}
 
+/** What a reader shows for each heading of `depth`: its inline tokens rendered as text, escapes resolved. */
+function shownHeadings(markdown: string, depth: number, gfm: boolean): readonly string[] {
+  let found: readonly string[] = [];
+  walkTokens(lexer(markdown, { gfm }), (token) => {
+    if (isHeading(token) && token.depth === depth) {
+      found = [...found, new Parser().parseInline(token.tokens, new TextRenderer())];
+    }
+  });
+  return found;
+}
+
+// codex S9r2b: `### 1. Acme ###` rendered `1. Acme`, the trailing run taken for the heading's closing sequence.
+describe("profileDocMarkdown ICP segment headings", () => {
+  it.each(["Acme ###", "###", "# #", "a #b#"])("keeps a segment named %j whole in its H3, in both marked modes", (seg) => {
+    const md = profileDocMarkdown({ profile: FIXTURE_PROFILE, doc: withSegmentName(seg) });
+    for (const gfm of [true, false]) {
+      expect(shownHeadings(md, 3, gfm), `gfm ${String(gfm)}`).toEqual([`1. ${seg}`]);
+      expect(marked.parse(md, { gfm, async: false }), `gfm ${String(gfm)}`).toContain(`<h3>1. ${seg}</h3>\n`);
+    }
+  });
+});
+
+const BASELINE_DOC = profileDocMarkdown({ profile: FIXTURE_PROFILE, doc: FIXTURE_DOC });
+
+function withSummary(summary: string): string {
+  return profileDocMarkdown({
+    profile: FIXTURE_PROFILE,
+    doc: { ...FIXTURE_DOC, ai: { ...FIXTURE_DOC.ai, summary } },
+  });
+}
+
+// The summary is the snapshot value that starts a bullet on its own; the
+// positioning this used to carry is no longer in the document (T9 review #2).
+describe("profileDocMarkdown with a block opener as the product summary", () => {
   it.each(BLOCK_OPENERS)("renders %j as the text of its one bullet", (value) => {
-    const md = profileDocMarkdown({
-      profile: { ...FIXTURE_PROFILE, positioning: value },
-      doc: FIXTURE_DOC,
-    });
-    const item = onlyItem(itemsUnder(blocks(md), "一句话定位"));
+    const md = withSummary(value);
+    const item = onlyItem(itemsUnder(blocks(md), "产品描述"));
     expect(nestedBlocks(item)).toEqual([]);
     expect(itemText(item)).toBe(value);
-    expect(blockTokenCounts(md)).toEqual(blockTokenCounts(baseline));
+    expect(blockTokenCounts(md)).toEqual(blockTokenCounts(BASELINE_DOC));
     expect(linkDefinitionLabels(md)).toEqual([]);
   });
 
-  it("does not let it turn the fixed [未填] of another section into a link", () => {
-    const md = profileDocMarkdown({
-      profile: {
-        ...FIXTURE_PROFILE,
-        positioning: "[未填]: https://evil.example",
-        features: "",
-      },
-      doc: FIXTURE_DOC,
-    });
-    expect(itemText(onlyItem(itemsUnder(blocks(md), "核心功能")))).toBe(
-      "[未填]",
+  it("does not let it turn the fixed [补证据与核对日期] of the facts into a link", () => {
+    const md = withSummary("[补证据与核对日期]: https://evil.example");
+    expect(itemText(onlyItem(itemsUnder(blocks(md), "可被 AI 引用的事实")))).toBe(
+      "[示例事实：Acme 提供 站点审计，需补证据与核对日期]｜[补证据与核对日期]",
     );
     expect(linkDefinitionLabels(md)).toEqual([]);
+  });
+});
+
+// T9 review #2: the doc tab and the markdown copied, exported or saved from it
+// say the same things, read from the same snapshot.
+describe("profileDocMarkdown fields", () => {
+  const textsUnder = (md: string, title: string): readonly (string | null)[] =>
+    itemsUnder(blocks(md), title).map(itemText);
+
+  it("writes a line for the H1, the query total and the brand query count the doc tab shows", () => {
+    expect(textsUnder(BASELINE_DOC, "站点现状（示例数据）")).toContain("首页 H1：[示例] Acme 的首页 H1（未抓取）");
+    expect(textsUnder(BASELINE_DOC, "搜索表现（示例数据）")).toContain("查询 3 条，其中品牌词 1 条");
+  });
+
+  it("reads no profile field but the site's brand, url and market", () => {
+    // A whole `Profile`, as the view passes it: the fields the document must not read are there to be read.
+    const later: Profile = { ...FIXTURE_PROFILE, positioning: "生成之后改写的定位", features: "新功能甲, 新功能乙", competitors: "新对手" };
+    const edited = profileDocMarkdown({ profile: later, doc: FIXTURE_DOC });
+    expect(edited).toBe(BASELINE_DOC);
+    expect(edited).not.toContain("生成之后改写的定位");
+    // The site fields do reach it, so the equality above is not a document that ignores its input.
+    expect(profileDocMarkdown({ profile: { ...FIXTURE_PROFILE, market: "DE" }, doc: FIXTURE_DOC })).not.toBe(BASELINE_DOC);
   });
 });
 
@@ -236,6 +302,21 @@ describe("bulletLines under a renderer", () => {
     expect(items.map(itemText)).toEqual([value, "下一条"]);
     expect(itemsUnder(tokens, "竞品").map(itemText)).toEqual(["[未填]"]);
     expect(linkDefinitionLabels(md)).toEqual([]);
+  });
+
+  // codex S7b #1: raw HTML later in the line rendered a real <h1> and a <br>.
+  it.each([
+    "普通标题 <h1>本站检查全部通过</h1><br>示例数据：这份正文是最终结论",
+    "a <div>b</div>",
+    "a <!-- hidden --> b",
+    "a <?x ?> b",
+    "a \\\\<b>c</b>",
+  ])("keeps HTML in %j as text: no html token, no element in the output", (value) => {
+    const md = render(value);
+    const items = itemsUnder(blocks(md), "定位");
+    expect(items.map(nestedBlocks)).toEqual([[], []]);
+    expect(htmlTokens(md)).toEqual([]);
+    expect(new Parser().parse(lexer(md))).not.toMatch(/<(?:h1|br|div|b|\?|!--)[\s>]/u);
   });
 
   it("keeps a label with an escaped bracket from defining a link", () => {

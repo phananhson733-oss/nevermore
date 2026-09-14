@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { act } from "react";
+import { act, type Dispatch } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildRows } from "../mock/keywords.ts";
@@ -10,7 +10,11 @@ import { storageKey } from "./persistence.ts";
 import { initialProjectState, type ProjectSeed, type WorkbenchAction } from "./reducer.ts";
 import { PERSISTED_VERSION } from "./schema.ts";
 import { splitSeeds, type WorkbenchCounts } from "./selectors.ts";
-import { WorkbenchProvider, type WorkbenchContextValue } from "./WorkbenchProvider.tsx";
+import {
+  WorkbenchProvider,
+  type PublicWorkbenchAction,
+  type WorkbenchContextValue,
+} from "./WorkbenchProvider.tsx";
 
 // Split from WorkbenchProvider.test.tsx (already past the 400-line file limit):
 // the R13 keywordRows wiring only. Same act-environment declaration as there.
@@ -60,9 +64,23 @@ function ctx(rec: Recorder): WorkbenchContextValue {
   return rec.current;
 }
 
+/**
+ * Takes the full `WorkbenchAction`, not the context's `PublicWorkbenchAction`:
+ * the rename case below needs a `loadPersisted` that keeps every array
+ * reference, which no real storage door produces. The context's `dispatch` is
+ * the reducer's own, so widening it is a deliberate test-only step across the
+ * boundary the type draws for components.
+ */
 function send(rec: Recorder, action: WorkbenchAction): void {
-  act(() => ctx(rec).dispatch(action));
+  const dispatch = ctx(rec).dispatch as Dispatch<WorkbenchAction>;
+  act(() => dispatch(action));
 }
+
+/** Compile-time: a component holding the context cannot dispatch `loadPersisted`. */
+type AssertNever<T extends never> = T;
+export type _LoadPersistedIsNotPublic = AssertNever<
+  Extract<PublicWorkbenchAction, { readonly type: "loadPersisted" }>
+>;
 
 /** The rows the provider should expose for `state`, computed without the provider. */
 function rowsFor(state: WorkbenchProjectState): readonly KeywordRow[] {
@@ -112,7 +130,7 @@ describe("WorkbenchProvider keywordRows (R13)", () => {
     const rendersBefore = rec.renders;
 
     for (const n of [1, 2, 3, 4, 5]) send(rec, { type: "visProgress", results: partialRun(n) });
-    send(rec, { type: "setNotify", notify: { weekly: true, drop: true, mention: false, gsc: true } });
+    send(rec, { type: "setNotify", key: "mention", value: true });
 
     // Six re-renders really happened, so one reference is not "the probe never ran".
     expect(rec.renders - rendersBefore).toBeGreaterThanOrEqual(6);
@@ -181,6 +199,7 @@ describe("WorkbenchProvider keywordRows (R13)", () => {
     send(rec, {
       type: "setGscRows",
       rows: [{ query: "example pricing plans", clicks: 4, impressions: 120, ctr: 3.3, position: 6.1 }],
+      source: "user",
     });
     const after = ctx(rec).keywordRows;
     expect(after).not.toBe(before);

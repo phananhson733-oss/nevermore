@@ -9,6 +9,7 @@ import {
   type Connections,
   type DemoPayload,
   type GscRow,
+  type GscRowsSource,
   type KnowledgeBase,
   type LinkTarget,
   type NotifyPrefs,
@@ -21,6 +22,8 @@ import {
   type AnswerPlan,
 } from "../types.ts";
 import { truncateUtf16 } from "../truncate.ts";
+import { demoFields, sameDemoFields, type DemoFields } from "./demo-fields.ts";
+import { sameContent } from "./same-content.ts";
 
 /** Fields mirrored from the real project (design §6.7). Never edited by mock pages. */
 export interface ProjectSeed {
@@ -29,11 +32,55 @@ export interface ProjectSeed {
   readonly market: string;
 }
 
+/**
+ * What a "clear GSC rows" confirmation was raised over (codex S6r3): the rows
+ * the screen rendered and their provenance, compared with `sameContent` (the
+ * same reference, or equal as JSON with object keys sorted).
+ */
+export interface ClearGscRowsExpected {
+  readonly rows: readonly GscRow[];
+  readonly source: GscRowsSource | null;
+}
+
+/**
+ * What a profile run read when it started (T9 review #1): the GSC rows, their
+ * provenance, the last audit, and the document then stored. `setProfileDoc`
+ * writes only over the same content (`sameContent`). The profile's editable
+ * fields are left out: the document does not print them.
+ */
+export interface ProfileDocBasis {
+  readonly gscRows: readonly GscRow[];
+  readonly gscRowsSource: GscRowsSource | null;
+  readonly lastAudit: AuditReport | null;
+  readonly profileDoc: ProfileDoc | null;
+}
+
+/** The basis of a run started over `state`: the same references, so a field nobody touched is still `===`. */
+export function profileDocBasis(state: WorkbenchProjectState): ProfileDocBasis {
+  return {
+    gscRows: state.gscRows,
+    gscRowsSource: state.gscRowsSource,
+    lastAudit: state.lastAudit,
+    profileDoc: state.profileDoc,
+  };
+}
+
+function sameProfileDocBasis(state: WorkbenchProjectState, basis: ProfileDocBasis): boolean {
+  const current = profileDocBasis(state);
+  return (Object.keys(current) as (keyof ProfileDocBasis)[]).every((key) => sameContent(current[key], basis[key]));
+}
+
 export type WorkbenchAction =
   | { readonly type: "patchProfile"; readonly patch: Partial<Pick<Profile, "positioning" | "features" | "competitors">> }
-  | { readonly type: "setProfileDoc"; readonly doc: ProfileDoc | null }
+  // `basis` is what the run read when it started (`profileDocBasis`). Required:
+  // a document that cannot say what it was built from would land over a sample
+  // loaded or cleared while it was being generated.
+  | { readonly type: "setProfileDoc"; readonly doc: ProfileDoc | null; readonly basis: ProfileDocBasis }
   | { readonly type: "setConns"; readonly conns: Connections }
-  | { readonly type: "setGscRows"; readonly rows: readonly GscRow[] }
+  // `source` is required, not optional (Q6): a caller that forgets where the
+  // rows came from would otherwise leave the label from the previous import in
+  // place, which is exactly the flip the snapshot field exists to prevent.
+  | { readonly type: "setGscRows"; readonly rows: readonly GscRow[]; readonly source: GscRowsSource }
   | { readonly type: "setSeeds"; readonly seeds: string }
   | { readonly type: "setBuilt"; readonly built: boolean }
   | { readonly type: "setSaved"; readonly saved: readonly SavedKeyword[] }
@@ -41,7 +88,10 @@ export type WorkbenchAction =
   | { readonly type: "setPlans"; readonly plans: Readonly<Record<string, AnswerPlan>> }
   | { readonly type: "setTargets"; readonly targets: readonly LinkTarget[] | null }
   | { readonly type: "setKb"; readonly kb: KnowledgeBase | null }
-  | { readonly type: "setNotify"; readonly notify: NotifyPrefs }
+  // One switch, merged into the `notify` the reducer holds when the action runs
+  // (codex S11 #2). A whole object built from the rendered `notify` would write
+  // the sibling switches back to what that render showed.
+  | { readonly type: "setNotify"; readonly key: keyof NotifyPrefs; readonly value: boolean }
   | { readonly type: "auditStart" }
   | { readonly type: "auditComplete"; readonly report: AuditReport }
   | { readonly type: "auditCancel" }
@@ -51,13 +101,32 @@ export type WorkbenchAction =
   | { readonly type: "visCancel" }
   | { readonly type: "addArtifact"; readonly artifact: Artifact }
   | { readonly type: "removeArtifact"; readonly id: string }
-  | { readonly type: "clearArtifacts" }
-  | { readonly type: "loadDemo"; readonly payload: DemoPayload }
-  | { readonly type: "clearDemo" }
+  // `ids` are the artifacts the drawer rendered when clear was clicked: the
+  // click covers those, not whatever the basket holds by the time it lands.
+  | { readonly type: "clearArtifacts"; readonly ids: readonly string[] }
+  // `expected` is the overwritable content the operator authorised, as the
+  // screen showed it when they clicked (`demoFields`). Required: an action that
+  // cannot say what it was confirmed against would overwrite whatever is there.
+  | { readonly type: "loadDemo"; readonly payload: DemoPayload; readonly expected: DemoFields }
+  | { readonly type: "clearDemo"; readonly expected: DemoFields }
+  // The data-sources page's confirmed clear. `expected` is required for the
+  // same reason as above; a bare `setGscRows([])` would delete rows the operator
+  // never saw.
+  | { readonly type: "clearGscRows"; readonly expected: ClearGscRowsExpected }
   | { readonly type: "loadPersisted"; readonly state: WorkbenchProjectState }
   | { readonly type: "reset"; readonly seed: ProjectSeed };
 
-const DEFAULT_NOTIFY: NotifyPrefs = { weekly: true, drop: true, mention: false, gsc: true };
+/** Exported for the settings page: it renders these when `notify` is untouched. */
+export const DEFAULT_NOTIFY: NotifyPrefs = { weekly: true, drop: true, mention: false, gsc: true };
+
+/**
+ * Rows and their provenance move together (Q6): no rows, no source. Written in
+ * one place so `setGscRows` and `loadDemo` cannot disagree, and so no surface
+ * can read a source that belongs to rows that are gone.
+ */
+function sourceFor(rows: readonly GscRow[], source: GscRowsSource): GscRowsSource | null {
+  return rows.length === 0 ? null : source;
+}
 
 export function initialProjectState(seed: ProjectSeed): WorkbenchProjectState {
   return {
@@ -65,6 +134,7 @@ export function initialProjectState(seed: ProjectSeed): WorkbenchProjectState {
     profileDoc: null,
     conns: { GSC: false, GA4: false },
     gscRows: [],
+    gscRowsSource: null,
     seeds: "",
     built: false,
     saved: [],
@@ -139,11 +209,17 @@ export function reduce(state: WorkbenchProjectState, action: WorkbenchAction): W
     case "patchProfile":
       return { ...state, profile: { ...state.profile, ...action.patch } };
     case "setProfileDoc":
+      // Built from the state the run read at its start. If the rows, their
+      // provenance, the audit or the stored document changed since (a sample
+      // loaded or cleared, rows imported, another run's document), it describes
+      // data the project no longer holds: the same object back, so the run can
+      // tell it was refused.
+      if (!sameProfileDocBasis(state, action.basis)) return state;
       return { ...state, profileDoc: action.doc };
     case "setConns":
       return { ...state, conns: action.conns };
     case "setGscRows":
-      return { ...state, gscRows: action.rows };
+      return { ...state, gscRows: action.rows, gscRowsSource: sourceFor(action.rows, action.source) };
     case "setSeeds":
       return { ...state, seeds: action.seeds };
     case "setBuilt":
@@ -159,7 +235,12 @@ export function reduce(state: WorkbenchProjectState, action: WorkbenchAction): W
     case "setKb":
       return { ...state, kb: action.kb };
     case "setNotify":
-      return { ...state, notify: action.notify };
+      // Into the current `notify`, not the one the switch rendered from: two
+      // flips in one frame, or a flip landing after another tab's
+      // `loadPersisted`, keep every other switch as it is now. The same value
+      // hands back the same state.
+      if (state.notify[action.key] === action.value) return state;
+      return { ...state, notify: { ...state.notify, [action.key]: action.value } };
     case "auditStart":
       return { ...state, audit: null };
     case "auditComplete":
@@ -187,28 +268,128 @@ export function reduce(state: WorkbenchProjectState, action: WorkbenchAction): W
     case "visCancel":
       return { ...state, visResults: state.lastVis?.results ?? [], visPartial: false };
     case "addArtifact":
+      // Full means refused, never "evict the oldest": nothing in the design, the
+      // plan or the copy lets a save silently delete an earlier artifact, and the
+      // row that dispatched it would still say "saved". The same state object
+      // comes back, so no new reducer state is produced; `useAddArtifact` reads
+      // that outcome back and the row says why.
+      if (state.artifacts.length >= ARTIFACT_LIMIT) return state;
+      // An id already in the basket is that artifact saved again: a double click,
+      // or a retry after a save whose answer could not be read back
+      // (`useAddArtifact`). The same state comes back, so one artifact never
+      // becomes two rows sharing an id.
+      if (state.artifacts.some((a) => a.id === action.artifact.id)) return state;
       return {
         ...state,
         artifacts: [boundArtifact(action.artifact), ...state.artifacts].slice(0, ARTIFACT_LIMIT),
       };
     case "removeArtifact":
       return { ...state, artifacts: state.artifacts.filter((a) => a.id !== action.id) };
-    case "clearArtifacts":
-      return { ...state, artifacts: [] };
-    case "loadDemo":
+    case "clearArtifacts": {
+      // The click authorises the artifacts that were on screen, by id (codex
+      // S6r3 #1). One queued ahead of it and not yet rendered (another tab's
+      // `loadPersisted`, or a save of ours queued behind that render) was never
+      // seen, so it stays.
+      //
+      // An id stands in for the content it was shown with only where the id
+      // cannot come to name other content (codex S6r4 F1). That holds for an
+      // artifact the operator saved: `useAddArtifact`'s `prepare()` mints its id
+      // with `crypto.randomUUID()` in the same step that stamps the content, and
+      // freezes both into one object, so no other content ever carries that id.
+      // (`addArtifact` refusing an id already in the basket is not the reason: it
+      // keeps one id from becoming two rows, not one id from naming two texts.)
+      // It does not hold for the sample site's artifacts: `demo-artifacts.ts`
+      // gives them fixed ids (`demo-audit`, `demo-keywords`, `demo-kb`,
+      // `demo-visibility`, `demo-content`) and builds their content again on
+      // every load, so a sample cleared and loaded again in another tab, landing
+      // after the render the click was made in, can put different content under
+      // an id on screen, and this clear removes it.
+      //
+      // When none of the ids is left, the same object back: no new reducer state.
+      const shown = new Set(action.ids);
+      if (!state.artifacts.some((a) => shown.has(a.id))) return state;
+      return { ...state, artifacts: state.artifacts.filter((a) => !shown.has(a.id)) };
+    }
+    case "loadDemo": {
+      // The last line of the confirmation (codex S6r2 #1): the operator agreed to
+      // replace what `expected` holds. Another tab's write, or one of ours queued
+      // behind the render they clicked in, makes it something else, and the
+      // component cannot see a queued update. The reducer can, for an update
+      // queued ahead of this action in a sync lane (Sync, InputContinuous,
+      // Default: every store write the workbench makes today), which the demo
+      // buttons' `flushSync` applies first. An update in a Transition lane is
+      // skipped by that render and replayed with this action afterwards, which
+      // can flip the answer the caller already read back (codex S6r3 #3), so no
+      // store write may be wrapped in one
+      // (`lib/workbench/no-transition-store-writes.test.ts`). Same object back,
+      // so the caller can tell the load was refused.
+      if (!sameDemoFields(state, action.expected)) return state;
+      // Each key named, not a spread of the payload: `DemoPayload` is a `Pick`,
+      // so a structurally wider object type-checks, and a spread would write its
+      // extra keys (`profile`, `notify`) into the project. `makeDemoSite` returns
+      // an exact literal, so nothing wider reaches this today; this is
+      // hardening, not a fix. `satisfies` keeps the list complete when
+      // `DemoPayload` gains a key.
+      const payload = action.payload;
+      const written = {
+        conns: payload.conns,
+        gscRows: payload.gscRows,
+        seeds: payload.seeds,
+        built: payload.built,
+        saved: payload.saved,
+        audit: payload.audit,
+        auditHistory: payload.auditHistory.slice(-HISTORY_LIMIT),
+        lastAudit: payload.lastAudit,
+        visResults: payload.visResults,
+        visHistory: payload.visHistory.slice(-HISTORY_LIMIT),
+        lastVis: payload.lastVis,
+        compData: payload.compData,
+        plans: payload.plans,
+        targets: payload.targets,
+        kb: payload.kb,
+        artifacts: payload.artifacts.slice(0, ARTIFACT_LIMIT).map(boundArtifact),
+        profileDoc: payload.profileDoc,
+      } satisfies DemoPayload;
       return {
         ...state,
-        ...action.payload,
-        auditHistory: action.payload.auditHistory.slice(-HISTORY_LIMIT),
-        visHistory: action.payload.visHistory.slice(-HISTORY_LIMIT),
-        artifacts: action.payload.artifacts.slice(0, ARTIFACT_LIMIT).map(boundArtifact),
+        ...written,
+        gscRowsSource: sourceFor(payload.gscRows, "sample"),
         visPartial: false,
         demo: true,
       };
+    }
     case "clearDemo": {
+      // Runs the announced wholesale clear only while the state is still in
+      // sample mode; `demo` is a mode flag, not field-by-field proof of where
+      // each value came from. A confirm raised over the sample can
+      // still dispatch after another tab's real state has replaced it (a
+      // `loadPersisted` queued ahead of the click, on a screen not yet
+      // re-rendered), and clearing then would wipe the user's own GSC rows. The
+      // component's render-time reset cannot recall an action already sent, so
+      // the precondition lives here. Still sample mode is not enough either
+      // (codex S6r2 #2): another sample with the operator's own additions can
+      // have replaced the one they confirmed over, so the content must also be
+      // what `expected` holds. Same object back: no new reducer state is
+      // produced, and the caller can tell the clear was refused.
+      if (!state.demo || !sameDemoFields(state, action.expected)) return state;
       const blank = initialProjectState({ url: state.profile.url, brand: state.profile.brand, market: state.profile.market });
       return { ...state, ...demoFields(blank), visPartial: false, demo: false };
     }
+    case "clearGscRows":
+      // While the confirmation was open another tab may have imported other
+      // rows, or an update of ours may be queued behind the render the operator
+      // clicked in; the component cannot see the second. Clear only the rows and
+      // provenance that were confirmed, compared with `sameContent` as the demo
+      // snapshot is: rows that another tab's unrelated write re-parsed are still
+      // the rows on screen. Otherwise the same object back, so the caller can
+      // tell the clear was refused.
+      if (
+        !sameContent(state.gscRows, action.expected.rows) ||
+        !sameContent(state.gscRowsSource, action.expected.source)
+      ) {
+        return state;
+      }
+      return { ...state, gscRows: [], gscRowsSource: sourceFor([], "user") };
     case "loadPersisted":
       // By identity, never a spread: the provider recognises "this state came from storage" as `state === remoteStateRef.current` and skips the write-back.
       return action.state;
@@ -217,24 +398,19 @@ export function reduce(state: WorkbenchProjectState, action: WorkbenchAction): W
   }
 }
 
-/** The exact field set `loadDemo` writes, so `clearDemo` can undo it symmetrically. */
-function demoFields(s: WorkbenchProjectState): DemoPayload {
-  return {
-    conns: s.conns, gscRows: s.gscRows, seeds: s.seeds, built: s.built, saved: s.saved,
-    audit: s.audit, auditHistory: s.auditHistory, lastAudit: s.lastAudit,
-    visResults: s.visResults, visHistory: s.visHistory, lastVis: s.lastVis,
-    compData: s.compData, plans: s.plans, targets: s.targets, kb: s.kb, artifacts: s.artifacts, profileDoc: s.profileDoc,
-  };
-}
-
 /**
- * After hydration (design §6.4). An interrupted audit run persisted
+ * After first hydration (design §6.4). An interrupted audit run persisted
  * `audit = null` (the report is all-or-nothing); an interrupted visibility
  * run persisted `visPartial = true` with whatever results had streamed in.
  * Both fall back to the last completed snapshot. Note: right after a
  * completed run `audit === lastAudit` and `visResults === lastVis.results`
  * by reference; that identity does not survive the JSON round-trip, so
  * nothing may depend on it.
+ *
+ * First hydration only: the cross-tab `storage` path must not settle runs
+ * (another tab may be mid-run). The GSC-source rule is deliberately not here
+ * for that reason — it has to reach both load paths, so it is applied where
+ * persisted state is parsed (`classifyPersistedState` in schema.ts).
  */
 export function normalizeInterrupted(state: WorkbenchProjectState): WorkbenchProjectState {
   const audit = state.audit === null && state.lastAudit ? state.lastAudit : state.audit;

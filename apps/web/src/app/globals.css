@@ -229,6 +229,19 @@ a:where(:not(.wb-reset *)) {
   border-radius: 4px;
 }
 
+/* The workbench <main> (ShellChrome, `tabIndex={-1}`) is focusable by script
+ * (Dialog's last focus fallback) and by the skip link, and a mouse click on the
+ * page body can focus it too, but it is not part of sequential Tab navigation,
+ * and a ring around the whole content column marks nothing a keyboard user can
+ * operate. Right after a key press a scripted focus matches
+ * :focus-visible, so the rule above would draw that ring. This lifts it here,
+ * unlayered and after that rule: a Tailwind `focus-visible:shadow-none` sits in
+ * the utilities layer and loses to any unlayered declaration. The legacy
+ * shell's <main> carries no such attribute. */
+[data-wb-main]:focus-visible {
+  box-shadow: none;
+}
+
 /* A printed page contains the page, not the persistent project navigation or
  * the sticky application toolbar. Stable data attributes keep this global rule
  * off CSS Module class names.
