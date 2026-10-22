@@ -195,3 +195,16 @@ fallback，也不是它的部署落点。
 | 登录成功但看不到任何数据 | 查 `app.operator_profiles.user_id` 是否指向当前登录用户，不是数据丢了 |
 | Growth Map / 竞品 / 诊断为空 | 先查画像是否已确认，别先查采集 |
 | worker 行为与代码不符 | 比 `buildSha` 与 `origin/main` |
+
+
+## 2026-10-22：营销站原生短链恢复
+
+本节更新上文关于 `link_redirects` 尚未迁入当前生产库的历史状态；其他旧营销表不受此修复影响。
+
+- 当前库仍为 `pxgzmoypkyyutpcmqexa`；本次新增独立 `public.link_redirects`（code主键、目标URL、302状态、创建时间），未改 `app/auth` 及原有产品表。
+- 迁移：`apps/marketing/supabase/migrations/20261022105626_restore_link_redirects.sql`，只新增短链映射表，启用RLS，撤销匿名/认证角色权限，授予service_role查询与插入。迁移前保存public schema备份；生产迁移连续运行两次均成功。
+- 营销站恢复 `POST /api/link-attribution/redirects`，仅接受工具固定格式短码及自有目标；专用服务器密钥 `GENGROWTH_LINK_TOOL_KEY` 只配置在营销站和内部工具项目，实际密钥不进源码。`MARKETING_SHORT_LINKS_ENABLED=true` 开启既有短链读取。
+- 生产发布只针对营销站项目 `prj_HzRnuXaewqxu27P013fUwh6D2fWV`，部署 `dpl_4CMuCBePQon69vKFe6nN1SKLezjN`。`app.gengrowth.ai` 保持发布前相同部署 `dpl_DzMBdEeuhxshcsqSt8UVttk75cc7`。
+- 内部工具 `https://gengrowth-link-attribution.vercel.app/` 当前部署 `dpl_6zUL8y59CSZ5N7ACjzsWKHgTt2os`。五站均真实生成、跳转和自动保存到现有Google Sheet，重复请求复用原记录。
+- 原生相关205项测试、工具48项测试、营销站typecheck/lint/build通过；`verify:docs`与`verify:authority`通过。`verify:spec`存在原基线CLAUDE.md锁哈希漂移，本次未改动该文件/锁。
+- 独立工作树：`codex/gengrowth-shortlink-repair-20261022`，基于线上SHA `c569f464f7073b374d14190a72803373061e5d72`；未推送共享main，避免触发产品站部署。

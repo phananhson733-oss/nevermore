@@ -43,7 +43,9 @@ export function normalizeOwnedDestination(rawUrl: unknown): string | null {
 
   try {
     const destination = new URL(rawUrl.trim());
-    if (!OWNED_SHORT_LINK_HOSTS.has(destination.hostname.toLowerCase())) {
+    if (!OWNED_SHORT_LINK_HOSTS.has(destination.hostname.toLowerCase())
+      || !["https:", "http:"].includes(destination.protocol)
+      || destination.username || destination.password || destination.port) {
       return null;
     }
     destination.protocol = "https:";
@@ -128,6 +130,15 @@ export async function registerShortLink(
     .single();
 
   if (error) {
+    if (error.code === "23505") {
+      const raced = await findShortLink(code, admin);
+      if (raced?.destination_url === destinationUrl) {
+        return { ok: true, code, destinationUrl, reused: true };
+      }
+      if (raced) {
+        return { ok: false, status: 409, code: "CODE_CONFLICT", message: "This short-link code already points to another destination." };
+      }
+    }
     throw new Error(error.message);
   }
 
