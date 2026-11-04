@@ -1,5 +1,5 @@
 // @input -- load/status responses for the existing run protocol
-// @output -- validated client values and bounded polling helpers
+// @output -- validated client values, including the server-reported pause, and bounded polling helpers
 // @pos -- private visibility transport parsing; no UI or provider calls
 import { GEO_VISIBILITY_SCHEMA_VERSION, VISIBILITY_RUNS_PER_DAY } from "../../lib/geo-tools/visibility-contract.ts";
 import { GEO_VISIBILITY_V2, type AnyVisibilityReport as VisibilityReport } from "../../lib/geo-tools/visibility-v2-contract.ts";
@@ -28,6 +28,8 @@ export interface LoadedChoices {
    * be an answer to a question nobody asked.
    */
   readonly providerConfigured: boolean;
+  /** True only when the server says runs are paused; absent reads as running. */
+  readonly runsPaused: boolean;
   readonly runsPerDay: number;
 }
 
@@ -115,6 +117,7 @@ export function asLoadedChoices(body: unknown): LoadedChoices | null {
   return {
     versions,
     providerConfigured: data["providerConfigured"] !== false,
+    runsPaused: data["runsPaused"] === true,
     runsPerDay: countOf(data["runsPerDay"]) ?? VISIBILITY_RUNS_PER_DAY,
   };
 }

@@ -18,7 +18,6 @@ export default tseslint.config(
       "**/coverage/**",
       "**/.swc/**",
       "**/*.config.{js,mjs,ts}",
-      "apps/marketing/src/app/.well-known/workflow/**",
       "packages/contracts/src/generated/**",
       "apps/web/next-env.d.ts",
     ],

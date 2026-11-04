@@ -1,5 +1,5 @@
 // @input  -- locale, Search Console grant, website profile, and market allow-list
-// @output -- profile / read / confirm / durable tracking / refresh recovery / result states
+// @output -- profile / read / confirm / running / result states; a stored pre-removal run pointer is dropped, never resumed
 // @pos    -- primary client surface for /[locale]/tools/low-competition-keywords
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -42,7 +42,6 @@ import {
   normalizeKeywordWorkflowStartResponse,
   normalizeKeywordWorkflowStatusResponse,
   readKeywordWorkflowPointer,
-  writeKeywordWorkflowPointer,
   type KeywordWorkflowContextState,
   type KeywordWorkflowPointerV1,
 } from "../../lib/tools/keyword-workflow-client.ts";
@@ -185,7 +184,6 @@ export function KeywordMapTool({
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [cooldownSeconds, setCooldownSeconds] = useState(0);
   const [elapsedMs, setElapsedMs] = useState(0);
-  const [trackingRestored, setTrackingRestored] = useState(false);
   const startedAt = useRef<number | null>(null);
   const workflowPointer = useRef<KeywordWorkflowPointerV1 | null>(null);
   const workflowAbort = useRef<AbortController | null>(null);
@@ -254,22 +252,29 @@ export function KeywordMapTool({
     });
     if (pointer === null) return;
 
-    workflowPointer.current = pointer;
+    // Only a tab opened before durable runs were removed can still hold a
+    // pointer: nothing writes one now. The run it names has no store left to
+    // read, and resuming would mean starting it again -- a second paid run the
+    // visitor never clicked for. So the pointer is dropped, the form gets its
+    // fields back, and the visitor decides whether to run the map again.
+    clearKeywordWorkflowPointer(sessionStorage);
     setProperty(pointer.property);
     setSiteUrl(pointer.siteUrl);
     setMarketCode(pointer.marketCode);
     setLanguageCode(pointer.languageCode);
     setSeedInput(pointer.seedInput);
     setContext(pointer.context);
-    setTrackingRestored(true);
-    void resumeKeywordWorkflow(pointer);
-    // Recovery is deliberately one-shot for this mounted tab. A state update
-    // must not submit or poll the same run a second time.
+    setErrorCode("keyword_run_expired");
+    setPhase("confirm");
   }, [markets, properties]);
 
+  /**
+   * Held for this mounted tab only. A run is one synchronous request, so a
+   * reload cannot pick it back up, and a stored pointer would only invite the
+   * restore path above to start it again.
+   */
   function rememberWorkflow(pointer: KeywordWorkflowPointerV1): void {
     workflowPointer.current = pointer;
-    writeKeywordWorkflowPointer(sessionStorage, pointer);
   }
 
   function forgetWorkflow(): void {
@@ -281,7 +286,6 @@ export function KeywordMapTool({
     forgetWorkflow();
     setResult(nextResult);
     setErrorCode(null);
-    setTrackingRestored(false);
     setPhase("done");
     trackMarketingEvent("tool_complete", {
       tool_name: "keyword_opportunity_map",
@@ -313,7 +317,6 @@ export function KeywordMapTool({
       pointer = { ...pointer, runToken: null };
       rememberWorkflow(pointer);
       setErrorCode("keyword_run_unavailable");
-      setTrackingRestored(false);
       setPhase("confirm");
       return true;
     }
@@ -375,7 +378,6 @@ export function KeywordMapTool({
           forgetWorkflow();
           setErrorCode(outcome.code);
           setCooldownSeconds(retryAfterSecondsFrom(response));
-          setTrackingRestored(false);
           setPhase("confirm");
           return;
         }
@@ -385,7 +387,6 @@ export function KeywordMapTool({
         pointer = { ...pointer, runToken: null };
         rememberWorkflow(pointer);
         setErrorCode("unknown");
-        setTrackingRestored(false);
         setPhase("confirm");
         return;
       } catch {
@@ -441,38 +442,24 @@ export function KeywordMapTool({
         }
         setErrorCode(outcome.code);
         setCooldownSeconds(retryAfterSecondsFrom(response));
-        setTrackingRestored(false);
         setPhase("confirm");
         return;
       }
       setErrorCode("unknown");
-      setTrackingRestored(false);
       setPhase("confirm");
     } catch {
       if (controller.signal.aborted) return;
-      // The request may have reached the server. Retain the request id with no
-      // run token so retry/reload asks the deterministic hook for its owner.
+      // The request may have reached the server and may still finish there;
+      // this tab cannot learn its answer. Retrying runs the map again.
       setErrorCode("unknown");
-      setTrackingRestored(false);
       setPhase("confirm");
     }
-  }
-
-  async function resumeKeywordWorkflow(
-    pointer: KeywordWorkflowPointerV1,
-  ): Promise<void> {
-    if (pointer.runToken === null) {
-      await startKeywordWorkflow(pointer);
-      return;
-    }
-    await pollKeywordWorkflow(pointer);
   }
 
   function invalidateConfirmedContext(): void {
     profileSelectionRequest.current += 1;
     workflowAbort.current?.abort();
     forgetWorkflow();
-    setTrackingRestored(false);
     setContext(null);
     setResult(null);
     setErrorCode(null);
@@ -588,7 +575,6 @@ export function KeywordMapTool({
     );
     workflowAbort.current?.abort();
     forgetWorkflow();
-    setTrackingRestored(false);
     setSeedInput(usable.slice(0, MAX_SEEDS).join(", "));
     setContext(null);
     setResult(null);
@@ -601,7 +587,6 @@ export function KeywordMapTool({
     profileSelectionRequest.current += 1;
     workflowAbort.current?.abort();
     forgetWorkflow();
-    setTrackingRestored(false);
     trackMarketingEvent("tool_start", { tool_name: "keyword_opportunity_map" });
     setPhase("reading");
     setErrorCode(null);
@@ -694,7 +679,6 @@ export function KeywordMapTool({
           context,
         },
       );
-      setTrackingRestored(false);
       await startKeywordWorkflow(pointer);
     } catch {
       setErrorCode("unknown");
@@ -938,9 +922,7 @@ export function KeywordMapTool({
         {phase === "reading"
           ? t("reading")
           : phase === "tracking"
-            ? trackingRestored
-              ? t("restoredStatus", { seconds })
-              : t("runningStatus", { seconds })
+            ? t("runningStatus", { seconds })
             : phase === "done" && result !== null
               ? t("statusDone", { count: result.rows.length })
               : ""}
@@ -1088,7 +1070,6 @@ export function KeywordMapTool({
               onClick={() => {
                 workflowAbort.current?.abort();
                 forgetWorkflow();
-                setTrackingRestored(false);
                 setContext(null);
                 setResult(null);
                 setPhase("idle");

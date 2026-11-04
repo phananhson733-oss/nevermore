@@ -1,21 +1,21 @@
-// @input  -- same-origin authenticated POST carrying a sealed keyword run token
-// @output -- queued/running/redirect/completed state or a stable private error
-// @pos    -- thin Next.js boundary over the caller-bound Workflow status handler
+// @input  -- any POST, typically a tab still polling a run started before durable runs were removed
+// @output -- 410 `keyword_run_expired`, private and uncached
+// @pos    -- tombstone for the retired durable-run status endpoint; there is no run state to read
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
-import {
-  handleKeywordWorkflowStatusRequest,
-  readKeywordIdentity,
-  readKeywordWorkflowRun,
-} from "@/lib/tools/keyword-workflow-handler";
+import { createPublicToolError } from "@sf/public-tools/contract";
 
 export const runtime = "nodejs";
-export const maxDuration = 30;
 
-export async function POST(request: Request): Promise<Response> {
-  return handleKeywordWorkflowStatusRequest(request, {
-    readIdentity: readKeywordIdentity,
-    readRun: readKeywordWorkflowRun,
-    now: Date.now,
+/**
+ * Every run pointer a browser can still hold names a run that no longer has a
+ * store behind it, so the answer is the same for all of them and reveals
+ * nothing about any one. The client treats this code as terminal: it drops
+ * the pointer and goes back to the confirm step instead of retrying.
+ */
+export async function POST(): Promise<Response> {
+  return Response.json(createPublicToolError("keyword_run_expired"), {
+    status: 410,
+    headers: { "Cache-Control": "no-store, private" },
   });
 }

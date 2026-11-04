@@ -2,8 +2,9 @@
 
 One line per module: what it reads, what it returns, where it sits. Update the line when the file's header comment changes.
 
-- `ai-visibility-check.tsx`, `.test.tsx` — account website and exact frozen-input selection, Input/Result tabs, paid-run state, source refresh and owned report restoration; no automatic run from navigation.
-- `ai-visibility-client.ts`, `ai-visibility-context.ts` — client wire validation and exact snapshot/source loading; a current Profile cannot fill historical evidence gaps.
+- `ai-visibility-check.tsx`, `.test.tsx` — account website and exact frozen-input selection, Input/Result tabs, paid-run state, source refresh and owned report restoration; no automatic run from navigation. When the load response reports `runsPaused` the start button is disabled and `errors.runs_paused` is shown, so no click is spent on a refused start.
+- `keyword-map-tool.tsx`, `.workflow.test.tsx` — profile/read/confirm/running/result states for the keyword map; a run is one synchronous POST held in memory for this tab only. A run pointer left in sessionStorage by a tab from before durable runs were removed is cleared on mount, the form is restored with `keyword_run_expired`, and nothing is resumed or restarted. The 202/poll branch is kept dormant; the server no longer returns 202.
+- `ai-visibility-client.ts`, `ai-visibility-context.ts` — client wire validation (including the server-reported `runsPaused`, false unless the server says true) and exact snapshot/source loading; a current Profile cannot fill historical evidence gaps.
 - `ai-visibility-source.tsx`, `.test.tsx` — compact current/frozen complete Profile disclosures, measurement override labels, question previews and explicit source-review links.
 - `ai-visibility-history.tsx` — latest account-owned checks and stable run-URL reopening, with historical summary-only evidence distinguished from complete V2 evidence.
 - `ai-visibility-report/` — four prominent scoped metrics, engine/intent tables, evidence-backed gaps, answer/source disclosures, V1 summary compatibility and exports; missing or omitted evidence is never an absence claim.

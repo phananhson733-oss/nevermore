@@ -19,6 +19,8 @@ Website Profile is the single editing authority for base information. GEO stores
 - `kb-question-language.ts` — deterministic English placeholder readiness for new freezes; no translation or rewriting of historical questions.
 - `kb-question-placeholders.ts` — unchanged category wording shared by generation and registry-bound input admission; overlong proposals require explicit correction instead of silent template loss.
 - `visibility-context.ts`, `visibility-context-handler.ts` — private all-website preparation state and exact selected frozen input, with current Profile kept separate and strict identity/count/budget checks.
+- `visibility-handler.ts`, `.test.ts` — load/start/status HTTP boundary with an injected run executor. Optional `runsPaused` is reported on load and refuses a start with 503 `runs_paused` before the provider check, the frozen-version read and `consumeDailyRun`.
+- `visibility-handler-deps.ts`, `.test.ts` — production wiring: real frozen-version list, quota and provider check; runs are paused (`runsPaused: () => true`), `startRun` throws, and `readRun` reports every pointer as `run_unavailable`, because no executor remains since Vercel Workflow was removed.
 - `visibility-history-contract.ts`, `visibility-history.ts` — bounded account-owned V1 summary and V2 recorded-report history; reopening only reads persisted evidence and never starts paid work.
 - `kb-enrichment-contract.ts` — strict bounded, hash-bound source receipts and explicit unavailable reasons.
 - `kb-enrichment.ts` — actual homepage identity/fact extraction and deterministic query-interest clusters; no inferred persona or typed URL is a crawl receipt.

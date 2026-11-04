@@ -1,6 +1,6 @@
-// @input  -- the knowledge-base store, the shared quota, the provider's configuration, and Workflow
-// @output -- the dependency set the three visibility routes run with
-// @pos    -- the wiring seam; it translates store and Workflow states into HTTP-shaped ones
+// @input  -- the knowledge-base store, the shared quota and the provider's configuration
+// @output -- the dependency set the three visibility routes run with; runs are paused
+// @pos    -- the wiring seam; it translates store states into HTTP-shaped ones and has no run executor
 
 import { authenticateAccountRequest } from "../account-websites/route-http.ts";
 import { consumePublicToolQuota } from "../tools/shared-rate-limit.ts";
@@ -16,7 +16,6 @@ import type {
   VisibilityRunRead,
   VisibilityStoreOutcome,
 } from "./visibility-handler.ts";
-import type { GeoVisibilityWorkflowOutput } from "./visibility-workflow-steps.ts";
 
 export {
   handleVisibilityLoad,
@@ -101,36 +100,14 @@ function providerConfigured(): boolean {
   );
 }
 
-function isWorkflowOutput(value: unknown): value is GeoVisibilityWorkflowOutput {
-  if (typeof value !== "object" || value === null) return false;
-  const kind = (value as { readonly kind?: unknown }).kind;
-  return kind === "completed" || kind === "failed";
-}
-
-async function readRun(runId: string): Promise<VisibilityRunRead> {
-  try {
-    const { getRun } = await import("workflow/api");
-    const run = getRun<GeoVisibilityWorkflowOutput>(runId);
-    if (!(await run.exists)) return { kind: "missing" };
-    const status = await run.status;
-    if (status === "pending") return { kind: "queued" };
-    if (status === "running") return { kind: "running" };
-    if (status === "cancelled" || status === "failed") {
-      return { kind: "failed", code: "run_unavailable" };
-    }
-
-    const output: unknown = await run.returnValue;
-    if (!isWorkflowOutput(output)) {
-      return { kind: "failed", code: "internal_error" };
-    }
-    return output.kind === "completed"
-      ? { kind: "completed", report: output.report }
-      : { kind: "failed", code: output.code };
-  } catch (error) {
-    const errors = await import("workflow/internal/errors");
-    if (errors.WorkflowRunNotFoundError.is(error)) return { kind: "missing" };
-    return { kind: "failed", code: "run_unavailable" };
-  }
+/**
+ * Every run this deployment could be asked about was started on the durable
+ * executor that has since been removed, so there is no store to read it from.
+ * Reporting it unavailable, rather than missing, keeps the client's "nothing
+ * further was charged" message, which is true: nothing runs any more.
+ */
+async function readRun(): Promise<VisibilityRunRead> {
+  return { kind: "failed", code: "run_unavailable" };
 }
 
 export const DEFAULT_VISIBILITY_HANDLER_DEPENDENCIES: VisibilityHandlerDependencies =
@@ -139,9 +116,12 @@ export const DEFAULT_VISIBILITY_HANDLER_DEPENDENCIES: VisibilityHandlerDependenc
     listFrozen: listFrozenVersions,
     consumeDailyRun,
     providerConfigured,
-    // Replaced by the start route, which holds the static workflow import.
+    // A run takes about a quarter of an hour of provider calls and needs an
+    // executor that outlives one request. Until one exists the start route
+    // refuses here, before the day's allowance is spent.
+    runsPaused: () => true,
     startRun: () => {
-      throw new Error("startRun must be provided by the route");
+      throw new Error("visibility runs are paused: no run executor is wired");
     },
     readRun,
     now: Date.now,

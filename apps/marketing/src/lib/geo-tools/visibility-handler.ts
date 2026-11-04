@@ -1,6 +1,6 @@
 // @input  -- same-origin authenticated POSTs: list frozen versions, start a run, poll one
-// @output -- the choices a run can be started from, a sealed run pointer, or the finished report
-// @pos    -- the HTTP boundary of the visibility check; the run itself lives in Workflow
+// @output -- the choices a run can be started from, a sealed run pointer, the finished report, or a pause refusal
+// @pos    -- the HTTP boundary of the visibility check; the run executor is injected and may be paused
 
 import {
   authenticateAccountRequest,
@@ -31,7 +31,7 @@ const START_BODY_LIMIT_BYTES = 2_048;
  * the subject that started it.
  */
 const RUN_POINTER_TTL_SECONDS = 24 * 60 * 60;
-/** The workflow reads its inputs once, at the start. */
+/** The run executor reads its inputs once, at the start. */
 const INPUT_TTL_SECONDS = 60 * 60;
 
 export interface VisibilityFrozenChoice {
@@ -65,6 +65,11 @@ export interface VisibilityHandlerDependencies {
   /** Spends one of the day's runs. Returns false when the day is used up. */
   readonly consumeDailyRun: (userId: string) => Promise<boolean>;
   readonly providerConfigured: () => boolean;
+  /**
+   * True while no executor can run a check at all. Optional so a harness that
+   * wires its own executor never has to say it is not paused.
+   */
+  readonly runsPaused?: () => boolean;
   readonly startRun: (inputToken: string) => Promise<{ readonly runId: string }>;
   readonly readRun: (runId: string) => Promise<VisibilityRunRead>;
   readonly now: () => number;
@@ -113,6 +118,8 @@ export async function handleVisibilityLoad(
       // Configuration is reported rather than discovered on the paid path: a
       // visitor should not spend a click to learn the credentials are missing.
       providerConfigured: dependencies.providerConfigured(),
+      // Same reasoning: a paused tool says so on load instead of on a click.
+      runsPaused: dependencies.runsPaused?.() === true,
     },
   });
 }
@@ -149,12 +156,18 @@ export async function handleVisibilityStart(
     return privateError("invalid_request", 400);
   }
 
+  // Before the provider check and, above all, before `consumeDailyRun`: a
+  // paused tool must not spend one of the day's runs on a start it refuses.
+  if (dependencies.runsPaused?.() === true) {
+    return privateError("runs_paused", 503);
+  }
+
   if (!dependencies.providerConfigured()) {
     return privateError("provider_unconfigured", 503);
   }
 
   // The frozen version has to belong to this account before anything is
-  // charged; the workflow re-reads it under the same user id, so this is the
+  // charged; the executor re-reads it under the same user id, so this is the
   // early refusal rather than the boundary.
   const frozen = await dependencies.listFrozen(auth.userId);
   if (frozen.kind === "unavailable") {

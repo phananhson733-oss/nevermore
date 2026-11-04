@@ -1575,7 +1575,7 @@ describe("keyword map results", () => {
               "up to 20 pages",
               "The model proposes",
               "Every candidate except an explicit-zero term",
-              "durable waves of up to ten concurrent",
+              "replenishing pool of up to ten concurrent",
               "provider availability",
               "answer assessment",
               "ranking discount, never a veto",
@@ -1584,7 +1584,7 @@ describe("keyword map results", () => {
               "最多 20 个页面",
               "模型根据你确认的站点上下文提出候选词",
               "除明确核价为零以外的每个候选词",
-              "每批最多 10 个并发请求的耐久步骤",
+              "最多 10 个并发请求的持续补位池",
               "数据源可用性",
               "答案评估",
               "只作为排序折扣，绝不作为否决条件",
@@ -1603,8 +1603,10 @@ describe("keyword map results", () => {
         "候选词是核价出来的，不是猜的",
         "fixed parallel waves",
         "按固定顺序、每波",
-        "replenishing pool",
-        "持续补位池",
+        "durable waves",
+        "耐久步骤",
+        "checkpointed",
+        "写入检查点",
       ]) {
         expect(serialized).not.toContain(stale);
       }
@@ -1629,11 +1631,13 @@ describe("keyword map results", () => {
       );
       expect(markup).toContain(
         locale === "en"
-          ? "durable waves of up to ten concurrent requests"
-          : "每批最多十个并发请求的耐久步骤",
+          ? "replenishing pool of up to ten concurrent requests"
+          : "最多十个并发请求的持续补位池",
       );
-      expect(markup).not.toContain("replenishing pool");
-      expect(markup).not.toContain("持续补位池");
+      expect(markup).not.toContain("durable waves");
+      expect(markup).not.toContain("耐久步骤");
+      expect(markup).not.toContain("checkpointed");
+      expect(markup).not.toContain("写入检查点");
       expect(markup).not.toContain("Blog Agent");
       expect(markup).not.toContain("handoff");
       expect(markup).not.toContain("写作 Agent");

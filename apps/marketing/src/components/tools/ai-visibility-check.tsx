@@ -1,6 +1,6 @@
 "use client";
 // @input -- owned website/frozen contexts, run choices and recorded history
-// @output -- explicit frozen-input selection, an honest running state and artifact-aligned report
+// @output -- explicit frozen-input selection, an honest running or paused state and artifact-aligned report
 // @pos -- visibility workbench; never writes Profile or silently updates frozen inputs
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
@@ -378,6 +378,7 @@ export function AiVisibilityCheck({
   const inputReady = choices !== null && context !== null;
   const elapsedSeconds = Math.floor(elapsedMs / 1_000);
   const providerConfigured = choices?.providerConfigured !== false;
+  const runsPaused = choices?.runsPaused === true;
 
   return (
     <div className="mt-8 grid gap-6">
@@ -527,7 +528,7 @@ export function AiVisibilityCheck({
           <button
             className={PRIMARY_BUTTON}
             disabled={
-              busy || version === null || sourceBlocked || engines.length === 0 || cooldown > 0 || !providerConfigured
+              busy || version === null || sourceBlocked || engines.length === 0 || cooldown > 0 || !providerConfigured || runsPaused
             }
             onClick={() => {
               void start();
@@ -546,7 +547,11 @@ export function AiVisibilityCheck({
         {/* The load endpoint reports this so a visitor does not spend a click
             to learn the credentials are missing. Saying it here is what makes
             that reporting worth anything. */}
-        {providerConfigured ? null : (
+        {runsPaused ? (
+          <p className={`mt-4 text-[13.5px] text-brand-error`} role="alert">
+            {t("errors.runs_paused")}
+          </p>
+        ) : providerConfigured ? null : (
           <p className={`mt-4 text-[13.5px] text-brand-error`} role="alert">
             {t("errors.provider_unconfigured")}
           </p>

@@ -142,6 +142,16 @@ describe("load", () => {
     expect(data.providerConfigured).toBe(true);
   });
 
+  it("reports a paused tool on load, and an unpaused one by default", async () => {
+    const paused = await handleVisibilityLoad(
+      post("/load", {}),
+      deps({ runsPaused: () => true }),
+    );
+    expect(((await body(paused)).data as { runsPaused: boolean }).runsPaused).toBe(true);
+    const running = await handleVisibilityLoad(post("/load", {}), deps());
+    expect(((await body(running)).data as { runsPaused: boolean }).runsPaused).toBe(false);
+  });
+
   it("says the provider is unconfigured before a click spends anything", async () => {
     const response = await handleVisibilityLoad(
       post("/load", {}),
@@ -172,6 +182,22 @@ describe("load", () => {
 });
 
 describe("start", () => {
+  it("refuses a paused start before the day's allowance or the store is touched", async () => {
+    const startRun = vi.fn();
+    const consumeDailyRun = vi.fn(async () => true);
+    const listFrozen = vi.fn(async () => ({ kind: "ok" as const, value: [CHOICE] }));
+    const response = await handleVisibilityStart(
+      post("/run", startBody()),
+      deps({ runsPaused: () => true, startRun, consumeDailyRun, listFrozen }),
+    );
+    expect(response.status).toBe(503);
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(await body(response)).toEqual({ error: { code: "runs_paused" } });
+    expect(consumeDailyRun).not.toHaveBeenCalled();
+    expect(listFrozen).not.toHaveBeenCalled();
+    expect(startRun).not.toHaveBeenCalled();
+  });
+
   it("refuses a sample count that is not one of the offered ones", async () => {
     const startRun = vi.fn();
     const response = await handleVisibilityStart(
