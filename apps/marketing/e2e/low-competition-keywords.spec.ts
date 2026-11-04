@@ -1,6 +1,7 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 
 import { seal } from "../src/lib/auth/sealed-cookie";
+import { KEYWORD_WORKFLOW_STORAGE_KEY } from "../src/lib/tools/keyword-workflow-client";
 
 const TEST_COOKIE_KEY = "cd".repeat(32);
 process.env.TOKEN_ENCRYPTION_KEY = TEST_COOKIE_KEY;
@@ -500,43 +501,45 @@ test("tracks a durable 202 run through running to completed", async ({
   expect(evidence.externalRequests).toEqual([]);
 });
 
-test("restores the same durable run after a page reload", async ({ page }) => {
+test("neither resumes nor restarts a run after a page reload", async ({
+  page,
+}) => {
   await connect(page);
-  let statusReads = 0;
-  const evidence = await installGuard(
-    page,
-    async (route) => {
-      await route.fulfill({
-        status: 202,
-        contentType: "application/json",
-        body: JSON.stringify({
-          data: { status: "running", runToken: "sealed-run" },
-        }),
-      });
-    },
-    async (route) => {
-      statusReads += 1;
-      await route.fulfill({
+  // Holds the run request open across the reload, the way a real run of a
+  // few minutes would be when the visitor refreshes.
+  let release: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const evidence = await installGuard(page, async (route) => {
+    await held;
+    await route
+      .fulfill({
         status: 200,
         contentType: "application/json",
-        ...(statusReads === 1 ? { headers: { "Retry-After": "10" } } : {}),
-        body: JSON.stringify(
-          statusReads === 1
-            ? { data: { status: "running", runToken: "sealed-run" } }
-            : { data: { status: "completed", result: baseResult } },
-        ),
-      });
-    },
-  );
+        body: JSON.stringify(opportunitiesResponse),
+      })
+      .catch(() => undefined);
+  });
   await readAndConfirm(page);
   await page.getByRole("button", { name: "Run the opportunity map" }).click();
-  await expect.poll(() => evidence.statusPosts).toBe(1);
+  await expect.poll(() => evidence.opportunityPosts).toBe(1);
+  expect(
+    await page.evaluate(
+      (key) => window.sessionStorage.getItem(key),
+      KEYWORD_WORKFLOW_STORAGE_KEY,
+    ),
+  ).toBeNull();
 
   await page.reload();
+  await expect(page.getByLabel("Site to read")).toBeVisible();
+  release();
 
-  await expect(page.getByText("clinic appointment automation")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Run the opportunity map" }),
+  ).toHaveCount(0);
   expect(evidence.opportunityPosts).toBe(1);
-  expect(evidence.statusPosts).toBe(2);
+  expect(evidence.statusPosts).toBe(0);
   expect(evidence.externalRequests).toEqual([]);
 });
 

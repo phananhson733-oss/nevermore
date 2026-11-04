@@ -225,21 +225,35 @@ describe("keyword map copy", () => {
     },
   );
 
-  it("states temporary Workflow persistence without claiming project history", () => {
+  it("states that the report lives in this tab without claiming a resumable run", () => {
+    for (const locale of ["en", "zh"] as const) {
+      const copy = namespace(locale);
+      const claims = [
+        String(copy["connectBody"]),
+        String(copy["connectTrust"]),
+        String(copy["runningBody"]),
+        String(copy["persistenceBoundary"]),
+      ].join("\n");
+      for (const stale of [
+        "Workflow",
+        "24 hours",
+        "24 小时",
+        "checkpoint",
+        "检查点",
+        "resume",
+        "恢复凭证",
+        "durable",
+        "耐久",
+      ]) {
+        expect(claims, `${locale} still claims "${stale}"`).not.toContain(stale);
+      }
+      expect(copy["restoredStatus"]).toBeUndefined();
+    }
     expect(String(namespace("en")["persistenceBoundary"])).toContain(
-      "expires after 24 hours",
-    );
-    expect(String(namespace("en")["persistenceBoundary"])).toContain(
-      "Vercel's plan-level retention",
+      "only in this tab",
     );
     expect(String(namespace("zh")["persistenceBoundary"])).toContain(
-      "24 小时后失效",
-    );
-    expect(String(namespace("en")["connectBody"])).not.toContain(
-      "nothing is stored",
-    );
-    expect(String(namespace("zh")["connectBody"])).not.toContain(
-      "不在服务器上留存任何数据",
+      "只存在于当前标签页",
     );
   });
 

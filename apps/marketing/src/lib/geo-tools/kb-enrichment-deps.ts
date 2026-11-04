@@ -12,7 +12,7 @@ import { extractClientIp } from "../rate-limit.ts";
 import { canonicalCrawlTargetKey } from "../tools/crawl-cache.ts";
 import { openCrawlGate } from "../tools/crawl-gate.ts";
 import { openGscGate } from "../tools/gsc-gate.ts";
-import { readKeywordIdentity } from "../tools/keyword-workflow-handler.ts";
+import { readKeywordIdentity } from "../tools/keyword-identity.ts";
 import { readTrafficDropSession, resolveTrafficDropGrant } from "../tools/traffic-drop-session.ts";
 import { GEO_KB_ENRICHMENT_LIMITS } from "./kb-enrichment-contract.ts";
 import type { GeoKbEnrichmentDependencies } from "./kb-enrichment-handler.ts";

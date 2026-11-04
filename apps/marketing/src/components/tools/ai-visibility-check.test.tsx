@@ -177,6 +177,7 @@ interface Server {
   readonly context?: VisibilityContext;
   readonly historyRun?: ReturnType<typeof visibilityReportFixtureV2>;
   readonly providerConfigured?: boolean;
+  readonly runsPaused?: boolean;
   readonly choices?: readonly VisibilityFrozenChoice[];
 }
 
@@ -192,6 +193,7 @@ function dependencies(): VisibilityHandlerDependencies {
     }),
     consumeDailyRun: async () => true,
     providerConfigured: () => server.providerConfigured !== false,
+    runsPaused: () => server.runsPaused === true,
     startRun: async () => ({ runId: "run-1" }),
     readRun: async () => server.readRun(),
     now: () => Date.now(),
@@ -680,6 +682,20 @@ describe("loading the frozen versions", () => {
     );
     expect(button?.disabled).toBe(true);
     expect(text()).toContain(copy("errors.provider_unconfigured"));
+  });
+
+  it("disables the run when the server says runs are paused", async () => {
+    server = {
+      readRun: () => ({ kind: "running" }),
+      runsPaused: true,
+    };
+    await mount();
+    const button = [...(container?.querySelectorAll("button") ?? [])].find(
+      (element) => element.textContent === copy("form.start"),
+    );
+    expect(button?.disabled).toBe(true);
+    expect(text()).toContain(copy("errors.runs_paused"));
+    expect(statusCalls).toBe(0);
   });
 });
 

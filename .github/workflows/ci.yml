@@ -100,9 +100,6 @@ jobs:
       - name: Typecheck workspaces
         run: pnpm typecheck
 
-      - name: Run Marketing Workflow integration tests
-        run: pnpm test:workflow:marketing
-
       - name: Install Chromium for GEO renderer unit tests
         run: pnpm exec playwright install --with-deps chromium
 

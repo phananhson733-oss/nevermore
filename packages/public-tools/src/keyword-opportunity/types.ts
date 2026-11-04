@@ -1025,7 +1025,8 @@ export type KeywordOpportunityErrorCode =
   | "gsc_revoked"
   | "gsc_temporarily_unavailable"
   | "keyword_run_unavailable"
-  | "keyword_run_cancelled";
+  | "keyword_run_cancelled"
+  | "keyword_run_expired";
 
 export const KEYWORD_OPPORTUNITY_ERROR_CODES = [
   "invalid_input",
@@ -1051,6 +1052,7 @@ export const KEYWORD_OPPORTUNITY_ERROR_CODES = [
   "gsc_temporarily_unavailable",
   "keyword_run_unavailable",
   "keyword_run_cancelled",
+  "keyword_run_expired",
 ] as const satisfies readonly KeywordOpportunityErrorCode[];
 
 /**

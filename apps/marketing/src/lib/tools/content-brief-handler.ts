@@ -94,7 +94,7 @@ import {
 } from "./content-brief-serp.ts";
 import { GRANT_RETRY_AFTER_SECONDS, openGscGate, type GscGateResult } from "./gsc-gate.ts";
 import { coverageWindow } from "./keyword-coverage-reader.ts";
-import { readKeywordIdentity } from "./keyword-workflow-handler.ts";
+import { readKeywordIdentity } from "./keyword-identity.ts";
 import {
   acquirePublicToolSlot,
   readPublicToolJson,

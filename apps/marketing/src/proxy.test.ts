@@ -9,8 +9,8 @@ import { LEGACY_EN_MIGRATION_ENTRIES } from "./lib/legacy-en-migration.ts";
 
 const zhBrowser = { "accept-language": "zh-CN,zh;q=0.9,en;q=0.8" };
 
-describe("proxy workflow boundary", () => {
-  it("keeps Workflow internal paths outside the locale proxy matcher", () => {
+describe("proxy matcher", () => {
+  it("keeps dotted well-known paths outside the locale proxy and pages inside it", () => {
     const source = config.matcher[0];
     expect(source).toBeDefined();
     const matcher = new RegExp(`^${source ?? ""}$`);

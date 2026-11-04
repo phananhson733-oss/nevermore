@@ -251,8 +251,8 @@ export interface RuleOutcome {
  * rules narrow to a subset (e.g. a rule that only needs `crawledPages` can
  * declare `DetectionRule<Pick<SiteContext, 'crawledPages'>>`).
  *
- * Phase 3+ rules with async I/O will be lifted to `@workflow/next`
- * `step.run()` callsites — the async signature is forward-compatible.
+ * Phase 3+ rules with async I/O can keep this signature unchanged; it is
+ * already async, so whatever executor runs them later needs no new shape.
  */
 export interface DetectionRule<TInput = SiteContext> {
   readonly checkId: string;

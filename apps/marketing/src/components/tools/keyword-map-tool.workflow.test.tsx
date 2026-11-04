@@ -222,7 +222,7 @@ describe("KeywordMapTool durable run", () => {
     ).toMatchObject({ "X-Keyword-Workflow-Version": "keyword_workflow.v1" });
   });
 
-  it("restores a tracking pointer after refresh without starting paid work again", async () => {
+  it("drops a pre-removal run pointer after refresh without any request", async () => {
     expect(
       writeKeywordWorkflowPointer(sessionStorage, {
         version: "keyword_workflow_pointer.v1",
@@ -252,12 +252,7 @@ describe("KeywordMapTool durable run", () => {
         runToken: "sealed-run",
       }),
     ).toBe(true);
-    const fetchMock = vi.fn(async (url: RequestInfo | URL) => {
-      expect(String(url)).toContain("/opportunities/status");
-      return Response.json({
-        data: { status: "completed", result: RESULT },
-      });
-    });
+    const fetchMock = vi.fn();
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     const host = await renderTool();
@@ -266,10 +261,44 @@ describe("KeywordMapTool durable run", () => {
       await Promise.resolve();
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(host.querySelector('[data-testid="keyword-result"]')).not.toBeNull();
+    // No status poll and, above all, no start: resuming a pointer whose run
+    // has no store would mean buying the run a second time.
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(sessionStorage.getItem(KEYWORD_WORKFLOW_STORAGE_KEY)).toBeNull();
+    expect(host.querySelector('[data-testid="keyword-result"]')).toBeNull();
+    expect(host.textContent).toContain("cannot be picked back up");
+    expect(host.textContent).toContain("What we read off your site");
     expect(host.textContent).toContain("Exact website profile reference");
-    expect(host.textContent).toContain("Server accepted this exact version");
+    expect(buttonWith(host, "Run the opportunity map").disabled).toBe(false);
+  });
+
+  it("keeps no pointer in sessionStorage while the run request is in flight", async () => {
+    let finish: (response: Response) => void = () => undefined;
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ data: CONTEXT }))
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            finish = resolve;
+          }),
+      );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const host = await renderTool();
+
+    await readAndConfirm(host);
+    await click(buttonWith(host, "Run the opportunity map"));
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(sessionStorage.getItem(KEYWORD_WORKFLOW_STORAGE_KEY)).toBeNull();
+    await act(async () => {
+      finish(Response.json({ data: { result: RESULT } }));
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(host.querySelector('[data-testid="keyword-result"]')).not.toBeNull();
     expect(sessionStorage.getItem(KEYWORD_WORKFLOW_STORAGE_KEY)).toBeNull();
   });
 
@@ -300,18 +329,9 @@ describe("KeywordMapTool durable run", () => {
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(7);
-    expect(host.textContent).toContain("This saved run cannot be read right now");
+    expect(host.textContent).toContain("This run cannot be read right now");
     expect(buttonWith(host, "Run the opportunity map").disabled).toBe(false);
-    const startBody = JSON.parse(
-      String((fetchMock.mock.calls[1]?.[1] as RequestInit | undefined)?.body),
-    ) as { requestId: string };
-    const stored = JSON.parse(
-      String(sessionStorage.getItem(KEYWORD_WORKFLOW_STORAGE_KEY)),
-    ) as { requestId: string; runToken: unknown };
-    expect(stored).toMatchObject({
-      requestId: startBody.requestId,
-      runToken: null,
-    });
+    expect(sessionStorage.getItem(KEYWORD_WORKFLOW_STORAGE_KEY)).toBeNull();
   });
 
   it("stops tracking after repeated unreadable status responses", async () => {
@@ -338,13 +358,9 @@ describe("KeywordMapTool durable run", () => {
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(7);
-    expect(host.textContent).toContain("This saved run cannot be read right now");
+    expect(host.textContent).toContain("This run cannot be read right now");
     expect(buttonWith(host, "Run the opportunity map").disabled).toBe(false);
-    expect(
-      JSON.parse(
-        String(sessionStorage.getItem(KEYWORD_WORKFLOW_STORAGE_KEY)),
-      ),
-    ).toMatchObject({ runToken: null });
+    expect(sessionStorage.getItem(KEYWORD_WORKFLOW_STORAGE_KEY)).toBeNull();
   });
 
   it("reuses the request id when the start response is lost", async () => {

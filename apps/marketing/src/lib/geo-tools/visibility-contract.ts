@@ -286,6 +286,7 @@ export type VisibilityErrorCode =
   | "not_found"
   | "daily_limit"
   | "provider_unconfigured"
+  | "runs_paused"
   | "run_unavailable"
   | "store_unavailable"
   | "internal_error";

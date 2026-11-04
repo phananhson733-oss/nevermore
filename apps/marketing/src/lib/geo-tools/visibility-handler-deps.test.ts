@@ -22,3 +22,10 @@ describe("frozen choice read integrity", () => {
     expect((await DEFAULT_VISIBILITY_HANDLER_DEPENDENCIES.listFrozen("owner")).kind).toBe("unavailable");
   });
 });
+describe("paused runs", () => {
+  it("is paused, cannot start a run, and reports any run pointer as unavailable", async () => {
+    expect(DEFAULT_VISIBILITY_HANDLER_DEPENDENCIES.runsPaused?.()).toBe(true);
+    expect(() => DEFAULT_VISIBILITY_HANDLER_DEPENDENCIES.startRun("token")).toThrow();
+    await expect(DEFAULT_VISIBILITY_HANDLER_DEPENDENCIES.readRun("run-1")).resolves.toEqual({ kind: "failed", code: "run_unavailable" });
+  });
+});
