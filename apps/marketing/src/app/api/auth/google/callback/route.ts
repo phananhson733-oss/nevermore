@@ -6,6 +6,7 @@
 import { cookies } from "next/headers";
 import { after } from "next/server";
 import { revocableGrantToken } from "@/lib/auth/disconnect";
+import { requestOrigin } from "@/lib/request-origin";
 import {
   exchangeCode,
   hasSearchConsoleScope,
@@ -64,7 +65,7 @@ interface Transaction {
  * actually goes, which is the question that matters.
  */
 function backTo(request: Request, path: string, error?: string): Response {
-  const origin = new URL(request.url).origin;
+  const origin = requestOrigin(request);
   let target: URL;
   try {
     target = new URL(path, origin);

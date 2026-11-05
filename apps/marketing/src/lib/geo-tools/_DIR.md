@@ -64,7 +64,7 @@ Website Profile is the single editing authority for base information. GEO stores
 - `citability-ai-contract.ts` — strict bounded semantic-review receipts, excerpt references and fixed no-search/no-fact-verification scope.
 - `citability-ai-evidence.ts` — server-owned raw hash, exact input fingerprint and bounded disjoint excerpts with explicit coverage.
 - `citability-ai-provider.ts` — single bounded DataForSEO call, model identity validation, observed cost/task provenance and unknown-outcome errors without retries.
-- `citability-ai-handler.ts` — explicit authenticated same-origin review, safe refetch/hash binding and durable per-user/IP/snapshot admission before spending.
+- `citability-ai-handler.ts` — explicit authenticated same-origin review (judged against `requestOrigin`, the Host header), safe refetch/hash binding and durable per-user/IP/snapshot admission before spending.
 - `site-index-validate.ts` — exact historical unversioned rule identities remain readable; new T2 evidence explicitly marks the corrected v2 heuristic inventory.
 - `kb-evidence-observations.ts` — the immutable website evidence observation library: the newest observation for one exact `(kind, url)`, a time-only freshness verdict and one appended row per real fetch. Reuse is never decided on `bodyHash`; confirming by hash would move an old snapshot's observation time to today. Server only.
 - `kb-evidence-reuse.ts` — pure plan for one update run: which targets are reused, which are fetched, and the single fetch that opens each target's crawl gate. It performs no work and spends no budget.

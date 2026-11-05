@@ -6,6 +6,7 @@ import { normalizeSeoAuditUrl } from "@sf/public-tools";
 import { fetchPublicResource } from "@sf/sources/public-http";
 import { getServerAuthenticatedUser, type ServerAuthenticatedUser } from "../auth/server-auth-user.ts";
 import { extractClientIp } from "../rate-limit.ts";
+import { requestOrigin } from "../request-origin.ts";
 import { readPublicToolJson } from "../tools/public-tool-request.ts";
 import { consumePublicToolQuota, type PublicToolQuotaOutcome } from "../tools/shared-rate-limit.ts";
 import { parseCitabilityAiReview, type CitabilityAiContext, type CitabilityAiReview } from "./citability-ai-contract.ts";
@@ -106,7 +107,7 @@ export async function handleCitabilityAiRequest(request: Request, dependencies: 
   catch { return fail("auth_unavailable", 503); }
   if (user.status === "unauthenticated") return fail("auth_required", 401);
   if (user.status !== "authenticated") return fail("auth_unavailable", 503);
-  if (request.headers.get("Origin") !== new URL(request.url).origin) return fail("invalid_origin", 403);
+  if (request.headers.get("Origin") !== requestOrigin(request)) return fail("invalid_origin", 403);
 
   const body = await readPublicToolJson(request, REQUEST_BODY_BYTES);
   if (!body.ok) return fail(body.code, body.code === "payload_too_large" ? 413 : body.code === "unsupported_media_type" ? 415 : 400);

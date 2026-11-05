@@ -219,4 +219,16 @@ describe("isSameOriginPost", () => {
       ),
     ).toBe(false);
   });
+
+  it("judges by Host when self-hosted Next reports its own address", () => {
+    // Behind pick's Caddy, request.url is https://0.0.0.0:3001/...; comparing
+    // with it turned every real logout into a 403.
+    const selfHosted = (origin: string) =>
+      new Request("https://0.0.0.0:3001/api/auth/google/logout", {
+        method: "POST",
+        headers: { host: "gengrowth.ai", origin },
+      });
+    expect(isSameOriginPost(selfHosted("https://gengrowth.ai"))).toBe(true);
+    expect(isSameOriginPost(selfHosted("https://evil.example"))).toBe(false);
+  });
 });

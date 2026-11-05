@@ -9,6 +9,7 @@ import {
   normalizeReferralCode,
   referralCookieAttributes,
 } from "../../../lib/credits/referral-cookie.ts";
+import { requestOrigin } from "../../../lib/request-origin.ts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,7 +22,7 @@ export async function GET(
 ): Promise<Response> {
   const { code } = await Promise.resolve(context.params);
 
-  const response = NextResponse.redirect(new URL("/", request.url), 302);
+  const response = NextResponse.redirect(new URL("/", requestOrigin(request)), 302);
   // A redirect that sets a per-visitor cookie must never be cached by a CDN,
   // or the next visitor inherits someone else's referrer.
   response.headers.set("cache-control", "no-store");
