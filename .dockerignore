@@ -18,6 +18,9 @@ test-results
 # inputs. Excluding them also lets docs record an image digest without changing
 # that same image on the next reproducible build.
 docs
+# Marketing's plans and reviews likewise; Next's file tracing would otherwise
+# copy them into the marketing runtime image (apps/marketing/Dockerfile).
+apps/marketing/docs
 
 # Never copy local credentials, backups, or future env-file variants into the
 # build context. Docker builds do not need env examples at runtime.

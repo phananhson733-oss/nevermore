@@ -20,21 +20,25 @@
 - 任务中心。
 - 不改 Supabase、Google OAuth、Resend 的任何配置（域名不变，见"环境变量"）。
 
-第 1 节已在分支 `chore/marketing-remove-workflow-20261104` 上做完并提交，尚未合并或部署；第 2 节起仍待批准。
+第 1 节已合并（PR #355），2026-11-04 在 Vercel 上线。第 2 节已在分支 `chore/marketing-dockerfile-20261104` 上提交，尚未合并。第 3 节起仍待批准，而且要先定第 0 节第 1 条。
 
 ## 0. 先定下来的事
 
-1. **Cloudflare 走不走代理。** 默认不走（仅 DNS），和现在一样。走代理会在约 100 秒时断开请求，而 GEO Agent（单次预算 240 秒）、知识库推进（250 秒）、可引用性 AI 审查（120 秒）都超过这个时间，要先改代码拆分。
+1. **Cloudflare 走不走代理。** 默认不走（仅 DNS），和现在一样。走代理会在约 100 秒时断开请求，而 GEO Agent（单次预算 240 秒）、知识库推进（250 秒）、可引用性 AI 审查（120 秒）都超过这个时间，要先改代码拆分。第 1 步之后，低竞争关键词也是一次请求跑完（最长约 280 秒），同样超过。
+   **和 pick 的做法冲突（2026-11-04 查 pick 仓库 `deploy/tencent-migration.md`）：** pick 那台机器入站只开 22 端口，网页流量从 Cloudflare 隧道进到 Caddy（`http://caddy:80`）。隧道也是经过 Cloudflare 代理的，一样有约 100 秒的上限。所以"和 pick 放在一起、用同一种方式"与"仅 DNS"不能同时成立，要在下面三种里选一种：
+   - 同一台机器、走隧道：先把上面四个长耗时工具拆到 100 秒以内，再迁。
+   - 同一台机器、不走隧道：安全组给这台机器开 80/443，Caddy 自己签 `gengrowth.ai` 和 `www` 的证书，DNS 仅 DNS 指到机器公网 IP。pick 照旧走隧道，两边互不影响。
+   - 单独一台机器：做法同上一条，只是不和 pick 共用。
 2. **只跑一个实例。** 代码里有两处只在单进程下正确：
    - `src/lib/rate-limit.ts` 的限流计数存在进程内存的 `Map` 里；
    - 博客、prompts、skills 页面的 `revalidate = 3600` 缓存在本机文件系统。
    以后要多实例，这两处都要换成共享存储。以现在的流量，一个实例足够。
-3. **腾讯云区域和部署方式。** 跟 pick 用同一种（同一台机器加一个容器，或同一个集群）。区域尽量靠近 Supabase 生产项目 `nevermore`（`pxgzmoypkyyutpcmqexa`），它在 us-west-2（见 `docs/INFRASTRUCTURE.md`）。现在 Vercel 跑在 iad1（弗吉尼亚），到 us-west-2 本来就是跨美国东西岸。
+3. **腾讯云区域和部署方式。** pick 在腾讯云弗吉尼亚的一台 CVM 上，用 Docker Compose 跑，前面是 Caddy（2026-11-02 定，和 ShortsBinge 同一地域）。放在那台机器上，就是多一个 compose 服务，Caddy 多一条站点。Supabase 生产项目 `nevermore`（`pxgzmoypkyyutpcmqexa`）在 us-west-2（见 `docs/INFRASTRUCTURE.md`），到弗吉尼亚是跨美国东西岸；现在 Vercel 跑在 iad1（也是弗吉尼亚），所以数据库延迟和今天一样，不会变差。
 4. **出站 IP 白名单。** 迁移后服务器出站 IP 会变。确认 DataForSEO、Supabase 网络限制等第三方有没有按 IP 放行；有的话先把新 IP 加上。
 
 ## 1. 拆掉 Workflow
 
-已在分支 `chore/marketing-remove-workflow-20261104` 上完成并提交，尚未合并或部署。实际做法和最初写的"两个都显示暂不可用"不同，原因是两个工具的处境不一样。
+2026-11-04 合并（PR #355，合并提交 `59329c9f`），已在 Vercel 上线。实际做法和最初写的"两个都显示暂不可用"不同，原因是两个工具的处境不一样。
 
 **低竞争关键词：改回同步路径，照常可用。** 这个工具在接入 Workflow 之前就有一条同步路径（一次请求跑完，最长 300 秒），一直保留在 `handleKeywordOpportunitiesRequest` 里，和 Workflow 共用同一个结果组装函数，测试也一直在跑。
 
@@ -60,27 +64,47 @@
 **保留没删的：** `keyword-workflow-client.ts` 和前端的 202/轮询分支。服务端已经不会返回 202，这部分代码不会再走到，只用来读取并清掉旧指针。要删可以单独再做一次。
 
 这一步单独提交，在 Vercel 上先上线验证，和迁移解耦。上线后要看的：低竞争关键词完整跑一次；AI 可见性检查页面按钮是灰的、有暂停提示；`/.well-known/workflow/*` 返回 404。
+上线当天在线上查过的：旧的状态接口返回 410，`/.well-known/workflow/...` 返回 404，首页 200。要登录才能看的两项（关键词完整跑一次、可见性按钮置灰）还没查。
 
 ## 2. 构建镜像
 
-marketing 目前没有 Dockerfile。根目录有两个：`Dockerfile.worker` 是 Railway 实际在用的 worker 镜像，`Dockerfile.railway` 是已不再构建的历史镜像。新建 `apps/marketing/Dockerfile`，安装层照搬 `Dockerfile.worker` 的做法：
+已在分支 `chore/marketing-dockerfile-20261104` 上提交 `apps/marketing/Dockerfile`，2026-11-04 在本机（colima，linux/arm64）构建并跑通。构建上下文是仓库根目录：
 
-- `node:24-bookworm-slim` 镜像，固定 `corepack@0.34.5` 后启用 pnpm。
-- 先复制根目录的 `package.json`、`pnpm-lock.yaml`、`pnpm-workspace.yaml`、`.npmrc`、`patches/`，再复制 `apps/marketing`、`packages/public-tools`、`packages/sources` 的 `package.json`。
-- 用 `pnpm install --frozen-lockfile` 安装依赖。只复制部分 workspace 的 `package.json` 时 pnpm 是否接受 lockfile，要在第 6 节第 2 步本地构建时核实。不行就复制全部 workspace 的 `package.json`，或改用 `pnpm fetch`。
+```bash
+docker build -f apps/marketing/Dockerfile \
+  --build-arg NEXT_PUBLIC_APP_URL=... --build-arg NEXT_PUBLIC_GOOGLE_CLIENT_ID=... \
+  --build-arg NEXT_PUBLIC_SUPABASE_URL=... --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY=... \
+  -t gengrowth-marketing:<sha> .
+```
 
-要注意：
+做法：
 
-- **`NEXT_PUBLIC_*` 在构建时写死进前端代码**，必须作为构建参数传入，运行时再设没用。Vercel 里有 4 个：`NEXT_PUBLIC_APP_URL`、`NEXT_PUBLIC_GOOGLE_CLIENT_ID`、`NEXT_PUBLIC_SUPABASE_URL`、`NEXT_PUBLIC_SUPABASE_ANON_KEY`。
-- **构建时可能也要读服务端变量。** Vercel 构建时注入了全部变量，如果有页面在构建阶段预渲染并读 Supabase（例如 `src/lib/blog.ts`），Docker 构建也要提供。用 BuildKit secret 传，不要写进镜像层。
-- **standalone 的输出路径。** 因为追踪根是 monorepo 根目录，入口预计是 `.next/standalone/apps/marketing/server.js`。standalone 不包含 `public/` 和 `.next/static/`，要手动复制到对应位置。这一点在第 6 节第 2 步本地构建时核实。
-- 运行时设 `HOSTNAME=0.0.0.0`、`PORT=3001`（或你们约定的端口）、`NODE_ENV=production`。
-- `next/image` 自己部署时用 sharp 做图片优化。依赖树里有 sharp（根目录 override 到 0.35.3），但它是否被打进 standalone 要实测，由第 7 节的 `/_next/image` 验收项覆盖。
+- 三段构建，基础镜像都是 `node:24-bookworm-slim`。安装层照搬 `Dockerfile.worker`：固定 `corepack@0.34.5`，先复制根目录的 `package.json`、`pnpm-lock.yaml`、`pnpm-workspace.yaml`、`.npmrc`、`patches/`，再复制 4 个 workspace 的 `package.json`（`apps/marketing`、`packages/public-tools`、`packages/sources`、`packages/contracts`，后者是 sources 的依赖），然后 `pnpm install --frozen-lockfile`。只复制部分 workspace，pnpm 也接受 lockfile，实测通过。
+- 不用 `RUN --mount`，旧版构建器和 BuildKit 都能构建。本机没装 buildx，走的是旧版构建器；pick 的机器上用 BuildKit。
+- 最终镜像里只有 standalone 输出、`.next/static`、`public/`、`content/`，以 `node` 用户运行，入口 `node apps/marketing/server.js`，端口 3001。带健康检查（请求 `/robots.txt`）。
+- 本机冷构建约 5 分 40 秒（装依赖 3 分 24 秒），镜像 540 MB。
+
+核实过的事：
+
+- **`NEXT_PUBLIC_*` 要在构建时传。** 4 个值被写进了服务端代码（客户端组件不直接读它们），运行时再设不起作用。缺任何一个，构建直接失败（实测：少传一个时停在 `missing build arg NEXT_PUBLIC_SUPABASE_ANON_KEY`，没走到 `next build`），不会打出一个连不上 Supabase、Google 的包。`NEXT_PUBLIC_GA_MEASUREMENT_ID` 代码里有默认值，Vercel 上也没设，不传。
+- **构建不需要任何服务端密钥。** 只带 4 个构建参数就能完成构建和全部预渲染；原来担心的 `src/lib/blog.ts` 只在 `BLOG_LEGACY_SUPABASE_ENABLED=true` 时才读 Supabase。服务端变量都在运行时用 `--env-file` 给。
+- **入口路径**是 `/app/apps/marketing/server.js`，和预计一致。
+- **`content/`** 已经被 Next 的文件追踪自动带进 standalone（顺带也带进了 `src`、`supabase`、`scripts` 这些不用的目录，多占一点空间，不影响运行；`apps/marketing/docs` 原来也会被带进去，根目录 `.dockerignore` 已把它排除，这份方案不会进生产镜像）。Dockerfile 里仍显式复制一次，免得哪天追踪规则变了，博客和法律页打不开。
+- **sharp 被追踪漏了一半。** Next 只顺着 `require()` 追踪，sharp 原生模块里 `dlopen()` 的 `libvips-cpp.so` 没被带进来。结果 `/_next/image` 不报错，每张图都原样返回、不缩放不转格式。Dockerfile 在构建后把 `@img+sharp-*` 整个复制进 standalone，并在最终镜像里按 Next 的方式加载一次 sharp，加载不了就构建失败。修好后 1200px 的 PNG 按 640 宽请求，返回 WebP，117 KB 变成 12 KB。
+- **写缓存的权限。** 整棵目录归 `node`，ISR 页面和图片缓存都能写，日志里没有 `EACCES`。
+- **停容器。** `docker stop` 0.2 秒就退出了，正在处理的请求会被直接断开。部署重启时，跑到一半的长耗时工具（关键词地图、GEO Agent、知识库）会失败，所以重启要挑没人用的时候。
+
+还没核实的：
+
+- 本机构建的是 arm64，服务器是 x86。sharp 的 x64 包要在服务器上第一次构建时才确认；上面那道构建检查会拦住装不上的情况。
+- 镜像里没有任何服务端变量，所以登录、需要数据库或第三方接口的工具都没在本机跑过，这些留到第 7 节在服务器上验收。
+
+本机跑过的页面和接口：`/`、`/zh`、两篇博客、`/blog/rss.xml`、`/zh/blog/rss.xml`、`/robots.txt`、`/sitemap.xml`、`/prompts`、`/skills`、`/privacy` 都是 200；`/app`、`/blog/whitelabel-seo-tool`、`/tools/hidden-keywords` 是 301 到对应地址；`/api/auth/profile` 未登录返回 401；安全头都在，没有 `X-Powered-By`。
 
 ## 3. 服务器前面那一层（nginx / Caddy / 负载均衡）
 
 - **超时 ≥ 300 秒。** nginx 默认 60 秒，必须改大。self-hosted 下 `maxDuration` 不起作用，超时完全由这一层决定。
-- **把原始域名和协议传给 Next。** 代理层要传 `Host`、`X-Forwarded-Host`，以及 `X-Forwarded-Proto: https`。`src/proxy.ts` 和 next-intl 的语言跳转用请求 URL 拼出跳转地址；少了这些头，跳转会变成 `http://` 或内网地址。marketing 没有用 Server Actions，不涉及它的来源校验。
+- **把原始域名和协议传给 Next。** 代理层要传 `Host`、`X-Forwarded-Host`，以及 `X-Forwarded-Proto: https`。`src/proxy.ts` 和 next-intl 的语言跳转用请求 URL 拼出跳转地址；少了这些头，跳转会变成 `http://` 或内网地址。marketing 没有用 Server Actions，不涉及它的来源校验。本机容器里核实过（第 2 节）：重定向的 `Location` 是相对路径，不受影响；但 next-intl 写的 `Link` 头（各语言版本的地址）按 `Host` 和 `X-Forwarded-Proto` 拼，带上这两个头时是 `https://gengrowth.ai/...`，不带 `X-Forwarded-Proto` 就变成 `http://gengrowth.ai/...`。
 - **HTTP 跳 HTTPS。** 以前由 Vercel 做。HSTS 只对来过的访客生效，第一次来的访客仍需要 `http://` → `https://` 的 301。
 - **真实 IP。** 限流器优先信任 `x-real-ip`（`src/lib/rate-limit.ts` 注释写明依赖 Vercel 会剥掉客户端伪造的值）。代理层必须用连接 IP 覆盖 `X-Real-IP`，丢掉客户端发来的同名头，否则按 IP 限流可以被伪造绕过。`/api/consent` 也读这个头。
 - **HTTPS 证书要自己管。** 不走 Cloudflare 代理就没有 Cloudflare 的证书，以前是 Vercel 签发的。站点已经下发了 `Strict-Transport-Security: max-age=31536000; includeSubDomains`，老访客的浏览器会强制 HTTPS。切 DNS 时证书哪怕缺一分钟，这些访客都会直接打不开。所以根域名和 `www` 的证书都要在切换前签好，并且能自动续期（Caddy 自带，或者用 certbot）。
@@ -117,7 +141,7 @@ Vercel 上一共 75 个。只在 preview 或 development 用的 9 个不用迁�
 ## 6. 切换步骤
 
 1. 第 1 步（拆 Workflow）在 Vercel 上线，跑一两天确认无异常。
-2. 本地 `docker build`，核实 standalone 路径、静态文件、图片优化，再用 `docker run` 跑通。
+2. 本地 `docker build`，核实 standalone 路径、静态文件、图片优化，再用 `docker run` 跑通。2026-11-04 已在本机（arm64）做完，结果见第 2 节；x86 要在服务器上构建时再确认一次。
 3. 镜像部署到腾讯云。先不动 DNS，用 `curl --resolve gengrowth.ai:443:<新IP>` 或改本机 hosts 文件，访问新服务器做第 7 节的验收。
 4. 提前一天把 Cloudflare 上根域名 A 记录和 `www` 的 TTL 调到最短。
 5. 切换：根域名 A 记录改到新 IP；`www` 改为 A 记录指向新 IP（或 CNAME 到根域名）。两条记录都保持仅 DNS。
@@ -150,5 +174,6 @@ Vercel 上一共 75 个。只在 preview 或 development 用的 9 个不用迁�
 ## 工作量（粗估）
 
 - 拆 Workflow：已完成（关键词改回同步路径、可见性暂停、删除依赖和测试）。
-- Dockerfile、部署 workflow、代理层配置：一到两天。
+- Dockerfile：已完成（本机构建和冒烟测试通过）。
+- 部署 workflow、代理层配置：一天左右，前提是第 0 节第 1 条定下来。
 - 验收和切换：半天，另加 7 天观察期。
