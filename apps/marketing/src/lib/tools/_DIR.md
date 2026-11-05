@@ -27,7 +27,7 @@ One line per module: what it reads, what it returns, where it sits. Update the l
 
 本目录首个 `_DIR.md`（2026-08-29 随 content-brief 两个模块新建），其它模块的行由各自作者补。
 
-- `gsc-properties-handler.ts` — same-origin authenticated, feature-flagged property refresh. Shares the GSC in-flight slot but uses its own durable 30/IP/hour quota bucket; admission precedes grant renewal and site-list calls. Returns only cookie-bounded properties, real total and brand candidates, with private no-store stable errors and no credentials.
+- `gsc-properties-handler.ts` — same-origin (judged against `requestOrigin`, the Host header) authenticated, feature-flagged property refresh. Shares the GSC in-flight slot but uses its own durable 30/IP/hour quota bucket; admission precedes grant renewal and site-list calls. Returns only cookie-bounded properties, real total and brand candidates, with private no-store stable errors and no credentials.
 - `gsc-properties-handler.test.ts` — property refresh response, empty/truncated lists, no token leakage, cross-origin and identity refusals, independent durable quota, shared in-flight refusal, unavailable/revoked error mapping and release on every admitted exit.
 - `traffic-drop-session.ts` / `traffic-drop-session.test.ts` — page-safe cookie reads plus API-only grant resolution; explicit refresh options reach the grant reader while ordinary tool runs retain their renewal behavior.
 - `../auth/grant-cookie.ts` / `../auth/grant-cookie.test.ts` — account-bound grant renewal and explicit property refresh, including unexpired/legacy access tokens, one re-list after renewal, fail-closed freshness, preserved session on temporary errors and cookie-budget-matched property responses.

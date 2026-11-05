@@ -6,6 +6,7 @@
 import { brandTermCandidates, createPublicToolError } from "@sf/public-tools";
 import { cookies } from "next/headers";
 import { identitySubFrom, type GrantResolution } from "../auth/grant-cookie.ts";
+import { requestOrigin } from "../request-origin.ts";
 import { acquireGscSlot } from "./gsc-inflight.ts";
 import { refuseWithoutGrant } from "./gsc-gate.ts";
 import type { PublicToolSlot } from "./public-tool-request.ts";
@@ -49,7 +50,7 @@ export async function handleGscPropertiesRequest(
 ): Promise<Response> {
   // Browser POSTs identify their origin. No body or caller-supplied property is trusted.
   const origin = request.headers.get("Origin");
-  if (origin !== new URL(request.url).origin) {
+  if (origin !== requestOrigin(request)) {
     return json(createPublicToolError("invalid_request"), 403);
   }
 

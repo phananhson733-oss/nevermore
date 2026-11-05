@@ -9,6 +9,7 @@ import {
   type SealedCookiePurpose,
 } from "./sealed-cookie.ts";
 import type { StoredGrant } from "./grant-cookie.ts";
+import { requestOrigin } from "../request-origin.ts";
 
 /** Read and clear only. Disconnecting never writes a cookie. */
 export interface DisconnectCookieJar {
@@ -137,7 +138,7 @@ export function isSameOriginPost(request: Request): boolean {
   const origin = request.headers.get("origin");
   if (!origin) return true;
   try {
-    return new URL(origin).origin === new URL(request.url).origin;
+    return new URL(origin).origin === requestOrigin(request);
   } catch {
     return false;
   }
