@@ -1,5 +1,5 @@
 // @input  — @/types 中的 NavItem / FooterLink 类型
-// @output — 顶部主导航、网站审查 / Resources 子菜单及 footer 链接数据
+// @output — 顶部主导航（含任务中心、我的收益）、网站审查 / Resources 子菜单及 footer 链接数据
 // @pos    — 静态配置，供 Header 和 Footer 组件消费
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 import type { NavItem, FooterLink, NavMenuGroup, NavMenuItem } from "@/types";
@@ -75,6 +75,8 @@ export const resourcesMenuGroups: NavMenuGroup[] = [
 
 export const headerNavItems: NavItem[] = [
   { labelKey: "common.home", href: "/" },
+  { labelKey: "nav.tasks", href: "/tasks" },
+  { labelKey: "nav.earnings", href: "/earnings" },
   {
     labelKey: "nav.agents",
     href: "/agents",

@@ -20,12 +20,14 @@ const reservedRootPaths = new Set([
   "api",
   "about",
   "account",
+  "admin",
   "agents",
   "blog",
   "compare",
   "contact",
   "cookies",
   "copyright",
+  "earnings",
   "en",
   "features",
   "feed.xml",
@@ -39,6 +41,8 @@ const reservedRootPaths = new Set([
   "robots.txt",
   "sitemap.xml",
   "skills",
+  "t",
+  "tasks",
   "templates",
   "terms",
   "tools",
@@ -96,7 +100,10 @@ export function proxy(request: NextRequest): NextResponse {
     pathname.startsWith("/go/") ||
     localeGoPath.test(pathname) ||
     pathname === "/r" ||
-    pathname.startsWith("/r/")
+    pathname.startsWith("/r/") ||
+    // /t/{code} is a promo link: one click recorded and a redirect off-site.
+    pathname === "/t" ||
+    pathname.startsWith("/t/")
   ) {
     return NextResponse.next();
   }

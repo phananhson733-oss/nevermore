@@ -107,7 +107,7 @@ export function NavSubmenu({
     <NavigationMenu.Root delayDuration={100} className="relative">
       <NavigationMenu.List className="flex list-none items-center">
         <NavigationMenu.Item>
-          <NavigationMenu.Trigger className="group flex items-center gap-1 text-[13.5px] text-text-dark-secondary transition-colors hover:text-text-dark-primary focus-visible:text-text-dark-primary focus-visible:ring-2 focus-visible:ring-brand-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-brand-bg focus-visible:outline-none data-[state=open]:text-text-dark-primary">
+          <NavigationMenu.Trigger className="group flex items-center gap-1 text-[13.5px] whitespace-nowrap text-text-dark-secondary transition-colors hover:text-text-dark-primary focus-visible:text-text-dark-primary focus-visible:ring-2 focus-visible:ring-brand-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-brand-bg focus-visible:outline-none data-[state=open]:text-text-dark-primary">
             {triggerLabel}
             <ChevronDown
               aria-hidden="true"

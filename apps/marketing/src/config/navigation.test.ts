@@ -102,6 +102,8 @@ describe("Website audits submenu", () => {
       headerNavItems.map(({ labelKey, href }) => ({ labelKey, href })),
     ).toEqual([
       { labelKey: "common.home", href: "/" },
+      { labelKey: "nav.tasks", href: "/tasks" },
+      { labelKey: "nav.earnings", href: "/earnings" },
       { labelKey: "nav.agents", href: "/agents" },
       { labelKey: "nav.blog", href: "/blog" },
       { labelKey: "nav.resources", href: "/resources" },

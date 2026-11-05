@@ -1,5 +1,5 @@
 // @input  — next-intl, navigation config, ui/button, ui/sheet, language-switcher
-// @output — Header 组件（固定顶部导航栏 + 移动端侧边菜单）
+// @output — Header 组件（固定顶部导航栏，xl 起横排；xl 以下用侧边菜单）
 // @pos    — 全局布局组件，对应 SPEC 2.3.1
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
@@ -62,7 +62,7 @@ export function Header() {
         {/* Logo */}
         <Link
           href={localePath(locale)}
-          className="flex items-center gap-2.5 text-base font-semibold text-text-dark-primary"
+          className="flex shrink-0 items-center gap-2.5 text-base font-semibold text-text-dark-primary"
         >
           {/* The Direction A mark is a shape, not a disc: its arrow runs out to
               the top-right corner of the canvas. The round crop this used to
@@ -78,10 +78,13 @@ export function Header() {
           GenGrowth
         </Link>
 
-        {/* Desktop Nav */}
+        {/* Desktop Nav. From xl up: with Task Center and My Earnings the seven
+            links and the right-hand buttons no longer fit side by side at lg
+            (measured 2026-11-05 at 1024px), so below xl the menu button
+            carries them. */}
         <nav
           aria-label="Main navigation"
-          className="hidden items-center gap-7.5 lg:flex"
+          className="hidden items-center gap-7.5 xl:flex"
         >
           {headerNavItems.map((item) =>
             item.menu ? (
@@ -97,7 +100,7 @@ export function Header() {
               <Link
                 key={item.href}
                 href={localePath(locale, item.href)}
-                className="text-[13.5px] text-text-dark-secondary transition-colors hover:text-text-dark-primary"
+                className="text-[13.5px] whitespace-nowrap text-text-dark-secondary transition-colors hover:text-text-dark-primary"
               >
                 {t(item.labelKey)}
               </Link>
@@ -123,7 +126,7 @@ export function Header() {
 
           {/* Mobile Menu */}
           <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-            <SheetTrigger asChild className="lg:hidden">
+            <SheetTrigger asChild className="xl:hidden">
               <button
                 ref={mobileMenuTriggerRef}
                 className="text-text-dark-primary p-2"
