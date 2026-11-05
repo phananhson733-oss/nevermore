@@ -1,0 +1,35 @@
+# @input  -- requests for gengrowth.ai, www and next.gengrowth.ai, arriving at pick's Caddy through cloudflared
+# @output -- proxied to the gengrowth-marketing container on port 3001, or redirected to the apex
+# @pos    -- marketing's site file in pick's state/sites/, copied there by deploy.sh
+# 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
+#
+# Cloudflare terminates HTTPS; pick's Caddyfile trusts the tunnel's
+# X-Forwarded-Proto, so the app still sees https and builds https links.
+
+(gengrowth_marketing) {
+	reverse_proxy gengrowth-marketing:3001 {
+		# Cloudflare sets CF-Connecting-IP to the visitor's address and the tunnel
+		# is the only way in, so this replaces anything a client sent.
+		# extractClientIp in src/lib/rate-limit.ts trusts X-Real-IP first.
+		header_up X-Real-IP {http.request.header.CF-Connecting-IP}
+	}
+}
+
+http://gengrowth.ai {
+	import gengrowth_marketing
+}
+
+http://www.gengrowth.ai {
+	redir https://gengrowth.ai{uri} permanent
+}
+
+# Acceptance host for before the cutover; remove it after. NEXT_PUBLIC_APP_URL
+# is baked as gengrowth.ai, so Google sign-in and session cookies do not work
+# here, and links lead back to the live site.
+http://next.gengrowth.ai {
+	header {
+		X-Robots-Tag "noindex, nofollow"
+		defer
+	}
+	import gengrowth_marketing
+}
