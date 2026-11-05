@@ -115,12 +115,16 @@ docker build -f apps/marketing/Dockerfile \
 
 - **超时。** Caddy 不设上限，真正的上限是 Cloudflare 的约 100 秒（第 0 节第 1 条）。self-hosted 下 `maxDuration` 不起作用。
 - **原始域名和协议。** pick 的 Caddyfile 已经信任内网来源（`trusted_proxies static private_ranges`），cloudflared 传来的 `X-Forwarded-Proto: https` 原样交给 Next，`Host` 也不改。next-intl 的 `Link` 头因此是 `https://gengrowth.ai/...`。中间件发出的重定向 `Location` 是相对路径，不受影响；接口里拼的绝对跳转（登录回调、`/r/<code>`）按 `Host` 拼，见第 2 节。
-- **HTTP 跳 HTTPS。** 由 Cloudflare 的 "Always Use HTTPS" 做，切换前在 Cloudflare 后台确认它是开着的。没开的话，`http://` 请求也会经隧道进来，按 http 出页面。
+- **HTTP 跳 HTTPS。** 由 Cloudflare 的 "Always Use HTTPS" 做，切换前在 Cloudflare 后台确认它是开着的。没开的话，`http://` 请求也会经隧道进来，按 http 出页面。2026-11-05 实测它原来是关的，已经打开：作用于整个 zone，`http://` 一律 301 到 `https://`，路径和查询参数保留，pick、test1 的 https 响应不变。
 - **真实 IP。** 站点文件里 `header_up X-Real-IP {http.request.header.CF-Connecting-IP}`：Cloudflare 把访客 IP 写在 `CF-Connecting-IP` 里，隧道又是唯一入口，所以客户端自己带的 `X-Real-IP` 会被覆盖掉。限流器（`src/lib/rate-limit.ts`）和 `/api/consent` 都先读 `X-Real-IP`，代码不用改。
 - **证书不用管。** 访客连的是 Cloudflare 的证书。pick.gengrowth.ai 现在用的就是同一张（2026-11-05 查，`CN=gengrowth.ai`，含 `*.gengrowth.ai`，Google Trust Services 签发），根域名、`www`、验收用的 `next.gengrowth.ai` 都在里面。原来"HSTS 加证书缺口"这个风险没有了。
 - **`www` 跳转。** 站点文件里 301 到根域名，和现在 Vercel 的行为一样。
-- **验收用的 `next.gengrowth.ai`。** 同一个容器，另加 `X-Robots-Tag: noindex, nofollow`，切换后删掉。`NEXT_PUBLIC_APP_URL` 和 Google 回调地址都是 gengrowth.ai，所以在这个地址上走不了 Google 登录流程，页面里的链接也会跳回正式站。不过登录 cookie 的作用域由 `SESSION_COOKIE_DOMAIN` 决定（`src/lib/supabase/session-cookie-options.ts`），生产上如果设的是 `gengrowth.ai`（为了让 app.gengrowth.ai 共用登录，应该是），那么先在正式站登录，再打开 `next.gengrowth.ai`，浏览器会带着同一个会话，要登录才能验的接口在切换前就能验。2026-11-05 查过，这个名字在 Cloudflare 上还没有记录。
-- **Cloudflare 会第一次改写这个站的页面。** gengrowth.ai 现在是仅 DNS，从来没经过 Cloudflare 代理。接上隧道后，zone 里改写 HTML 的功能会作用到它：Rocket Loader 和 Scrape Shield 里的 Email Address Obfuscation（会改写页面里像邮箱的文字并插入脚本）都可能让 React 水合报错，切换前确认这两个是关的。Bot Fight Mode 开着的话会拦一部分自动化请求，记下它的状态。marketing 没有接收第三方回调（webhook）的接口（2026-11-05 查 `src/app/api`），这一项不用担心。验收时在浏览器里打开 `next.gengrowth.ai`，看控制台有没有水合报错。
+- **验收用的 `next.gengrowth.ai`。** 同一个容器，另加 `X-Robots-Tag: noindex, nofollow`，切换后删掉。`NEXT_PUBLIC_APP_URL` 和 Google 回调地址都是 gengrowth.ai，所以在这个地址上走不了 Google 登录流程，页面里的链接也会跳回正式站。不过登录 cookie 的作用域由 `SESSION_COOKIE_DOMAIN` 决定（`src/lib/supabase/session-cookie-options.ts`），生产上如果设的是 `gengrowth.ai`（为了让 app.gengrowth.ai 共用登录，应该是），那么先在正式站登录，再打开 `next.gengrowth.ai`，浏览器会带着同一个会话，要登录才能验的接口在切换前就能验。2026-11-05 已在 `pick-prod-1` 隧道上加了这条路由（`http://caddy:80`），DNS 记录随之自动建出。
+- **Cloudflare 会第一次改写这个站的页面。** gengrowth.ai 现在是仅 DNS，从来没经过 Cloudflare 代理。接上隧道后，zone 里改写 HTML 的功能会作用到它：Rocket Loader 和 Scrape Shield 里的 Email Address Obfuscation（会改写页面里像邮箱的文字并插入脚本）都可能让 React 水合报错，切换前确认这两个是关的。Bot Fight Mode 开着的话会拦一部分自动化请求，记下它的状态。marketing 没有接收第三方回调（webhook）的接口（2026-11-05 查 `src/app/api`），这一项不用担心。验收时在浏览器里打开 `next.gengrowth.ai`，看控制台有没有水合报错。2026-11-05 在 `next.gengrowth.ai` 上查过：
+  - **Rocket Loader 是关的。**
+  - **Email Address Obfuscation 原来开着，已关掉。** 开着时页面里被插了 `cdn-cgi/l/email-protection`。关掉之后在 Chrome 里打开首页、`/zh` 和一篇博客，控制台没有消息。
+  - **Bot Fight Mode 是关的。**
+  - **AI 爬虫没被拦。** 用 GPTBot、ClaudeBot、PerplexityBot、Google-Extended、Googlebot 的 UA 访问都是 200。`robots.txt` 和 Vercel 上的逐字节相同，Cloudflare 没有接管它。
 - **上传大小。** Cloudflare 免费版单个请求体上限 100 MB。以后管理员后台上传视频，要让浏览器直接传到对象存储（预签名地址）或者分片上传，不能整个文件经过这台机器。pick 已经因为同一个原因做过分片上传。
 - **日志。** 迁过去就没有 Vercel 的日志和 Observability 了，只剩 `docker logs gengrowth-marketing`（pick 的 `server-setup.sh` 已经配了 Docker 日志轮转）。外部可用性探测可选，探 `/robots.txt` 即可。
 
@@ -129,7 +133,12 @@ docker build -f apps/marketing/Dockerfile \
 Vercel 上一共 75 个。只在 preview 或 development 用的 9 个不用迁：`FIRECRAWL_*` 4 个，`GOOGLE_CLIENT_EMAIL`、`GOOGLE_CLOUD_LOCATION`、`GOOGLE_CLOUD_PROJECT`、`GOOGLE_PRIVATE_KEY`、`GOOGLE_SERVICE_ACCOUNT_KEY`。其余 66 个是 production 要的。
 
 - 取值：`vercel env pull --environment=production` 拉到本地，经 ssh 写进服务器上的 `/srv/gengrowth-marketing/marketing.env`（权限 600），然后删掉本地那份。不进 git，不打印到日志，不贴进聊天。具体命令见 `apps/marketing/deploy/README.md`。
-- 在 Vercel 上标成 Sensitive 的变量可能拉不出值，文件里会是空的。`deploy.sh` 每次运行会列出空值的变量名（不打印值），这些要去各自的服务后台重新取。
+- **Sensitive 的变量拉不出值，已用一次性构建取回（2026-11-05）。** `vercel env pull` 给这些变量写的是字面的 `[SENSITIVE]`，不是空值。`gengrowth-agents` 的 production 一共 66 个（去掉 `VERCEL*`、`TURBO_*`、`NX_DAEMON` 之后），只有 `BLOG_LEGACY_SUPABASE_ENABLED`、`CRON_SECRET`、`MARKETING_SHORT_LINKS_ENABLED`、`NEXT_PUBLIC_APP_URL` 4 个拉到了真值，其余 62 个连模型名、温度、开关、URL 也都标成了 Sensitive，Vercel 的接口同样不返回。
+  - **怎么取回的。** 构建时读得到这些值，所以从一个临时目录往 `gengrowth-agents` 发了一次 `vercel deploy --prod --skip-domain`，构建命令换成导出脚本。脚本只读这 62 个变量名，把值整体加密到服务器上生成的证书（RSA-4096 + AES-256，私钥没离开服务器），日志里只有密文和一行统计，最后故意失败。日志里的统计是 `VERCEL_ENV=production found=62/62 missing=[]`。那次部署 `dpl_3q7a1foaBCAJ7Lx83pcME1ogmYLR` 停在 ERROR，没有分配域名，gengrowth.ai 没动。
+  - **怎么核对的。** 在服务器上解密，写回 `marketing.env`，再让 docker compose 自己读一遍，逐个和原值比对，62 个全部一致。私钥、证书、密文和明文中间文件随后在两边都删了。
+  - **TOKEN_ENCRYPTION_KEY 是原值。** 所以访客的 Google 登录和 GSC 连接不会因为迁移失效。万一以后只能换新 key：Supabase 登录不受影响，但 `gg_id`、`gg_gsc`、`gg_oauth_tx`、`gg_onetap`、`gg_kw_context` 这几个加密 cookie 会失效，访客要重新连 Google 和 GSC。
+  - **16 个 `SIGNALFRAME_*` 值末尾多一个换行。** 多半是当初用 `echo 值 | vercel env add` 加的。营销站和 `packages/` 都不读任何 `SIGNALFRAME_*`，原样保留。
+  - **以后改值直接改服务器上的 `marketing.env`。** Vercel 项目删掉以后它就是唯一一份，删之前要另外备份。`deploy.sh` 发现还有 `[SENSITIVE]` 就停下，列出变量名（不打印值）。
 - compose 读这个文件的方式，2026-11-05 本机用 docker-compose 5.1.4 实测过：双引号会去掉，`\n` 会变成真的换行，这两点和 `vercel env pull` 的写法对得上。但双引号里的 `$NAME` 会被替换成运行 compose 那个 shell 里的同名变量（没有就是空），密钥会被悄悄改掉；`$$` 才是字面的 `$`。所以 `deploy.sh` 发现哪个值里有单个 `$` 就停下，列出变量名，要把那个值里的 `$` 改成 `$$`。
 - `CRON_SECRET`：marketing 代码里没用到，可以不迁。
 
@@ -153,7 +162,9 @@ Vercel 上一共 75 个。只在 preview 或 development 用的 9 个不用迁�
 `apps/marketing/deploy/deploy.sh <git ref>` 依次做这些事：拉代码、切到那个提交；这个 sha 的镜像不在本机就构建（构建参数从 env 文件里取）；`docker compose up -d --wait`，等容器自己的健康检查通过；站点文件有变化就装进 Caddy（第 3 节）；最后打印被替换掉的 sha。把那个 sha 传回去就是回滚，镜像还在，不用重新构建，几秒钟完成。
 
 - **每次发布都会断一下。** 容器重建时正在处理的请求会被断开（第 2 节，`docker stop` 0.2 秒退出）。本机每 0.2 秒探一次，换容器时有一个请求挂了 2 秒没回应，前后约 2.5 秒。挑没人用的时候发。
-- **构建占 pick 的机器。** 冷构建本机约 5 分半，期间 CPU 和内存跟 pick 共用。按 pick 的采购单（`deploy/tencent-purchase-sop.md`），那台是 8 核 32 GB，容器限 2 GB 内存；第一次上机先用 `free -g`、`df -h /srv` 核对实际余量。
+- **构建占 pick 的机器。** 冷构建本机约 5 分半，期间 CPU 和内存跟 pick 共用。2026-11-05 上机只读查过：x86_64、Ubuntu 24.04、8 核、30 GB 内存（可用约 25 GB）、`/srv` 剩 150 GB；pick 的 web 容器限 6 GB，查的时候 CPU 占 45%。我们的容器限 2 GB，余量够。构建期间 pick 会慢一点，所以也挑没人用的时候发。
+- **服务器上的现状（2026-11-05 只读查过）。** 登录用户是 `ubuntu`，在 `docker` 组里，sudo 不要密码，第一次建 `/srv/gengrowth-marketing` 用得上。Docker 29.9.2、compose v5.7.0，`docker build` 走 BuildKit（本机测的是旧的构建器，所以服务器上第一次构建要看一眼）。能连 GitHub、Google Fonts、npm。`deploy.sh` 用到的路径都在：`state/sites/` 归 `ubuntu`、Caddy 把它只读挂到 `/etc/caddy/sites`，`platform.sh` 把 `exec` 原样交给 compose。cloudflared 用 token 跑，新的 Public Hostname 在 Cloudflare 后台加，和第 3 节一致。已有的站点是 `pick.gengrowth.ai` 和 `test1-drama.gengrowth.ai`，跟我们的三个域名不冲突。
+- **pick 的清理不会碰我们的东西。** pick 的 `provision.sh` 只写它自己的 `state/sites/<客户>.caddy`，不删别的文件（客户名哪天取成 `gengrowth-marketing` 才会撞）。机器上有个每周一 04:00 的 `drama-docker-prune.timer`，只清 3 天前的构建缓存，不删镜像，回滚用的旧镜像还在；清完之后的第一次构建是冷构建。
 - **没有自动把关。** Vercel 构建时会跑的检查没了，发布前在本地跑 marketing 的 test、typecheck、lint。
 - **会失去的：** 每个分支自动生成的预览地址。观察期内 Vercel 照旧随 main 自动部署，作为回滚目标。
 
@@ -164,8 +175,8 @@ Vercel 上一共 75 个。只在 preview 或 development 用的 9 个不用迁�
 3. 服务器一次性准备（`apps/marketing/deploy/README.md`）：先告诉 pick 那边要动哪些东西；目录、deploy key、`marketing.env`。
 4. `deploy.sh origin/main`。在 Cloudflare 隧道的 Public Hostname 里加 `next.gengrowth.ai` → `http://caddy:80`，在这个地址上做第 7 节里不需要登录的那些项。
 5. 切换前把现有两条记录抄下来：根域名 A `76.76.21.21`（仅 DNS），`www` CNAME `cname.vercel-dns.com`（仅 DNS）。
-6. 切换：只删内容是 `76.76.21.21` 的那条根域名 A 记录和 `www` 那条 CNAME，根域名上的 TXT、MX（Resend 的 SPF/DKIM、各种站点验证）一条都不要碰。删完紧接着在隧道里加 `gengrowth.ai`、`www.gengrowth.ai` 两个 Public Hostname，都指到 `http://caddy:80`。Cloudflare 不允许在已有记录的名字上加隧道地址，所以只能先删后加，中间会有一两分钟的空档；本地 DNS 缓存没过期的访客这段时间还在 Vercel 上。确认 "Always Use HTTPS" 开着。
-7. 切完马上做第 7 节里要登录的那些项。登录不通就立刻回滚。
+6. 切换：只删内容是 `76.76.21.21` 的那条根域名 A 记录和 `www` 那条 CNAME，根域名上的 TXT、MX（Resend 的 SPF/DKIM、各种站点验证）一条都不要碰。删完紧接着在隧道里加 `gengrowth.ai`、`www.gengrowth.ai` 两个 Public Hostname，都指到 `http://caddy:80`。Cloudflare 不允许在已有记录的名字上加隧道地址，所以只能先删后加，中间会有一两分钟的空档；本地 DNS 缓存没过期的访客这段时间还在 Vercel 上。确认 "Always Use HTTPS" 开着。2026-11-05 已切：两个名字分开做，各自删完马上加隧道路由，根域名空了不到一分钟，`www` 不到两分钟；删之前根域名上没有 AAAA。切完从 Cloudflare 边缘查：两个名字都解析到 Cloudflare，响应里没有 `x-vercel-id`；页面、rss、sitemap、robots 都是 200，根域名没有 noindex；`www` 301 到根域名并保留路径和参数，`http://` 301 到 `https://`；canonical、og:url 和 sitemap 里的 195 个地址都是 `https://gengrowth.ai`；`/api/auth/google/start` 跳到 accounts.google.com，`redirect_uri` 是 `https://gengrowth.ai/api/auth/google/callback`；test1 仍是 200。
+7. 切完马上做第 7 节里要登录的那些项。登录不通就立刻回滚。2026-11-05 切完后在正式站上用 Google 登录、One Tap 和退出登录，都正常，不用回滚；那段时间容器日志里没有报错，浏览器确认走的是新服务器（没有 `x-vercel-id`）。
 8. 观察 24 小时：`docker logs` 里的 5xx，524 的多少，登录。
 9. **回滚：** 删掉隧道里那两个 Public Hostname（连同它们建出来的 DNS 记录），按第 5 步抄下来的值把两条记录加回去。Vercel 项目在观察期内保持自动部署，回滚到的就是最新代码。
 10. 稳定 7 天后：删掉 `next.gengrowth.ai` 的 Public Hostname 和站点文件里那一段；Vercel 项目解绑域名、停掉 Git 自动部署，删除 `apps/marketing/vercel.json`；更新 `docs/INFRASTRUCTURE.md` 里 `gengrowth-agents` 和营销站环境变量落点的说明。项目本身先留着，后面跟 app 下线一起清理。
@@ -197,5 +208,5 @@ Vercel 上一共 75 个。只在 preview 或 development 用的 9 个不用迁�
 
 - 拆 Workflow：已完成（关键词改回同步路径、可见性暂停、删除依赖和测试）。
 - Dockerfile：已完成（本机构建和冒烟测试通过）。
-- 代理层配置、部署脚本：已写好（`apps/marketing/deploy/`）。2026-11-05 在本机搭了一个假的 pick（只有 Caddy，用 pick 真实的 Caddyfile，接在本地 `drama` 网络上），`deploy.sh` 实际跑过这几种情况：首次发布（构建、等健康检查、装站点文件、reload），同一个 sha 再发（跳过构建、不 reload），站点文件写坏（Caddy 拒收，原文件放回，退出码 1），回滚到旧 sha（不构建，几秒完成）。经这个 Caddy 访问，根域名 200，`Link` 头是 https，`www` 301 带路径和参数，`next` 带 noindex，`/_next/image` 出 WebP。把上游换成回显请求头的容器后看到，伪造的 `X-Real-IP` 被 `CF-Connecting-IP` 覆盖了。没测的有：真实的 cloudflared 隧道、x86 构建、服务器上的 Docker 版本。
+- 代理层配置、部署脚本：已写好（`apps/marketing/deploy/`）。2026-11-05 在本机搭了一个假的 pick（只有 Caddy，用 pick 真实的 Caddyfile，接在本地 `drama` 网络上），`deploy.sh` 实际跑过这几种情况：首次发布（构建、等健康检查、装站点文件、reload），同一个 sha 再发（跳过构建、不 reload），站点文件写坏（Caddy 拒收，原文件放回，退出码 1），回滚到旧 sha（不构建，几秒完成）。经这个 Caddy 访问，根域名 200，`Link` 头是 https，`www` 301 带路径和参数，`next` 带 noindex，`/_next/image` 出 WebP。把上游换成回显请求头的容器后看到，伪造的 `X-Real-IP` 被 `CF-Connecting-IP` 覆盖了。没测的有：真实的 cloudflared 隧道、x86 构建（服务器上的 Docker 版本已查，见第 5 节）。
 - 服务器准备、验收和切换：拿到机器权限后半天，另加 7 天观察期。卡在权限上，不在代码上。

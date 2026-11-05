@@ -52,7 +52,11 @@ main() {
   local ref=${1:?usage: deploy.sh <git ref>}
   [ -r "$env_file" ] || die "$env_file is missing; see apps/marketing/deploy/README.md"
 
-  # Variables marked Sensitive on Vercel may come back empty from `vercel env pull`.
+  # `vercel env pull` writes the literal [SENSITIVE] for every variable marked
+  # Sensitive on Vercel; building or running with it would ship a broken site.
+  local placeholders
+  placeholders=$(grep -E '^[A-Za-z_][A-Za-z0-9_]*=("|'"'"')?\[SENSITIVE\]("|'"'"')?$' "$env_file" | cut -d= -f1 | tr '\n' ' ' || true)
+  [ -z "$placeholders" ] || die "marketing.env still holds [SENSITIVE] placeholders for: ${placeholders}(fill them in from each provider)"
   local empty
   empty=$(grep -E '^[A-Za-z_][A-Za-z0-9_]*=(""|'"''"')?$' "$env_file" | cut -d= -f1 | tr '\n' ' ' || true)
   [ -z "$empty" ] || echo "deploy: warning, empty in marketing.env: $empty" >&2

@@ -11,7 +11,7 @@
 
 ## 一次性准备
 
-动手前先跟 pick 那边说一声，这台机器上会多出这些东西：`drama` 网络上一个容器，`deploy/saas/state/sites/` 里一个文件，一次 Caddy reload，每次发布约 5 分钟的构建 CPU。下面的命令都在服务器上、用对 `state/sites` 有写权限的那个用户（跟跑 pick `provision.sh` 的是同一个）执行，除非写明在 Mac 上。
+动手前先跟 pick 那边说一声，这台机器上会多出这些东西：`drama` 网络上一个容器，`deploy/saas/state/sites/` 里一个文件，一次 Caddy reload，每次发布约 5 分钟的构建 CPU。下面的命令都在服务器上、用 `ubuntu` 用户执行，除非写明在 Mac 上。它就是跑 pick `provision.sh` 的那个用户：`state/sites` 归它，它在 `docker` 组里，sudo 不要密码（2026-11-05 查过）。
 
 1. 目录和代码。deploy key 在 GitHub 的 nevermore 仓库 Settings → Deploy keys 里添加，只读：
 
@@ -29,10 +29,10 @@
    ```bash
    vercel link
    vercel env pull --environment=production .env.production.local
-   ssh <服务器> 'umask 077 && cat > /srv/gengrowth-marketing/marketing.env' < .env.production.local && rm .env.production.local
+   ssh ubuntu@<服务器> 'umask 077 && cat > /srv/gengrowth-marketing/marketing.env' < .env.production.local && rm .env.production.local
    ```
 
-   `deploy.sh` 每次运行会列出值为空的变量名。Vercel 上标成 Sensitive 的变量可能就是空的，要去各自的服务后台重新取。
+   Vercel 上标成 Sensitive 的变量拉不出值，文件里写的是字面的 `[SENSITIVE]`。2026-11-05 实拉 `gengrowth-agents` 的 production，66 个里 62 个是这样。这 62 个当天用一次性导出构建取回了原值，已经写进服务器上的 `marketing.env`，做法和检查见迁移方案第 4 节。以后改值直接改服务器上的这个文件；Vercel 项目删掉以后它就是唯一一份，要另外备份到安全的地方。`deploy.sh` 发现还有 `[SENSITIVE]` 就停下并列出变量名，值为空的只提醒。`VERCEL*`、`TURBO_*`、`NX_DAEMON` 是 Vercel 自己构建用的，不用传；`VERCEL_OIDC_TOKEN` 几个小时就过期，也不要放上去。
 
 3. 第一次发布，然后在 Cloudflare 隧道的 Public Hostname 里加 `next.gengrowth.ai` → `http://caddy:80`，用这个地址验收：
 
