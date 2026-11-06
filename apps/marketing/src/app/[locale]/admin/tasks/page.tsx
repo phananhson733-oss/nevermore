@@ -1,5 +1,5 @@
 // @input  -- locale param; the admin check; every drama in the task database
-// @output -- the admin drama list with status and promoter counts, and the new-drama form
+// @output -- links to 账号报白 and 结算导入, the admin drama list with status and promoter counts, and the new-drama form
 // @pos    -- /admin/tasks, the operators' entry page (Chinese only); 404 for anyone not on TASK_ADMIN_EMAILS
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -42,9 +42,14 @@ export default async function AdminTasksPage({
           <h1 className="text-page-title text-text-dark-primary">任务后台</h1>
           <p className="mt-2 text-[14px] text-text-dark-secondary">登录身份：{admin.email}</p>
         </div>
-        <Link href={`${base}/earnings`} className="text-[14px] text-brand-accent-text hover:underline">
-          结算导入 →
-        </Link>
+        <div className="flex gap-5">
+          <Link href={`${base}/accounts`} className="text-[14px] text-brand-accent-text hover:underline">
+            账号报白 →
+          </Link>
+          <Link href={`${base}/earnings`} className="text-[14px] text-brand-accent-text hover:underline">
+            结算导入 →
+          </Link>
+        </div>
       </div>
 
       {db === null && <p className={NOTE}>没有配置 TASKS_DATABASE_URL，任务数据库不可用。</p>}

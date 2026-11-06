@@ -36,6 +36,7 @@ const reservedRootPaths = new Set([
   "playbooks",
   "pricing",
   "privacy",
+  "promotions",
   "prompts",
   "resources",
   "robots.txt",

@@ -1,17 +1,17 @@
 // @input  -- a TaskDb, a verified Supabase user id, a promo code from /t/<code>
-// @output -- claims (one per person, drama and channel), the promo redirect target, click counts
+// @output -- claims (one per person, drama and channel; new ones are channel "all"), the promo redirect target, click counts
 // @pos    -- every SQL statement on task_center.task_claims and task_center.promo_clicks
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import { randomInt } from "node:crypto";
 
-import { PROMO_CODE_ALPHABET, type PromoChannel } from "./contracts.ts";
+import { PROMO_CODE_ALPHABET, type ClaimChannel } from "./contracts.ts";
 import { toSafeInteger, type TaskDb } from "./db.ts";
 
 export interface Claim {
   readonly id: string;
   readonly dramaId: string;
-  readonly channel: PromoChannel;
+  readonly channel: ClaimChannel;
   readonly code: string;
   readonly claimedAt: string;
 }
@@ -26,7 +26,7 @@ export interface ClaimWithStats extends Claim {
 interface ClaimRow {
   id: string;
   drama_id: string;
-  channel: PromoChannel;
+  channel: ClaimChannel;
   code: string;
   claimed_at: Date;
 }
@@ -62,7 +62,7 @@ export type ClaimResult =
  */
 export async function claimTask(
   db: TaskDb,
-  claim: { readonly userId: string; readonly dramaId: string; readonly channel: PromoChannel },
+  claim: { readonly userId: string; readonly dramaId: string; readonly channel: ClaimChannel },
   newCode: () => string = generatePromoCode,
 ): Promise<ClaimResult> {
   // A collision on `code` is about one in 10^12 per claim; a few retries is

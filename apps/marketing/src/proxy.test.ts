@@ -168,9 +168,10 @@ describe("proxy referral landing", () => {
     },
   );
 
-  // "earnings" is long enough to look like a short-link code; "tasks" and
-  // "admin" are not, but stay reserved so a future short link cannot take them.
-  it.each(["/earnings", "/tasks", "/admin"])(
+  // "earnings" and "promotions" are long enough to look like short-link codes;
+  // "tasks" and "admin" are not, but stay reserved so a future short link
+  // cannot take them.
+  it.each(["/earnings", "/promotions", "/tasks", "/admin"])(
     "keeps the task center page %s in locale routing",
     (path) => {
       const response = proxy(request(path));

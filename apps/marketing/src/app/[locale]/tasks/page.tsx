@@ -1,9 +1,11 @@
 // @input  -- locale param; platform, language, q, sort and page query; the task database; R2 for covers
-// @output -- the published dramas as a filterable, paged grid of task cards
+// @output -- the promoter tabs, then the published dramas as a filterable, paged grid of task cards
 // @pos    -- /tasks, the task center's entry page
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import Link from "next/link";
+
+import { TaskTabs } from "@/components/task-center/task-tabs";
 
 import { PAGE_SIZE } from "@/lib/task-center/contracts";
 import { taskCopy, languageName } from "@/lib/task-center/copy";
@@ -95,6 +97,7 @@ export default async function TasksPage({
   return (
     <section className="bg-brand-bg px-6 pt-14 pb-24 md:px-8">
       <div className="mx-auto max-w-6xl">
+        <TaskTabs locale={locale} current="tasks" />
         <h1 className="text-page-title text-text-dark-primary">{copy.tasksTitle}</h1>
         <p className="mt-4 max-w-2xl text-[15px] leading-[1.65] text-text-dark-secondary">
           {copy.tasksSubtitle}
