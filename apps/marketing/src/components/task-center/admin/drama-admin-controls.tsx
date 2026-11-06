@@ -1,5 +1,5 @@
 // @input  -- a drama id, its status and assets; the admin status, upload and asset APIs; R2 via signed PUT URLs
-// @output -- publish/take-down buttons, the cover and clip uploaders with progress (one upload at a time, a still cut from each video in the browser), per-clip type and delete
+// @output -- publish/take-down buttons, the cover and clip uploaders (one button opens the file picker, or files are dropped on the box, and the upload starts as soon as files are picked; progress, one upload at a time, a still cut from each video in the browser), per-clip type and delete
 // @pos    -- the interactive half of /admin/tasks/<id>
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
@@ -183,6 +183,7 @@ export function UploadControl({
   const [error, setError] = useState<string | null>(null);
   // A ref, not state: a second click in the same tick must already see it.
   const uploading = useRef(false);
+  const [dragging, setDragging] = useState(false);
   const types = purpose === "cover" ? IMAGE_TYPES : [...VIDEO_TYPES, ...IMAGE_TYPES];
 
   if (!storageReady) {
@@ -243,8 +244,7 @@ export function UploadControl({
     return true;
   }
 
-  async function upload(): Promise<void> {
-    const files = Array.from(input.current?.files ?? []);
+  async function upload(files: readonly File[]): Promise<void> {
     if (files.length === 0 || uploading.current) return;
     // Disables the button before the first progress event, so a second click
     // cannot start the same files again as duplicate clips.
@@ -266,7 +266,21 @@ export function UploadControl({
   }
 
   return (
-    <div className="space-y-3">
+    <div
+      className={`space-y-3 rounded-[10px] border-2 border-dashed p-4 transition-colors ${
+        dragging ? "border-brand-accent bg-brand-accent/5" : "border-brand-border-card"
+      }`}
+      onDragOver={(event) => {
+        event.preventDefault();
+        setDragging(true);
+      }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={(event) => {
+        event.preventDefault();
+        setDragging(false);
+        void upload(Array.from(event.dataTransfer.files));
+      }}
+    >
       <div className="flex flex-wrap items-center gap-3">
         {purpose === "asset" && (
           <select
@@ -292,16 +306,33 @@ export function UploadControl({
             className="h-9 min-w-60 rounded-[8px] border border-brand-border-strong bg-brand-bg px-3 text-[13.5px] text-text-dark-primary"
           />
         )}
+        {/* Hidden: the button opens it, and picking files starts the upload.
+            A separate "choose file" then "upload" left a click on the button
+            with nothing chosen doing nothing at all. */}
         <input
           ref={input}
           type="file"
           multiple={purpose === "asset"}
           accept={types.join(",")}
-          className="text-[13.5px] text-text-dark-secondary"
+          aria-label={purpose === "cover" ? "选择封面图片" : "选择素材文件"}
+          className="hidden"
+          onChange={(event) => void upload(Array.from(event.target.files ?? []))}
         />
-        <button type="button" className={BUTTON} disabled={progress !== null} onClick={() => void upload()}>
-          {purpose === "cover" ? "上传封面" : "上传素材"}
+        <button
+          type="button"
+          className={BUTTON}
+          disabled={progress !== null}
+          onClick={() => {
+            if (!uploading.current) input.current?.click();
+          }}
+        >
+          {purpose === "cover" ? "选择并上传封面" : "选择并上传素材"}
         </button>
+        <span className="text-[13px] text-text-dark-secondary">
+          {purpose === "cover"
+            ? "点按钮选图片，或把图片拖到这个框里，选好就开始上传"
+            : "点按钮选文件（可多选），或把文件拖到这个框里，选好就开始上传"}
+        </span>
       </div>
       {progress && <p className="font-mono text-[13px] text-text-dark-secondary">{progress}</p>}
       {error && <p role="alert" className="text-[13.5px] text-brand-error">{error}</p>}
