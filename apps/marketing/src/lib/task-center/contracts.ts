@@ -1,5 +1,5 @@
 // @input  -- zod
-// @output -- claim channels, account platforms and statuses, upload limits, and the parsers admin and promoter requests go through
+// @output -- claim channels, account platforms and statuses, drama audiences, clip types, upload limits, and the parsers admin and promoter requests go through
 // @pos    -- the task center's request contract; the SQL checks in db/tasks repeat these limits
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -33,6 +33,17 @@ export const MAX_ACCOUNTS_PER_USER = 20;
 
 export const DRAMA_STATUSES = ["draft", "published", "archived"] as const;
 export type DramaStatus = (typeof DRAMA_STATUSES)[number];
+
+/** Who a drama is written for, as platforms sort them (女频 / 男频). */
+export const DRAMA_AUDIENCES = ["female", "male"] as const;
+export type DramaAudience = (typeof DRAMA_AUDIENCES)[number];
+
+/** What kind of cut a clip is. 0003 repeats this list in a check. */
+export const CLIP_TYPES = ["recap", "mixcut", "highlight", "trailer", "episode"] as const;
+export type ClipType = (typeof CLIP_TYPES)[number];
+
+/** A genre is a free slug like the platform: lowercase, digits and dashes. */
+export const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,31}$/;
 
 export const VIDEO_TYPES = [
   "video/mp4",
@@ -82,11 +93,7 @@ export const dramaInputSchema = z
   .object({
     title: z.string().trim().min(1).max(200),
     titleCn: optionalText(200),
-    platform: z
-      .string()
-      .trim()
-      .toLowerCase()
-      .regex(/^[a-z0-9][a-z0-9-]{0,31}$/),
+    platform: z.string().trim().toLowerCase().regex(SLUG_PATTERN),
     language: z
       .string()
       .trim()
@@ -102,6 +109,15 @@ export const dramaInputSchema = z
       (value) => value === null || /^[A-Za-z0-9_]{1,32}$/.test(value),
       { message: "invalid_param" },
     ),
+    // Optional so a form opened before these existed still saves.
+    audience: z
+      .enum(DRAMA_AUDIENCES)
+      .nullable()
+      .optional()
+      .transform((value) => value ?? null),
+    genre: optionalText(32)
+      .transform((value) => value?.toLowerCase() ?? null)
+      .refine((value) => value === null || SLUG_PATTERN.test(value), { message: "invalid_genre" }),
   })
   .strict()
   .refine(
@@ -121,6 +137,11 @@ export const uploadRequestSchema = z
   .object({
     purpose: z.enum(["cover", "asset"]),
     title: optionalText(200),
+    clipType: z
+      .enum(CLIP_TYPES)
+      .nullable()
+      .optional()
+      .transform((value) => value ?? null),
     fileName: z.string().trim().min(1).max(255),
     contentType: z.enum([...VIDEO_TYPES, ...IMAGE_TYPES]),
     byteSize: z.number().int().min(1),
@@ -141,17 +162,31 @@ export const uploadRequestSchema = z
 export type UploadRequest = z.infer<typeof uploadRequestSchema>;
 
 export const uploadCompleteSchema = z.union([
-  z.object({ purpose: z.literal("asset"), assetId: z.string().uuid() }).strict(),
+  z
+    .object({
+      purpose: z.literal("asset"),
+      assetId: z.string().uuid(),
+      // Set when the browser managed to cut and upload a still; optional so a
+      // page opened before posters existed still completes its upload.
+      posterKey: z.string().min(1).max(512).optional(),
+    })
+    .strict(),
   z
     .object({ purpose: z.literal("cover"), objectKey: z.string().min(1).max(512) })
     .strict(),
 ]);
+
+/** An admin retagging a clip; null clears the type. */
+export const assetUpdateSchema = z
+  .object({ clipType: z.enum(CLIP_TYPES).nullable() })
+  .strict();
 
 /**
  * A claim needs no input: the drama is in the path and the channel is always
  * "all". A named channel is still accepted, and ignored, so a page opened
  * before the one-link change can still claim while a deploy rolls out.
  */
+
 export const claimInputSchema = z
   .object({ channel: z.enum(PROMO_CHANNELS).optional() })
   .strict();

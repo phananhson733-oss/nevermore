@@ -1,9 +1,9 @@
 // @input  -- a TaskDb and admin or visitor requests already parsed by contracts.ts
-// @output -- dramas and their clip assets: the public list and detail, and the admin reads and writes
+// @output -- dramas and their clip assets: the public clip grid (with this week's hot dramas), the drama list and detail, and the admin reads and writes
 // @pos    -- every SQL statement on task_center.dramas and task_center.drama_assets
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
-import type { DramaInput, DramaStatus } from "./contracts.ts";
+import type { ClipType, DramaAudience, DramaInput, DramaStatus } from "./contracts.ts";
 import { toSafeInteger, type TaskDb } from "./db.ts";
 
 export interface DramaSummary {
@@ -15,6 +15,8 @@ export interface DramaSummary {
   readonly episodes: number | null;
   readonly payStart: number | null;
   readonly coverKey: string | null;
+  readonly audience: DramaAudience | null;
+  readonly genre: string | null;
   readonly listedAt: string | null;
   /** People who claimed at least one channel, counted from task_claims. */
   readonly promoterCount: number;
@@ -40,18 +42,12 @@ export interface DramaAsset {
   readonly status: "pending" | "ready";
   readonly sort: number;
   readonly uploadedAt: string | null;
+  readonly clipType: ClipType | null;
+  /** The still cut from a video at upload; null for images and older videos. */
+  readonly posterKey: string | null;
 }
 
 export type DramaSort = "newest" | "promoters";
-
-export interface DramaListQuery {
-  readonly platform?: string | null;
-  readonly language?: string | null;
-  readonly search?: string | null;
-  readonly sort: DramaSort;
-  readonly page: number;
-  readonly pageSize: number;
-}
 
 interface DramaRow {
   id: string;
@@ -62,6 +58,8 @@ interface DramaRow {
   episodes: number | null;
   pay_start: number | null;
   cover_key: string | null;
+  audience: DramaAudience | null;
+  genre: string | null;
   listed_at: Date | null;
   promoter_count: string | number;
   synopsis?: string | null;
@@ -83,12 +81,14 @@ interface AssetRow {
   status: "pending" | "ready";
   sort: number;
   uploaded_at: Date | null;
+  clip_type: ClipType | null;
+  poster_key: string | null;
 }
 
 const PROMOTER_COUNT = `(select count(distinct c.user_id) from task_center.task_claims c where c.drama_id = d.id)`;
 
 const SUMMARY_COLUMNS = `d.id, d.title, d.title_cn, d.platform, d.language, d.episodes, d.pay_start,
-  d.cover_key, d.listed_at, ${PROMOTER_COUNT} as promoter_count`;
+  d.cover_key, d.audience, d.genre, d.listed_at, ${PROMOTER_COUNT} as promoter_count`;
 
 const DETAIL_COLUMNS = `${SUMMARY_COLUMNS}, d.synopsis, d.status, d.promo_target_url,
   d.promo_code_param, d.created_at, d.updated_at`;
@@ -103,6 +103,8 @@ function toSummary(row: DramaRow): DramaSummary {
     episodes: row.episodes,
     payStart: row.pay_start,
     coverKey: row.cover_key,
+    audience: row.audience,
+    genre: row.genre,
     listedAt: row.listed_at?.toISOString() ?? null,
     promoterCount: toSafeInteger(row.promoter_count) ?? 0,
   };
@@ -132,6 +134,8 @@ function toAsset(row: AssetRow): DramaAsset {
     status: row.status,
     sort: row.sort,
     uploadedAt: row.uploaded_at?.toISOString() ?? null,
+    clipType: row.clip_type,
+    posterKey: row.poster_key,
   };
 }
 
@@ -142,63 +146,144 @@ function likePattern(search: string): string {
 
 // ---------------------------------------------------------------- public reads
 
-export async function listPublishedDramas(
+/**
+ * 本周爆款: the three published dramas the most people took a link for in the
+ * last seven days, among those with at least one. Computed on every read and
+ * never stored, so with no claims there is simply no badge. Ties go to the
+ * drama claimed most recently.
+ */
+const HOT_DRAMAS = `select c.drama_id
+    from task_center.task_claims c
+    join task_center.dramas hd on hd.id = c.drama_id and hd.status = 'published'
+   where c.claimed_at >= now() - interval '7 days'
+   group by c.drama_id
+   order by count(distinct c.user_id) desc, max(c.claimed_at) desc, c.drama_id
+   limit 3`;
+
+export interface PlazaAsset {
+  readonly id: string;
+  readonly kind: "video" | "image";
+  readonly title: string;
+  readonly objectKey: string;
+  readonly byteSize: number;
+  readonly clipType: ClipType | null;
+  readonly posterKey: string | null;
+  readonly uploadedAt: string | null;
+  readonly drama: DramaSummary;
+  /** Its drama is one of this week's three most claimed. */
+  readonly hot: boolean;
+}
+
+export interface PlazaQuery {
+  readonly platform?: string | null;
+  readonly language?: string | null;
+  readonly audience?: DramaAudience | null;
+  readonly genre?: string | null;
+  readonly clipType?: ClipType | null;
+  readonly search?: string | null;
+  readonly sort: DramaSort;
+  readonly page: number;
+  readonly pageSize: number;
+}
+
+/** Ready clips of published dramas, newest upload first: the grid on /tasks. */
+export async function listPublishedAssets(
   db: TaskDb,
-  query: DramaListQuery,
-): Promise<{ readonly items: readonly DramaSummary[]; readonly total: number }> {
-  const where = ["d.status = 'published'"];
+  query: PlazaQuery,
+): Promise<{ readonly items: readonly PlazaAsset[]; readonly total: number }> {
+  const where = ["d.status = 'published'", "a.status = 'ready'"];
   const values: unknown[] = [];
-  if (query.platform) {
-    values.push(query.platform);
-    where.push(`d.platform = $${values.length}`);
-  }
-  if (query.language) {
-    values.push(query.language);
-    where.push(`d.language = $${values.length}`);
-  }
+  const equal = (column: string, value: string | null | undefined) => {
+    if (!value) return;
+    values.push(value);
+    where.push(`${column} = $${values.length}`);
+  };
+  equal("d.platform", query.platform);
+  equal("d.language", query.language);
+  equal("d.audience", query.audience);
+  equal("d.genre", query.genre);
+  equal("a.clip_type", query.clipType);
   const search = query.search?.trim();
   if (search) {
     values.push(likePattern(search));
-    where.push(
-      `(d.title ilike $${values.length} or d.title_cn ilike $${values.length})`,
-    );
+    const n = values.length;
+    where.push(`(a.title ilike $${n} or d.title ilike $${n} or d.title_cn ilike $${n})`);
   }
   const order =
     query.sort === "promoters"
-      ? "promoter_count desc, d.listed_at desc, d.id"
-      : "d.listed_at desc, d.id";
+      ? "promoter_count desc, a.uploaded_at desc, a.id"
+      : "a.uploaded_at desc, a.id";
+  const from = `task_center.drama_assets a join task_center.dramas d on d.id = a.drama_id`;
   const whereSql = where.join(" and ");
 
   const { rows: countRows } = await db.query<{ total: string }>(
-    `select count(*) as total from task_center.dramas d where ${whereSql}`,
+    `select count(*) as total from ${from} where ${whereSql}`,
     values,
   );
   values.push(query.pageSize, (query.page - 1) * query.pageSize);
-  const { rows } = await db.query<DramaRow>(
-    `select ${SUMMARY_COLUMNS} from task_center.dramas d
+  const { rows } = await db.query<
+    DramaRow & {
+      asset_id: string;
+      kind: "video" | "image";
+      asset_title: string;
+      object_key: string;
+      byte_size: string | number;
+      clip_type: ClipType | null;
+      poster_key: string | null;
+      uploaded_at: Date | null;
+      hot: boolean;
+    }
+  >(
+    `with hot as (${HOT_DRAMAS})
+     select a.id as asset_id, a.kind, a.title as asset_title, a.object_key, a.byte_size,
+            a.clip_type, a.poster_key, a.uploaded_at,
+            ${SUMMARY_COLUMNS},
+            exists (select 1 from hot where hot.drama_id = d.id) as hot
+       from ${from}
       where ${whereSql}
       order by ${order}
       limit $${values.length - 1} offset $${values.length}`,
     values,
   );
   return {
-    items: rows.map(toSummary),
+    items: rows.map((row) => ({
+      id: row.asset_id,
+      kind: row.kind,
+      title: row.asset_title,
+      objectKey: row.object_key,
+      byteSize: toSafeInteger(row.byte_size) ?? 0,
+      clipType: row.clip_type,
+      posterKey: row.poster_key,
+      uploadedAt: row.uploaded_at?.toISOString() ?? null,
+      drama: toSummary(row),
+      hot: row.hot,
+    })),
     total: toSafeInteger(countRows[0]?.total) ?? 0,
   };
 }
 
-/** The platforms and languages that currently have something published. */
+/** The platforms, languages and genres that currently have something published. */
 export async function listPublishedFacets(
   db: TaskDb,
-): Promise<{ readonly platforms: readonly string[]; readonly languages: readonly string[] }> {
-  const { rows } = await db.query<{ platforms: string[] | null; languages: string[] | null }>(
+): Promise<{
+  readonly platforms: readonly string[];
+  readonly languages: readonly string[];
+  readonly genres: readonly string[];
+}> {
+  const { rows } = await db.query<{
+    platforms: string[] | null;
+    languages: string[] | null;
+    genres: string[] | null;
+  }>(
     `select array_agg(distinct platform order by platform) as platforms,
-            array_agg(distinct language order by language) as languages
+            array_agg(distinct language order by language) as languages,
+            array_agg(distinct genre order by genre) filter (where genre is not null) as genres
        from task_center.dramas where status = 'published'`,
   );
   return {
     platforms: rows[0]?.platforms ?? [],
     languages: rows[0]?.languages ?? [],
+    genres: rows[0]?.genres ?? [],
   };
 }
 
@@ -283,6 +368,8 @@ function dramaValues(input: DramaInput): unknown[] {
     input.synopsis,
     input.promoTargetUrl,
     input.promoCodeParam,
+    input.audience,
+    input.genre,
   ];
 }
 
@@ -295,8 +382,8 @@ export async function createDrama(
   const { rows } = await db.query<{ id: string }>(
     `insert into task_center.dramas
        (title, title_cn, platform, language, episodes, pay_start, synopsis,
-        promo_target_url, promo_code_param, created_by)
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        promo_target_url, promo_code_param, audience, genre, created_by)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
      returning id`,
     [...dramaValues(input), adminEmail],
   );
@@ -318,8 +405,8 @@ export async function updateDrama(
       `update task_center.dramas
           set title = $1, title_cn = $2, platform = $3, language = $4, episodes = $5,
               pay_start = $6, synopsis = $7, promo_target_url = $8,
-              promo_code_param = $9, updated_at = now()
-        where id = $10`,
+              promo_code_param = $9, audience = $10, genre = $11, updated_at = now()
+        where id = $12`,
       values,
     );
     return rowCount === 0 ? { ok: false, code: "not_found" } : { ok: true };
@@ -376,16 +463,17 @@ export async function createPendingAsset(
     readonly objectKey: string;
     readonly contentType: string;
     readonly byteSize: number;
+    readonly clipType: ClipType | null;
     readonly createdBy: string;
   },
 ): Promise<boolean> {
   const { rowCount } = await db.query(
     `insert into task_center.drama_assets
-       (id, drama_id, kind, title, object_key, content_type, byte_size, sort, created_by)
+       (id, drama_id, kind, title, object_key, content_type, byte_size, sort, clip_type, created_by)
      select $1, d.id, case when $4 like 'video/%' then 'video' else 'image' end,
             $3, $5, $4, $6,
             coalesce((select max(sort) + 1 from task_center.drama_assets where drama_id = d.id), 0),
-            $7
+            $8, $7
        from task_center.dramas d where d.id = $2`,
     [
       asset.id,
@@ -395,28 +483,52 @@ export async function createPendingAsset(
       asset.objectKey,
       asset.byteSize,
       asset.createdBy,
+      asset.clipType,
     ],
   );
   return rowCount === 1;
 }
 
-export async function markAssetReady(db: TaskDb, assetId: string): Promise<boolean> {
-  const { rowCount } = await db.query(
+/** A null poster keeps any still already recorded, so a retried completion never drops it. */
+export async function markAssetReady(
+  db: TaskDb,
+  assetId: string,
+  posterKey: string | null = null,
+): Promise<{ readonly posterKey: string | null } | null> {
+  const { rows } = await db.query<{ poster_key: string | null }>(
     `update task_center.drama_assets
-        set status = 'ready', uploaded_at = coalesce(uploaded_at, now())
-      where id = $1`,
-    [assetId],
+        set status = 'ready', uploaded_at = coalesce(uploaded_at, now()),
+            poster_key = coalesce($2, poster_key)
+      where id = $1
+      returning poster_key`,
+    [assetId, posterKey],
+  );
+  return rows[0] === undefined ? null : { posterKey: rows[0].poster_key };
+}
+
+/** Retags a clip; false when it does not exist. */
+export async function setAssetClipType(
+  db: TaskDb,
+  assetId: string,
+  clipType: ClipType | null,
+): Promise<boolean> {
+  const { rowCount } = await db.query(
+    `update task_center.drama_assets set clip_type = $2 where id = $1`,
+    [assetId, clipType],
   );
   return rowCount === 1;
 }
 
-/** Deletes the row and returns the R2 key the caller should remove. */
-export async function deleteAsset(db: TaskDb, assetId: string): Promise<string | null> {
-  const { rows } = await db.query<{ object_key: string }>(
-    `delete from task_center.drama_assets where id = $1 returning object_key`,
+/** Deletes the row and returns the R2 keys the caller should remove: the file, and its still if any. */
+export async function deleteAsset(
+  db: TaskDb,
+  assetId: string,
+): Promise<{ readonly objectKey: string; readonly posterKey: string | null } | null> {
+  const { rows } = await db.query<{ object_key: string; poster_key: string | null }>(
+    `delete from task_center.drama_assets where id = $1 returning object_key, poster_key`,
     [assetId],
   );
-  return rows[0]?.object_key ?? null;
+  return rows[0] === undefined ? null : { objectKey: rows[0].object_key, posterKey: rows[0].poster_key };
 }
 
 function isConstraint(error: unknown, name: string): boolean {

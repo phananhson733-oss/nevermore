@@ -1,5 +1,5 @@
 // @input  -- a drama's current fields (edit) or none (create); POST/PUT /api/admin/tasks/dramas
-// @output -- the admin form for a drama's details and promo target
+// @output -- the admin form for a drama's details, audience and genre, and promo target
 // @pos    -- create and edit on /admin/tasks and /admin/tasks/<id>
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
@@ -7,6 +7,8 @@
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
+import { DRAMA_AUDIENCES, type DramaAudience } from "../../../lib/task-center/contracts.ts";
+import { AUDIENCE_LABELS_ZH } from "../../../lib/task-center/copy.ts";
 import { adminFetch, describeError } from "./admin-fetch.ts";
 
 export interface DramaFormValues {
@@ -19,6 +21,8 @@ export interface DramaFormValues {
   readonly synopsis: string | null;
   readonly promoTargetUrl: string | null;
   readonly promoCodeParam: string | null;
+  readonly audience: DramaAudience | null;
+  readonly genre: string | null;
 }
 
 const FIELD =
@@ -63,6 +67,8 @@ export function DramaForm({
       synopsis: text(form.get("synopsis")),
       promoTargetUrl: text(form.get("promoTargetUrl")),
       promoCodeParam: text(form.get("promoCodeParam")),
+      audience: text(form.get("audience")),
+      genre: text(form.get("genre")),
     };
     setSaving(true);
     setMessage(null);
@@ -89,7 +95,7 @@ export function DramaForm({
         <input name="title" required maxLength={200} defaultValue={initial?.title} className={FIELD} />
       </label>
       <label className="text-[13px] text-text-dark-secondary">
-        中文名
+        中文名（可选）
         <input name="titleCn" maxLength={200} defaultValue={initial?.titleCn ?? ""} className={FIELD} />
       </label>
       <label className="text-[13px] text-text-dark-secondary">
@@ -113,6 +119,27 @@ export function DramaForm({
       <label className="text-[13px] text-text-dark-secondary">
         收费起始集（不填就不显示锁）
         <input name="payStart" type="number" min={1} max={2000} defaultValue={initial?.payStart ?? ""} className={FIELD} />
+      </label>
+      <label className="text-[13px] text-text-dark-secondary">
+        频道（素材广场按它筛选）
+        <select name="audience" defaultValue={initial?.audience ?? ""} className={FIELD}>
+          <option value="">不填</option>
+          {DRAMA_AUDIENCES.map((value) => (
+            <option key={value} value={value}>
+              {AUDIENCE_LABELS_ZH[value]}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="text-[13px] text-text-dark-secondary">
+        题材（小写英文，如 romance、werewolf、billionaire）
+        <input
+          name="genre"
+          pattern="[a-z0-9][a-z0-9\-]{0,31}"
+          maxLength={32}
+          defaultValue={initial?.genre ?? ""}
+          className={FIELD}
+        />
       </label>
       <label className="text-[13px] text-text-dark-secondary sm:col-span-2">
         推广目标地址（https，平台给的分销链接；上架前必填）

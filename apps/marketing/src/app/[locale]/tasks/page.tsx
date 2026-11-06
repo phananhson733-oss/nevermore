@@ -1,20 +1,30 @@
-// @input  -- locale param; platform, language, q, sort and page query; the task database; R2 for covers
-// @output -- the promoter tabs, then the published dramas as a filterable, paged grid of task cards
+// @input  -- locale param; q, platform, language, audience, genre, type, sort and page query; the task database; the session; R2 for stills and covers
+// @output -- the promoter tabs, then every ready clip of a published drama as a filterable, paged 素材广场 grid
 // @pos    -- /tasks, the task center's entry page
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import Link from "next/link";
 
+import type { LinkView } from "@/components/task-center/claim-panel";
+import { ClipPlaza, type ClipCard } from "@/components/task-center/clip-plaza";
 import { TaskTabs } from "@/components/task-center/task-tabs";
-
-import { PAGE_SIZE } from "@/lib/task-center/contracts";
-import { taskCopy, languageName } from "@/lib/task-center/copy";
+import { siteConfig } from "@/config/site";
+import { getServerAuthenticatedUser } from "@/lib/auth/server-auth-user";
+import { listMyClaims } from "@/lib/task-center/claims-store";
+import {
+  CLIP_TYPES,
+  DRAMA_AUDIENCES,
+  PAGE_SIZE,
+  SLUG_PATTERN,
+  type ClipType,
+  type DramaAudience,
+} from "@/lib/task-center/contracts";
+import { genreLabel, languageName, promoLink, taskCopy } from "@/lib/task-center/copy";
 import { getTaskDb } from "@/lib/task-center/db";
 import {
-  listPublishedDramas,
+  listPublishedAssets,
   listPublishedFacets,
   type DramaSort,
-  type DramaSummary,
 } from "@/lib/task-center/dramas-store";
 import { coverImageUrl, readR2Config } from "@/lib/task-center/r2";
 import { localePath } from "@/lib/locale-path";
@@ -49,6 +59,16 @@ function one(value: string | string[] | undefined): string | null {
   return trimmed ? trimmed.slice(0, 100) : null;
 }
 
+function member<T extends string>(list: readonly T[], value: string | null): T | null {
+  return value !== null && (list as readonly string[]).includes(value) ? (value as T) : null;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
+  if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
 export default async function TasksPage({
   params,
   searchParams,
@@ -61,17 +81,31 @@ export default async function TasksPage({
   const copy = taskCopy(locale);
   const platform = one(query.platform);
   const language = one(query.language);
+  const audience = member<DramaAudience>(DRAMA_AUDIENCES, one(query.audience));
+  const genreParam = one(query.genre);
+  const genre = genreParam !== null && SLUG_PATTERN.test(genreParam) ? genreParam : null;
+  const clipType = member<ClipType>(CLIP_TYPES, one(query.type));
   const search = one(query.q);
   const sort: DramaSort = one(query.sort) === "promoters" ? "promoters" : "newest";
   const page = Math.max(1, Math.min(1000, Number.parseInt(one(query.page) ?? "1", 10) || 1));
 
   const db = getTaskDb();
-  let result: Awaited<ReturnType<typeof listPublishedDramas>> | null = null;
-  let facets: Awaited<ReturnType<typeof listPublishedFacets>> = { platforms: [], languages: [] };
+  let result: Awaited<ReturnType<typeof listPublishedAssets>> | null = null;
+  let facets: Awaited<ReturnType<typeof listPublishedFacets>> = { platforms: [], languages: [], genres: [] };
   if (db !== null) {
     try {
       [result, facets] = await Promise.all([
-        listPublishedDramas(db, { platform, language, search, sort, page, pageSize: PAGE_SIZE }),
+        listPublishedAssets(db, {
+          platform,
+          language,
+          audience,
+          genre,
+          clipType,
+          search,
+          sort,
+          page,
+          pageSize: PAGE_SIZE,
+        }),
         listPublishedFacets(db),
       ]);
     } catch (error) {
@@ -79,20 +113,60 @@ export default async function TasksPage({
       result = null;
     }
   }
-  const r2 = readR2Config();
-  const filtered = Boolean(platform || language || search);
-  const pages = result === null ? 1 : Math.max(1, Math.ceil(result.total / PAGE_SIZE));
 
-  const pageHref = (target: number) => {
+  const user = await getServerAuthenticatedUser().catch(() => ({ status: "unavailable" as const }));
+  const signedIn = user.status === "authenticated";
+  // The one "all" link per drama this person already holds, so a card's
+  // dialog shows it instead of the button.
+  const links: Record<string, LinkView> = {};
+  if (db !== null && user.status === "authenticated") {
+    const claims = await listMyClaims(db, user.userId).catch(() => []);
+    for (const claim of claims) {
+      if (claim.channel === "all") {
+        links[claim.dramaId] = { code: claim.code, link: promoLink(siteConfig.url, claim.code) };
+      }
+    }
+  }
+
+  const r2 = readR2Config();
+  const cards: ClipCard[] = (result?.items ?? []).map((item) => {
+    const still = item.posterKey ?? (item.kind === "image" ? item.objectKey : null);
+    const { drama } = item;
+    return {
+      id: item.id,
+      kind: item.kind,
+      title: item.title,
+      clipType: item.clipType,
+      posterUrl: r2 !== null && still !== null ? coverImageUrl(r2, still) : null,
+      coverUrl: r2 !== null && drama.coverKey !== null ? coverImageUrl(r2, drama.coverKey) : null,
+      size: formatBytes(item.byteSize),
+      hot: item.hot,
+      dramaId: drama.id,
+      dramaTitle: locale === "zh" && drama.titleCn ? drama.titleCn : drama.title,
+      dramaHref: localePath(locale, `/tasks/${drama.id}`),
+      audience: drama.audience,
+      genre: drama.genre,
+      language: drama.language,
+    };
+  });
+
+  const filtered = Boolean(platform || language || audience || genre || clipType || search);
+  const pages = result === null ? 1 : Math.max(1, Math.ceil(result.total / PAGE_SIZE));
+  const queryString = (target: number) => {
     const next = new URLSearchParams();
+    if (search) next.set("q", search);
     if (platform) next.set("platform", platform);
     if (language) next.set("language", language);
-    if (search) next.set("q", search);
+    if (audience) next.set("audience", audience);
+    if (genre) next.set("genre", genre);
+    if (clipType) next.set("type", clipType);
     if (sort !== "newest") next.set("sort", sort);
     if (target > 1) next.set("page", String(target));
     const qs = next.toString();
-    return `${localePath(locale, "/tasks")}${qs ? `?${qs}` : ""}`;
+    return qs ? `?${qs}` : "";
   };
+  const here = localePath(locale, "/tasks");
+  const signInHref = `/api/auth/google/start?next=${encodeURIComponent(here + queryString(page))}`;
 
   return (
     <section className="bg-brand-bg px-6 pt-14 pb-24 md:px-8">
@@ -103,19 +177,15 @@ export default async function TasksPage({
           {copy.tasksSubtitle}
         </p>
 
-        <form
-          method="get"
-          action={localePath(locale, "/tasks")}
-          className="mt-8 flex flex-wrap items-center gap-3"
-        >
-          <select name="platform" defaultValue={platform ?? ""} className={FIELD} aria-label={copy.platform}>
-            <option value="">{copy.allPlatforms}</option>
-            {facets.platforms.map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
-          </select>
+        <form method="get" action={here} className="mt-8 flex flex-wrap items-center gap-3">
+          <input
+            type="search"
+            name="q"
+            defaultValue={search ?? ""}
+            placeholder={copy.searchClips}
+            className={`${FIELD} min-w-50 flex-1`}
+            maxLength={100}
+          />
           <select name="language" defaultValue={language ?? ""} className={FIELD} aria-label={copy.language}>
             <option value="">{copy.allLanguages}</option>
             {facets.languages.map((value) => (
@@ -124,14 +194,40 @@ export default async function TasksPage({
               </option>
             ))}
           </select>
-          <input
-            type="search"
-            name="q"
-            defaultValue={search ?? ""}
-            placeholder={copy.searchPlaceholder}
-            className={`${FIELD} min-w-50 flex-1`}
-            maxLength={100}
-          />
+          <select name="audience" defaultValue={audience ?? ""} className={FIELD} aria-label={copy.allAudiences}>
+            <option value="">{copy.allAudiences}</option>
+            {DRAMA_AUDIENCES.map((value) => (
+              <option key={value} value={value}>
+                {copy.audience[value]}
+              </option>
+            ))}
+          </select>
+          <select name="genre" defaultValue={genre ?? ""} className={FIELD} aria-label={copy.allGenres}>
+            <option value="">{copy.allGenres}</option>
+            {facets.genres.map((value) => (
+              <option key={value} value={value}>
+                {genreLabel(value)}
+              </option>
+            ))}
+          </select>
+          <select name="type" defaultValue={clipType ?? ""} className={FIELD} aria-label={copy.allClipTypes}>
+            <option value="">{copy.allClipTypes}</option>
+            {CLIP_TYPES.map((value) => (
+              <option key={value} value={value}>
+                {copy.clipType[value]}
+              </option>
+            ))}
+          </select>
+          {facets.platforms.length > 1 && (
+            <select name="platform" defaultValue={platform ?? ""} className={FIELD} aria-label={copy.platform}>
+              <option value="">{copy.allPlatforms}</option>
+              {facets.platforms.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </select>
+          )}
           <select name="sort" defaultValue={sort} className={FIELD} aria-label={copy.sortNewest}>
             <option value="newest">{copy.sortNewest}</option>
             <option value="promoters">{copy.sortPromoters}</option>
@@ -146,32 +242,21 @@ export default async function TasksPage({
 
         {result === null ? (
           <p className={`mt-10 ${NOTE}`}>{copy.unavailable}</p>
-        ) : result.items.length === 0 ? (
-          <p className={`mt-10 ${NOTE}`}>{filtered ? copy.noResults : copy.noneYet}</p>
+        ) : cards.length === 0 ? (
+          <p className={`mt-10 ${NOTE}`}>{filtered ? copy.noClipResults : copy.noClipsListed}</p>
         ) : (
           <>
-            <ul className="mt-10 grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">
-              {result.items.map((drama) => (
-                <li key={drama.id}>
-                  <TaskCard
-                    drama={drama}
-                    locale={locale}
-                    href={localePath(locale, `/tasks/${drama.id}`)}
-                    coverUrl={r2 !== null && drama.coverKey !== null ? coverImageUrl(r2, drama.coverKey) : null}
-                  />
-                </li>
-              ))}
-            </ul>
+            <ClipPlaza locale={locale} cards={cards} signedIn={signedIn} signInHref={signInHref} links={links} />
             {pages > 1 && (
               <nav className="mt-10 flex items-center justify-center gap-4 text-[14px] text-text-dark-secondary">
                 {page > 1 && (
-                  <Link className="text-brand-accent-text hover:underline" href={pageHref(page - 1)}>
+                  <Link className="text-brand-accent-text hover:underline" href={here + queryString(page - 1)}>
                     {copy.previous}
                   </Link>
                 )}
                 <span>{copy.pageOf(page, pages)}</span>
                 {page < pages && (
-                  <Link className="text-brand-accent-text hover:underline" href={pageHref(page + 1)}>
+                  <Link className="text-brand-accent-text hover:underline" href={here + queryString(page + 1)}>
                     {copy.next}
                   </Link>
                 )}
@@ -188,42 +273,3 @@ const FIELD =
   "h-10 rounded-[10px] border border-brand-border-strong bg-brand-panel px-3 text-[14px] text-text-dark-primary";
 const NOTE =
   "rounded-card border border-brand-border-card bg-brand-panel p-6 text-[14px] leading-[1.6] text-text-dark-secondary";
-
-function TaskCard({
-  drama,
-  locale,
-  href,
-  coverUrl,
-}: {
-  drama: DramaSummary;
-  locale: string;
-  href: string;
-  coverUrl: string | null;
-}) {
-  const copy = taskCopy(locale);
-  const title = locale === "zh" && drama.titleCn ? drama.titleCn : drama.title;
-  return (
-    <Link
-      href={href}
-      className="group block overflow-hidden rounded-card border border-brand-border-card bg-brand-panel transition-colors hover:border-brand-accent/50"
-    >
-      <div className="aspect-[3/4] bg-brand-panel-raised">
-        {coverUrl !== null && (
-          // Signed R2 URLs change every hour; next/image would cache them as new images.
-          <img src={coverUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
-        )}
-      </div>
-      <div className="p-4">
-        <p className="line-clamp-2 text-[15px] font-semibold text-text-dark-primary group-hover:text-brand-accent-text">
-          {title}
-        </p>
-        <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[12.5px] text-text-dark-secondary">
-          <span>{drama.platform}</span>
-          <span>{languageName(drama.language, locale)}</span>
-          <span>{drama.episodes === null ? copy.episodesUnknown : copy.episodes(drama.episodes)}</span>
-        </p>
-        <p className="mt-2 font-mono text-[11.5px] text-brand-accent-text">{copy.promoters(drama.promoterCount)}</p>
-      </div>
-    </Link>
-  );
-}

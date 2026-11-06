@@ -1,5 +1,5 @@
 // @input  -- a disposable Postgres rebuilt by db/tasks/migrate.sh
-// @output -- proof that the task center's SQL does what the stores promise, promoter accounts included
+// @output -- proof that the task center's SQL does what the stores promise: the clip grid and its 本周爆款 rule, promoter accounts included
 // @pos    -- the only test that executes task center SQL
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -24,16 +24,17 @@ import {
   submitAccount,
   withdrawAccount,
 } from "./accounts-store.ts";
-import { MAX_ACCOUNTS_PER_USER, type DramaInput } from "./contracts.ts";
+import { MAX_ACCOUNTS_PER_USER, type ClipType, type DramaInput } from "./contracts.ts";
 import {
   createDrama,
   createPendingAsset,
   deleteAsset,
   getPublicAsset,
   getPublishedDrama,
-  listPublishedDramas,
+  listPublishedAssets,
   listPublishedFacets,
   markAssetReady,
+  setAssetClipType,
   setDramaCover,
   setDramaStatus,
   updateDrama,
@@ -77,6 +78,8 @@ function drama(overrides: Partial<DramaInput> = {}): DramaInput {
     synopsis: null,
     promoTargetUrl: "https://example.com/d/1?src=gg",
     promoCodeParam: null,
+    audience: null,
+    genre: null,
     ...overrides,
   };
 }
@@ -88,6 +91,36 @@ async function publishedDrama(overrides: Partial<DramaInput> = {}): Promise<stri
 }
 
 const everything = { sort: "newest", page: 1, pageSize: 50 } as const;
+
+let assetSeq = 0;
+
+/** A ready clip on a drama; uploads are spaced a second apart so "newest" is certain. */
+async function readyClip(
+  dramaId: string,
+  options: { title?: string; clipType?: ClipType | null; contentType?: string; posterKey?: string | null } = {},
+): Promise<string> {
+  assetSeq += 1;
+  const id = `cccccccc-cccc-4ccc-8ccc-${String(assetSeq).padStart(12, "0")}`;
+  const contentType = options.contentType ?? "video/mp4";
+  expect(
+    await createPendingAsset(db, {
+      id,
+      dramaId,
+      title: options.title ?? `Clip ${assetSeq}`,
+      objectKey: `dramas/${dramaId}/assets/${id}.${contentType === "video/mp4" ? "mp4" : "png"}`,
+      contentType,
+      byteSize: 1_000 + assetSeq,
+      clipType: options.clipType ?? null,
+      createdBy: ADMIN,
+    }),
+  ).toBe(true);
+  expect(await markAssetReady(db, id, options.posterKey ?? null)).toEqual({ posterKey: options.posterKey ?? null });
+  await db.query(
+    "update task_center.drama_assets set uploaded_at = now() - make_interval(secs => 1000 - $2::int) where id = $1",
+    [id, assetSeq],
+  );
+  return id;
+}
 
 describe("migrate.sh", () => {
   it("skips files it already applied", () => {
@@ -133,7 +166,8 @@ describe("migrate.sh", () => {
 describe("dramas", () => {
   it("keeps drafts out of the public list and detail", async () => {
     const id = await createDrama(db, drama(), ADMIN);
-    expect((await listPublishedDramas(db, everything)).total).toBe(0);
+    await readyClip(id);
+    expect((await listPublishedAssets(db, everything)).total).toBe(0);
     expect(await getPublishedDrama(db, id)).toBeNull();
   });
 
@@ -160,39 +194,86 @@ describe("dramas", () => {
     expect((await getPublishedDrama(db, id))!.drama.listedAt).toBe(first);
   });
 
-  it("filters, searches literally, sorts by promoters and pages", async () => {
-    const a = await publishedDrama({ title: "100% Revenge", platform: "reelshort" });
-    const b = await publishedDrama({ title: "Moon_Light", titleCn: "月光", platform: "dramabox", language: "es" });
-    const c = await publishedDrama({ title: "Plain", platform: "dramabox" });
-    await claimTask(db, { userId: USER_A, dramaId: c, channel: "tiktok" });
-    await claimTask(db, { userId: USER_A, dramaId: c, channel: "youtube" });
-    await claimTask(db, { userId: USER_B, dramaId: c, channel: "tiktok" });
-    await claimTask(db, { userId: USER_A, dramaId: b, channel: "tiktok" });
+  it("filters clips, searches literally, sorts by promoters and pages", async () => {
+    const a = await publishedDrama({ title: "100% Revenge", platform: "reelshort", audience: "female", genre: "revenge" });
+    const b = await publishedDrama({ title: "Moon_Light", titleCn: "月光", platform: "dramabox", language: "es", genre: "werewolf" });
+    const c = await publishedDrama({ title: "Plain", platform: "dramabox", audience: "male" });
+    const clipA = await readyClip(a, { clipType: "recap" });
+    const clipB = await readyClip(b, { title: "Full moon hook", clipType: "highlight" });
+    const clipC1 = await readyClip(c, { clipType: "recap" });
+    const clipC2 = await readyClip(c, { contentType: "image/png" });
+    await claimTask(db, { userId: USER_A, dramaId: c, channel: "all" });
+    await claimTask(db, { userId: USER_B, dramaId: c, channel: "all" });
+    await claimTask(db, { userId: USER_A, dramaId: b, channel: "all" });
 
-    const byPlatform = await listPublishedDramas(db, { ...everything, platform: "dramabox" });
-    expect(byPlatform.items.map((d) => d.id).sort()).toEqual([b, c].sort());
+    const ids = async (query: Partial<Parameters<typeof listPublishedAssets>[1]>) =>
+      (await listPublishedAssets(db, { ...everything, ...query })).items.map((item) => item.id);
 
-    expect((await listPublishedDramas(db, { ...everything, search: "%" })).items.map((d) => d.id)).toEqual([a]);
+    // Newest upload first, every ready clip of every published drama.
+    expect(await ids({})).toEqual([clipC2, clipC1, clipB, clipA]);
+    expect(await ids({ platform: "dramabox" })).toEqual([clipC2, clipC1, clipB]);
+    expect(await ids({ audience: "female" })).toEqual([clipA]);
+    expect(await ids({ genre: "werewolf" })).toEqual([clipB]);
+    expect(await ids({ clipType: "recap" })).toEqual([clipC1, clipA]);
+    expect(await ids({ language: "es" })).toEqual([clipB]);
+
+    expect(await ids({ search: "%" })).toEqual([clipA]);
     // "_" as a wildcard would match "Moon"; as a letter it matches nothing.
-    expect((await listPublishedDramas(db, { ...everything, search: "M_on" })).total).toBe(0);
-    expect((await listPublishedDramas(db, { ...everything, search: "n_l" })).items.map((d) => d.id)).toEqual([b]);
-    expect((await listPublishedDramas(db, { ...everything, search: "月光" })).items.map((d) => d.id)).toEqual([b]);
-    expect((await listPublishedDramas(db, { ...everything, language: "es" })).items.map((d) => d.id)).toEqual([b]);
+    expect(await ids({ search: "M_on" })).toEqual([]);
+    expect(await ids({ search: "n_l" })).toEqual([clipB]);
+    expect(await ids({ search: "月光" })).toEqual([clipB]);
+    // The clip's own title is searched too.
+    expect(await ids({ search: "full moon" })).toEqual([clipB]);
 
-    const popular = await listPublishedDramas(db, { ...everything, sort: "promoters" });
-    expect(popular.items.map((d) => [d.id, d.promoterCount])).toEqual([
-      [c, 2],
-      [b, 1],
-      [a, 0],
+    const popular = await listPublishedAssets(db, { ...everything, sort: "promoters" });
+    expect(popular.items.map((item) => [item.id, item.drama.promoterCount])).toEqual([
+      [clipC2, 2],
+      [clipC1, 2],
+      [clipB, 1],
+      [clipA, 0],
     ]);
+    expect(popular.items[0]).toMatchObject({ kind: "image", drama: { audience: "male", genre: null } });
 
-    const page2 = await listPublishedDramas(db, { sort: "promoters", page: 2, pageSize: 2 });
-    expect(page2).toMatchObject({ total: 3, items: [{ id: a }] });
+    const page2 = await listPublishedAssets(db, { sort: "newest", page: 2, pageSize: 3 });
+    expect(page2).toMatchObject({ total: 4, items: [{ id: clipA }] });
 
     expect(await listPublishedFacets(db)).toEqual({
       platforms: ["dramabox", "reelshort"],
       languages: ["en", "es"],
+      genres: ["revenge", "werewolf"],
     });
+  });
+
+  it("badges the three dramas the most people claimed in the last seven days", async () => {
+    const users = Array.from({ length: 4 }, (_, i) => `3333333${i}-3333-4333-8333-333333333333`);
+    const dramas = await Promise.all(
+      ["One", "Two", "Three", "Four", "Five"].map((title) => publishedDrama({ title })),
+    );
+    for (const id of dramas) await readyClip(id);
+    const hot = async () =>
+      (await listPublishedAssets(db, everything)).items.filter((item) => item.hot).map((item) => item.drama.id).sort();
+
+    // Nobody has claimed anything: no badge at all.
+    expect(await hot()).toEqual([]);
+
+    const claim = (userId: string, dramaId: string) => claimTask(db, { userId, dramaId, channel: "all" });
+    // Four people this week on One, three on Two, two on Three, one on Four.
+    for (const [index, count] of [4, 3, 2, 1].entries()) {
+      for (const userId of users.slice(0, count)) await claim(userId, dramas[index]!);
+    }
+    // Five had four people too, but eight days ago, which does not count.
+    for (const userId of users) await claim(userId, dramas[4]!);
+    await db.query(
+      "update task_center.task_claims set claimed_at = now() - interval '8 days' where drama_id = $1",
+      [dramas[4]],
+    );
+    // A second code (tiktok) for Four's one claimant still counts them once, so Four does not tie Three.
+    await claimTask(db, { userId: users[0]!, dramaId: dramas[3]!, channel: "tiktok" });
+    expect(await hot()).toEqual([dramas[0], dramas[1], dramas[2]].sort());
+
+    // A drama taken down drops out and the next one moves up.
+    await setDramaStatus(db, dramas[0]!, "archived");
+    expect(await hot()).toEqual([dramas[1], dramas[2], dramas[3]].sort());
   });
 
   it("sets a cover only on a drama that exists", async () => {
@@ -214,6 +295,7 @@ describe("assets", () => {
         objectKey: `dramas/${dramaId}/${assetId}.mp4`,
         contentType: "video/mp4",
         byteSize: 52_000_000,
+        clipType: null,
         createdBy: ADMIN,
       }),
     ).toBe(true);
@@ -223,10 +305,35 @@ describe("assets", () => {
     await setDramaStatus(db, dramaId, "published");
     expect(await getPublicAsset(db, assetId)).toMatchObject({ kind: "video", byteSize: 52_000_000 });
     expect((await getPublishedDrama(db, dramaId))!.assets).toHaveLength(1);
-    expect(await deleteAsset(db, assetId)).toBe(`dramas/${dramaId}/${assetId}.mp4`);
+    expect(await deleteAsset(db, assetId)).toEqual({
+      objectKey: `dramas/${dramaId}/${assetId}.mp4`,
+      posterKey: null,
+    });
     expect(await deleteAsset(db, assetId)).toBeNull();
     // A completion that arrives after the delete has nothing to mark.
-    expect(await markAssetReady(db, assetId)).toBe(false);
+    expect(await markAssetReady(db, assetId)).toBeNull();
+  });
+
+  it("keeps a clip's still through a retried completion, retags it, and hands back both keys on delete", async () => {
+    const dramaId = await publishedDrama();
+    const id = await readyClip(dramaId, { clipType: "trailer" });
+    const poster = `dramas/${dramaId}/posters/${id}.jpg`;
+    expect(await markAssetReady(db, id, poster)).toEqual({ posterKey: poster });
+    // A retry that could not send a still again leaves the first one, and says so.
+    expect(await markAssetReady(db, id)).toEqual({ posterKey: poster });
+    // Nothing but the clip's own still path can be recorded.
+    await expect(markAssetReady(db, id, `dramas/${dramaId}/${id}.mp4`)).rejects.toThrow(/check/);
+    expect(await getPublicAsset(db, id)).toMatchObject({ clipType: "trailer", posterKey: poster });
+
+    expect(await setAssetClipType(db, id, "mixcut")).toBe(true);
+    expect(await setAssetClipType(db, id, null)).toBe(true);
+    expect(await getPublicAsset(db, id)).toMatchObject({ clipType: null });
+    expect(await setAssetClipType(db, USER_A, "recap")).toBe(false);
+    await expect(
+      db.query("update task_center.drama_assets set clip_type = 'vlog' where id = $1", [id]),
+    ).rejects.toThrow(/check/);
+
+    expect(await deleteAsset(db, id)).toEqual({ objectKey: expect.stringContaining(id), posterKey: poster });
   });
 
   it("refuses an asset for a drama that does not exist", async () => {
@@ -238,6 +345,7 @@ describe("assets", () => {
         objectKey: "dramas/x/y.png",
         contentType: "image/png",
         byteSize: 10,
+        clipType: null,
         createdBy: ADMIN,
       }),
     ).toBe(false);
