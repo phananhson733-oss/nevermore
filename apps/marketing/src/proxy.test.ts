@@ -159,6 +159,26 @@ describe("proxy referral landing", () => {
     },
   );
 
+  it.each(["/t/k7m2xq9p", "/t"])(
+    "hands the promo link %s to its route handler untouched",
+    (path) => {
+      const response = proxy(request(path));
+      expect(response.headers.get("x-middleware-rewrite")).toBeNull();
+      expect(response.headers.get("location")).toBeNull();
+    },
+  );
+
+  // "earnings" is long enough to look like a short-link code; "tasks" and
+  // "admin" are not, but stay reserved so a future short link cannot take them.
+  it.each(["/earnings", "/tasks", "/admin"])(
+    "keeps the task center page %s in locale routing",
+    (path) => {
+      const response = proxy(request(path));
+      expect(response.headers.get("x-middleware-rewrite")).toContain(`/en${path}`);
+      expect(response.headers.get("x-middleware-rewrite")).not.toContain("/go/");
+    },
+  );
+
   it("keeps /account out of the short-link fallback", () => {
     const response = proxy(request("/account"));
     expect(response.headers.get("x-middleware-rewrite")).toContain(

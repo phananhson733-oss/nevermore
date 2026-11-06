@@ -1,4 +1,4 @@
-# @input  -- image gengrowth-marketing:<sha> built by deploy.sh; the runtime env file outside the repo
+# @input  -- image gengrowth-marketing:<sha> built by deploy.sh; the runtime and task-database env files outside the repo
 # @output -- one container, gengrowth-marketing, on pick's drama network; port 3001 is not published
 # @pos    -- gengrowth.ai's runtime on pick's Tencent VM; pick's Caddy reaches it by container name
 # 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
@@ -15,7 +15,11 @@ services:
     image: gengrowth-marketing:${MARKETING_SHA:?run through deploy.sh}
     # The upstream name in gengrowth-marketing.caddy.
     container_name: gengrowth-marketing
-    env_file: ${MARKETING_ENV_FILE:-/srv/gengrowth-marketing/marketing.env}
+    env_file:
+      - ${MARKETING_ENV_FILE:-/srv/gengrowth-marketing/marketing.env}
+      # Only TASKS_DATABASE_URL. It is its own file so the migration container
+      # deploy.sh starts reads this and never the rest of marketing.env.
+      - ${TASKS_ENV_FILE:-/srv/gengrowth-marketing/tasks-db.env}
     restart: unless-stopped
     mem_limit: 2g
     networks: [drama]

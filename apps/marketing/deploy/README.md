@@ -1,6 +1,6 @@
 <!--
 @input  -- pick's Tencent VM (Virginia, /srv/pick-workbench) and the files beside this README
-@output -- the one-time setup and the day-to-day commands for running gengrowth.ai there
+@output -- the one-time setup and the day-to-day commands for running gengrowth.ai there, and the task center's database, R2 and env setup
 @pos    -- operator runbook; the reasoning and the DNS cutover are in ../docs/plans/2026-11-04-tencent-cloud-migration.md
 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 -->
@@ -51,3 +51,44 @@ docker logs --since 1h gengrowth-marketing
 - 每次发布都会断开正在处理的请求，前后约 2 秒没有响应，挑没人用的时候发。
 - 发布前在本地跑 marketing 的 test、typecheck、lint，服务器上不跑。
 - 旧镜像不会自动删，每个约 540 MB。留最近几个用来回滚，其余用 `docker rmi gengrowth-marketing:<sha>` 删掉。不要在这台机器上跑全局的 `docker system prune`，那会连 pick 的东西一起清掉。
+
+## 任务中心
+
+任务中心、我的收益和后台用两样外部的东西：pick 那个 TencentDB 里的 `gengrowth_tasks` 库，和 Cloudflare R2 的一个私有桶。缺哪一样，对应的页面就显示「暂时不可用」，站点其余部分照常。方案在 `../docs/plans/2026-11-05-task-center.md`。
+
+1. **数据库连接串**放在 `/srv/gengrowth-marketing/tasks-db.env`，只有一行 `TASKS_DATABASE_URL=...`，权限 600。2026-11-05 pick 已经建好。单独一个文件，是因为 `deploy.sh` 每次发布前用一个 `postgres:17.6` 容器跑 `db/tasks/migrate.sh`，那个容器只该看到这一行。迁移可以重复跑，已经跑过的跳过；失败了 `deploy.sh` 就停下，正在跑的容器不动。
+
+2. **R2。** 在 Cloudflare 后台开 R2、建一个私有桶、建一个只能读写这个桶的 R2 API 令牌（Object Read & Write，限定到这个桶）。然后在桶的 Settings → CORS policy 里贴：
+
+   ```json
+   [
+     {
+       "AllowedOrigins": ["https://gengrowth.ai", "https://next.gengrowth.ai", "http://127.0.0.1:3001"],
+       "AllowedMethods": ["PUT", "GET", "HEAD"],
+       "AllowedHeaders": ["content-type"],
+       "MaxAgeSeconds": 3600
+     }
+   ]
+   ```
+
+   后台上传是浏览器直接 PUT 到 R2，没有这段 CORS 浏览器会拦下，后台会提示去查 CORS。`127.0.0.1:3001` 只给本机开发用，不需要可以去掉。
+
+3. **写进 `marketing.env`**，值自己填，不要经过对话或提交进仓库：
+
+   ```bash
+   TASK_ADMIN_EMAILS=a@example.com,b@example.com
+   R2_ACCOUNT_ID=...
+   R2_BUCKET=...
+   R2_ACCESS_KEY_ID=...
+   R2_SECRET_ACCESS_KEY=...
+   ```
+
+   `TASK_ADMIN_EMAILS` 是能进 `/admin/tasks` 的 Google 登录邮箱，逗号分隔，大小写不论。`R2_ACCOUNT_ID` 是 Cloudflare 的账号 ID，在 R2 页面上能看到。注释单独写一行，不要跟在值后面。四个 R2 变量缺任何一个，上传和素材预览都不可用。
+
+   都是运行时变量，不用重新构建。改完重新发一次当前的 sha，容器会带着新变量重建：
+
+   ```bash
+   /srv/gengrowth-marketing/repo/apps/marketing/deploy/deploy.sh "$(docker inspect --format '{{.Config.Image}}' gengrowth-marketing | cut -d: -f2)"
+   ```
+
+不在名单里的人打开 `/admin/tasks` 看到的是 404。结算文件的格式写在后台的「结算导入」页上。

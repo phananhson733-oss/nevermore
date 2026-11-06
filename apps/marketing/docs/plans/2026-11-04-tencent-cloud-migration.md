@@ -20,7 +20,7 @@
 - 任务中心。
 - 不改 Supabase、Google OAuth、Resend 的任何配置（域名不变，见"环境变量"）。
 
-第 1 节已合并（PR #355），2026-11-04 在 Vercel 上线。第 2 节的 Dockerfile、第 3 节的 Caddy 站点文件、第 5 节的部署脚本都在分支 `chore/marketing-dockerfile-20261104` 上（`apps/marketing/deploy/`），尚未合并。合并后 Vercel 只多一处变化：接口按 `Host` 头判断同源、拼跳转地址（第 2 节 `requestOrigin`），在 Vercel 上结果和原来一样。其余文件 Vercel 不读。服务器和 Cloudflare 都还没动。
+第 1 节已合并（PR #355），2026-11-04 在 Vercel 上线。第 2 节的 Dockerfile、第 3 节的 Caddy 站点文件、第 5 节的部署脚本已合并（PR #356，`apps/marketing/deploy/`），2026-11-05 按第 6 节切换：gengrowth.ai 现在由 pick 那台机器上的容器提供。Vercel 仍按 main 自动部署，只作回滚用，稳定 7 天后（2026-11-12）按第 6 节第 10 步停掉。随合并到 Vercel 的只有一处变化：接口按 `Host` 头判断同源、拼跳转地址（第 2 节 `requestOrigin`），在 Vercel 上结果和原来一样。
 
 2026-11-05 定的路线是"最快最简单"：放进 pick 那台机器，走 pick 已有的 Cloudflare 隧道，手动部署。腾讯云迁移不是目的，真正要做的是任务中心、我的收益、管理员上传视频的后台，迁移只求不挡路。
 

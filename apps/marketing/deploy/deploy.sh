@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# @input  -- a git ref; the clone and runtime env file under /srv/gengrowth-marketing; pick's deploy/saas
-# @output -- image gengrowth-marketing:<sha>, the container running it, and pick's Caddy serving our site file
+# @input  -- a git ref; the clone and the two env files under /srv/gengrowth-marketing; pick's deploy/saas
+# @output -- image gengrowth-marketing:<sha>, the task center schema migrated, the container running it, and pick's Caddy serving our site file
 # @pos    -- gengrowth.ai's manual deploy on pick's Tencent VM, in place of Vercel's Git deploys
 # 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 #
@@ -15,12 +15,38 @@ root=${MARKETING_ROOT:-/srv/gengrowth-marketing}
 pick=${PICK_SAAS:-/srv/pick-workbench/deploy/saas}
 repo=$root/repo
 env_file=$root/marketing.env
+tasks_env=$root/tasks-db.env
 
 die() { echo "deploy: $*" >&2; exit 1; }
 
-# A KEY's value in the env file, without the quotes `vercel env pull` adds.
+# A KEY's value in an env file (marketing.env unless named), without the
+# quotes `vercel env pull` adds.
 env_value() {
-  sed -n "s/^$1=//p" "$env_file" | tail -n 1 | sed -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'\$/\1/"
+  sed -n "s/^$1=//p" "${2:-$env_file}" | tail -n 1 | sed -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'\$/\1/"
+}
+
+# Compose expands $NAME inside double-quoted and bare env_file values, which
+# would quietly change a secret; $$ is its escape for a literal $.
+refuse_bare_dollars() {
+  local names
+  names=$(sed 's/\$\$//g' "$1" | grep -E "^[A-Za-z_][A-Za-z0-9_]*=([^']|\$)" | grep -F '$' | cut -d= -f1 | tr '\n' ' ' || true)
+  [ -z "$names" ] || die "compose would expand the \$ in: ${names}(write each \$ as \$\$ in $1)"
+}
+
+# Brings the task center's tables up to date before the new image starts. A
+# migration only adds, so the image still running keeps working against the
+# new schema, and a failure here stops the deploy with that image still
+# serving. A rollback to a sha from before the task center has no migrations
+# and skips this.
+migrate_tasks() {
+  local dir=$repo/apps/marketing/db/tasks url
+  [ -f "$dir/migrate.sh" ] || return 0
+  url=$(env_value TASKS_DATABASE_URL "$tasks_env")
+  [ -n "$url" ] || die "$tasks_env has no TASKS_DATABASE_URL; see apps/marketing/deploy/README.md"
+  # Handed over through the environment rather than argv, so ps never shows it.
+  TASKS_DATABASE_URL=$url docker run --rm --network drama -e TASKS_DATABASE_URL \
+    -v "$dir:/migrations:ro" postgres:17.6 sh /migrations/migrate.sh
+  echo "deploy: task center schema up to date"
 }
 
 caddy() { "$pick/platform.sh" exec -T caddy caddy "$@"; }
@@ -51,6 +77,7 @@ install_site() {
 main() {
   local ref=${1:?usage: deploy.sh <git ref>}
   [ -r "$env_file" ] || die "$env_file is missing; see apps/marketing/deploy/README.md"
+  [ -r "$tasks_env" ] || die "$tasks_env is missing; see apps/marketing/deploy/README.md"
 
   # `vercel env pull` writes the literal [SENSITIVE] for every variable marked
   # Sensitive on Vercel; building or running with it would ship a broken site.
@@ -61,11 +88,8 @@ main() {
   empty=$(grep -E '^[A-Za-z_][A-Za-z0-9_]*=(""|'"''"')?$' "$env_file" | cut -d= -f1 | tr '\n' ' ' || true)
   [ -z "$empty" ] || echo "deploy: warning, empty in marketing.env: $empty" >&2
 
-  # Compose expands $NAME inside double-quoted and bare env_file values, which
-  # would quietly change a secret; $$ is its escape for a literal $.
-  local dollars
-  dollars=$(sed 's/\$\$//g' "$env_file" | grep -E "^[A-Za-z_][A-Za-z0-9_]*=([^']|\$)" | grep -F '$' | cut -d= -f1 | tr '\n' ' ' || true)
-  [ -z "$dollars" ] || die "compose would expand the \$ in: ${dollars}(write each \$ as \$\$ in marketing.env)"
+  refuse_bare_dollars "$env_file"
+  refuse_bare_dollars "$tasks_env"
 
   git -C "$repo" fetch --quiet origin
   git -C "$repo" checkout --quiet --detach "$ref"
@@ -85,9 +109,11 @@ main() {
     docker build -f "$repo/apps/marketing/Dockerfile" "${args[@]}" -t "$image" "$repo"
   fi
 
+  migrate_tasks
+
   local previous
   previous=$(docker inspect --format '{{.Config.Image}}' gengrowth-marketing 2>/dev/null || true)
-  if ! MARKETING_SHA=$sha MARKETING_ENV_FILE=$env_file \
+  if ! MARKETING_SHA=$sha MARKETING_ENV_FILE=$env_file TASKS_ENV_FILE=$tasks_env \
     docker compose -f "$repo/apps/marketing/deploy/compose.yml" up -d --wait --wait-timeout 180; then
     # The old container is already gone at this point, so the site is down.
     if [ -n "$previous" ]; then echo "deploy: roll back with $0 ${previous#gengrowth-marketing:}" >&2; fi
