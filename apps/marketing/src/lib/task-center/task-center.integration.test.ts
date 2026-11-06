@@ -34,7 +34,7 @@ import {
   listPublishedAssets,
   listPublishedFacets,
   markAssetReady,
-  setAssetClipType,
+  updateAsset,
   setDramaCover,
   setDramaStatus,
   updateDrama,
@@ -325,10 +325,14 @@ describe("assets", () => {
     await expect(markAssetReady(db, id, `dramas/${dramaId}/${id}.mp4`)).rejects.toThrow(/check/);
     expect(await getPublicAsset(db, id)).toMatchObject({ clipType: "trailer", posterKey: poster });
 
-    expect(await setAssetClipType(db, id, "mixcut")).toBe(true);
-    expect(await setAssetClipType(db, id, null)).toBe(true);
+    expect(await updateAsset(db, id, { clipType: "mixcut" })).toBe(true);
+    // A rename alone leaves the type; a retag alone leaves the title.
+    expect(await updateAsset(db, id, { title: "Ep 1 hook" })).toBe(true);
+    expect(await getPublicAsset(db, id)).toMatchObject({ clipType: "mixcut", title: "Ep 1 hook" });
+    expect(await updateAsset(db, id, { clipType: null })).toBe(true);
+    expect(await getPublicAsset(db, id)).toMatchObject({ clipType: null, title: "Ep 1 hook" });
     expect(await getPublicAsset(db, id)).toMatchObject({ clipType: null });
-    expect(await setAssetClipType(db, USER_A, "recap")).toBe(false);
+    expect(await updateAsset(db, USER_A, { clipType: "recap" })).toBe(false);
     await expect(
       db.query("update task_center.drama_assets set clip_type = 'vlog' where id = $1", [id]),
     ).rejects.toThrow(/check/);
