@@ -1,14 +1,21 @@
 // @input  -- the page locale ("en" or "zh")
-// @output -- every visitor-facing string of /tasks, /tasks/<id>, /promotions and /earnings, and the Chinese labels the admin pages share
+// @output -- every visitor-facing string of /tasks (the clip grid), /tasks/<id>, /promotions and /earnings, audience, genre and clip-type labels, and the Chinese labels the admin pages share
 // @pos    -- task center copy, kept beside the code like the waitlist page's; the admin pages are Chinese only
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
-import { MAX_ACCOUNTS_PER_USER, type AccountStatus, type ClaimChannel, type PromoChannel } from "./contracts.ts";
+import {
+  MAX_ACCOUNTS_PER_USER,
+  type AccountStatus,
+  type ClaimChannel,
+  type ClipType,
+  type DramaAudience,
+  type PromoChannel,
+} from "./contracts.ts";
 
 const en = {
   tasksTitle: "Task Center",
   tasksSubtitle:
-    "Pick a short drama, get your own promo link in one click, and post the clips our team cut for it.",
+    "Browse the clips our team cut, get your own promo link in one click, and post them to TikTok or Facebook.",
   allPlatforms: "All platforms",
   allLanguages: "All languages",
   searchPlaceholder: "Search by title",
@@ -108,13 +115,32 @@ const en = {
   partialNote:
     "Partial: the platform reported this figure for some days and not others, so the total covers only the days it reported.",
   promotersLabel: "Promoters",
+  searchClips: "Search by drama or clip",
+  allAudiences: "All audiences",
+  allGenres: "All genres",
+  allClipTypes: "All clip types",
+  audience: { female: "Female", male: "Male" } as Readonly<Record<DramaAudience, string>>,
+  clipType: {
+    recap: "Recap",
+    mixcut: "Mixcut",
+    highlight: "Highlight",
+    trailer: "Trailer",
+    episode: "Full episode",
+  } as Readonly<Record<ClipType, string>>,
+  hotThisWeek: "Hot this week",
+  hotNote: "One of the three dramas the most people took a link for in the last 7 days.",
+  noClipResults: "No clips match these filters.",
+  noClipsListed: "No clips are listed yet.",
+  playClip: (title: string) => `Play ${title}`,
+  viewDrama: "View the drama",
+  close: "Close",
 };
 
 export type TaskCopy = typeof en;
 
 const zh: TaskCopy = {
   tasksTitle: "任务中心",
-  tasksSubtitle: "挑一部短剧，一键领取专属推广链接，配合运营剪好的素材去发。",
+  tasksSubtitle: "挑运营剪好的素材，一键领取专属推广链接，下载后发到 TikTok 或 Facebook。",
   allPlatforms: "全部平台",
   allLanguages: "全部语言",
   searchPlaceholder: "按剧名搜索",
@@ -204,6 +230,25 @@ const zh: TaskCopy = {
   partialValue: (value: string) => `${value}（部分）`,
   partialNote: "部分：平台只给了其中一些天的这一项，合计只算了给了的那些天。",
   promotersLabel: "推广人数",
+  searchClips: "按剧名或素材名搜索",
+  allAudiences: "全部频道",
+  allGenres: "全部题材",
+  allClipTypes: "全部类型",
+  audience: { female: "女频", male: "男频" },
+  clipType: {
+    recap: "解说",
+    mixcut: "混剪",
+    highlight: "高光",
+    trailer: "预告",
+    episode: "整集",
+  },
+  hotThisWeek: "本周爆款",
+  hotNote: "最近 7 天领取推广链接人数最多的 3 部剧之一。",
+  noClipResults: "没有符合条件的素材。",
+  noClipsListed: "还没有上架的素材。",
+  playClip: (title: string) => `播放 ${title}`,
+  viewDrama: "查看这部剧",
+  close: "关闭",
 };
 
 export function taskCopy(locale: string): TaskCopy {
@@ -211,6 +256,18 @@ export function taskCopy(locale: string): TaskCopy {
 }
 
 /** Admin pages are Chinese only. */
+export const AUDIENCE_LABELS_ZH = zh.audience;
+export const CLIP_TYPE_LABELS_ZH = zh.clipType;
+
+/** A genre slug as a label: werewolf → Werewolf, second-chance → Second Chance. */
+export function genreLabel(slug: string): string {
+  return slug
+    .split("-")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+
 export const DRAMA_STATUS_LABELS = { draft: "草稿", published: "上架中", archived: "已下架" } as const;
 
 export const ACCOUNT_STATUS_LABELS: Readonly<Record<AccountStatus, string>> = {

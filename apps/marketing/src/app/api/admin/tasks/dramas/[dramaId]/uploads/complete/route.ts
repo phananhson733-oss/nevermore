@@ -1,5 +1,5 @@
-// @input  -- POST {purpose: asset, assetId} or {purpose: cover, objectKey} after the browser's PUT to R2 finished
-// @output -- the asset marked ready (404 if it was deleted meanwhile), or the drama pointed at its new cover, once R2 confirms the object; the old cover file is kept (see setDramaCover)
+// @input  -- POST {purpose: asset, assetId, posterKey?} or {purpose: cover, objectKey} after the browser's PUT to R2 finished
+// @output -- the asset marked ready (404 if it was deleted meanwhile) with its poster still when R2 has a valid one, or the drama pointed at its new cover, once R2 confirms the object; the old cover file is kept (see setDramaCover)
 // @pos    -- step 2 of an upload: nothing is shown to promoters until R2 has the file at the declared size and type
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -14,7 +14,7 @@ import {
   markAssetReady,
   setDramaCover,
 } from "../../../../../../../../lib/task-center/dramas-store.ts";
-import { headR2Object } from "../../../../../../../../lib/task-center/r2.ts";
+import { headR2Object, posterKeyFor, type R2Config } from "../../../../../../../../lib/task-center/r2.ts";
 import {
   invalidInput,
   privateError,
@@ -29,11 +29,40 @@ function baseType(contentType: string | null): string | null {
   return contentType?.split(";", 1)[0]?.trim().toLowerCase() ?? null;
 }
 
+/**
+ * The still is a nicety: one that is missing, the wrong type or empty is
+ * dropped and the clip still goes live, shown with the drama's cover.
+ */
+async function verifiedPoster(
+  r2: R2Config,
+  posterKey: string | undefined,
+  expected: string,
+): Promise<string | null> {
+  if (posterKey !== expected) return null;
+  try {
+    const head = await headR2Object(r2, posterKey);
+    if (
+      head === null ||
+      baseType(head.contentType) !== "image/jpeg" ||
+      !(head.byteSize > 0) ||
+      head.byteSize > MAX_IMAGE_BYTES
+    ) {
+      return null;
+    }
+    return posterKey;
+  } catch (error) {
+    console.error("[admin tasks] poster check failed", error);
+    return null;
+  }
+}
+
 export async function POST(
   request: Request,
   context: { readonly params: Promise<{ dramaId: string }> },
 ): Promise<Response> {
-  const { dramaId } = await context.params;
+  // Keys and the row's drama_id are lowercase; a hand-typed uppercase id
+  // must build the same keys, or the still's check would refuse the row.
+  const dramaId = (await context.params).dramaId.toLowerCase();
   const mutation = await readAdminMutation(request, 1_024);
   if (!mutation.ok) return mutation.response;
   if (!isUuid(dramaId)) return privateError("not_found", 404);
@@ -52,9 +81,16 @@ export async function POST(
       if (head.byteSize !== asset.byteSize || baseType(head.contentType) !== asset.contentType) {
         return privateError("upload_mismatch", 409);
       }
+      const poster =
+        asset.kind === "video"
+          ? await verifiedPoster(r2.value, parsed.data.posterKey, posterKeyFor(dramaId, asset.id))
+          : null;
       // Deleted by another request while this one checked the file.
-      if (!(await markAssetReady(db, asset.id))) return privateError("not_found", 404);
-      return privateJson({ data: { assetId: asset.id, status: "ready" } });
+      // A retry that could not send a still keeps the one recorded before, so
+      // the answer is what the row holds, not what this request brought.
+      const ready = await markAssetReady(db, asset.id, poster);
+      if (ready === null) return privateError("not_found", 404);
+      return privateJson({ data: { assetId: asset.id, status: "ready", posterKey: ready.posterKey } });
     }
 
     const { objectKey } = parsed.data;

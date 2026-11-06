@@ -1,5 +1,5 @@
-// @input  -- POST {purpose: cover|asset, title, fileName, contentType, byteSize} from the admin uploader
-// @output -- a 15-minute signed PUT URL into R2 and the key it writes; an asset also gets a pending row
+// @input  -- POST {purpose: cover|asset, title, clipType, fileName, contentType, byteSize} from the admin uploader
+// @output -- a 15-minute signed PUT URL into R2 and the key it writes; an asset also gets a pending row, and a video a second URL for its poster still
 // @pos    -- step 1 of an upload: the browser then PUTs the file straight to R2, never through this server
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -11,7 +11,7 @@ import {
   uploadRequestSchema,
 } from "../../../../../../../lib/task-center/contracts.ts";
 import { createPendingAsset } from "../../../../../../../lib/task-center/dramas-store.ts";
-import { r2ObjectUrl } from "../../../../../../../lib/task-center/r2.ts";
+import { posterKeyFor, r2ObjectUrl } from "../../../../../../../lib/task-center/r2.ts";
 import {
   invalidInput,
   privateError,
@@ -33,7 +33,9 @@ export async function POST(
   request: Request,
   context: { readonly params: Promise<{ dramaId: string }> },
 ): Promise<Response> {
-  const { dramaId } = await context.params;
+  // Keys and the row's drama_id are lowercase; a hand-typed uppercase id
+  // must build the same keys, or the still's check would refuse the row.
+  const dramaId = (await context.params).dramaId.toLowerCase();
   const mutation = await readAdminMutation(request, 2_048);
   if (!mutation.ok) return mutation.response;
   if (!isUuid(dramaId)) return privateError("not_found", 404);
@@ -61,6 +63,7 @@ export async function POST(
         objectKey,
         contentType: upload.contentType,
         byteSize: upload.byteSize,
+        clipType: upload.clipType,
         createdBy: mutation.value.email,
       });
       if (!created) return privateError("not_found", 404);
@@ -70,12 +73,21 @@ export async function POST(
     }
   }
 
+  // A video's still has a key fixed by its asset id, so completion can tell
+  // it was issued here without storing anything for it now.
+  const posterUploadUrl =
+    upload.purpose === "asset" && upload.contentType.startsWith("video/")
+      ? r2ObjectUrl(r2.value, "PUT", posterKeyFor(dramaId, id), { expiresSeconds: UPLOAD_URL_SECONDS })
+      : null;
+
   return privateJson(
     {
       data: {
         assetId: upload.purpose === "asset" ? id : null,
         objectKey,
         uploadUrl: r2ObjectUrl(r2.value, "PUT", objectKey, { expiresSeconds: UPLOAD_URL_SECONDS }),
+        posterKey: posterUploadUrl === null ? null : posterKeyFor(dramaId, id),
+        posterUploadUrl,
       },
     },
     201,

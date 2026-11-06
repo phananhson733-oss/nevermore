@@ -1,5 +1,5 @@
 // @input  -- a drama id, its status and assets; the admin status, upload and asset APIs; R2 via signed PUT URLs
-// @output -- publish/take-down buttons, the cover and clip uploaders with progress (one upload at a time), and per-clip delete
+// @output -- publish/take-down buttons, the cover and clip uploaders with progress (one upload at a time, a still cut from each video in the browser), per-clip type and delete
 // @pos    -- the interactive half of /admin/tasks/<id>
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
@@ -8,12 +8,15 @@ import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 
 import {
+  CLIP_TYPES,
   IMAGE_TYPES,
   MAX_IMAGE_BYTES,
   MAX_VIDEO_BYTES,
   VIDEO_TYPES,
+  type ClipType,
   type DramaStatus,
 } from "../../../lib/task-center/contracts.ts";
+import { CLIP_TYPE_LABELS_ZH } from "../../../lib/task-center/copy.ts";
 import { adminFetch, describeError } from "./admin-fetch.ts";
 
 const BUTTON =
@@ -61,7 +64,7 @@ export function StatusControl({ dramaId, status }: { dramaId: string; status: Dr
 /** PUT with progress; fetch cannot report upload progress, XHR can. */
 function putWithProgress(
   url: string,
-  file: File,
+  file: Blob,
   onProgress: (fraction: number) => void,
 ): Promise<number> {
   return new Promise((resolve) => {
@@ -77,6 +80,92 @@ function putWithProgress(
   });
 }
 
+/** Waits for one event, or gives up after a while so a file the browser cannot decode never hangs the upload. */
+function once(target: HTMLVideoElement, event: string, ms: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const timer = window.setTimeout(() => resolve(false), ms);
+    target.addEventListener(event, () => { window.clearTimeout(timer); resolve(true); }, { once: true });
+    target.addEventListener("error", () => { window.clearTimeout(timer); resolve(false); }, { once: true });
+  });
+}
+
+/**
+ * A JPEG still from about a second into the local file, at most 960px tall,
+ * for the clip grid. Null when this browser cannot decode the video (an HEVC
+ * .mov, say); the grid then shows the drama's cover.
+ */
+async function capturePoster(file: File): Promise<Blob | null> {
+  const url = URL.createObjectURL(file);
+  const video = document.createElement("video");
+  try {
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = "auto";
+    video.src = url;
+    if (!(await once(video, "loadeddata", 15_000))) return null;
+    const at = Number.isFinite(video.duration) ? Math.min(1, video.duration / 2) : 0;
+    if (at > 0) {
+      video.currentTime = at;
+      if (!(await once(video, "seeked", 10_000))) return null;
+    }
+    if (video.videoWidth === 0 || video.videoHeight === 0) return null;
+    const scale = Math.min(1, 960 / video.videoHeight);
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(video.videoWidth * scale);
+    canvas.height = Math.round(video.videoHeight * scale);
+    canvas.getContext("2d")?.drawImage(video, 0, 0, canvas.width, canvas.height);
+    return await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.82));
+  } catch {
+    return null;
+  } finally {
+    video.removeAttribute("src");
+    URL.revokeObjectURL(url);
+  }
+}
+
+export function ClipTypeSelect({ assetId, clipType }: { assetId: string; clipType: ClipType | null }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function change(value: string): Promise<void> {
+    setBusy(true);
+    setError(null);
+    const answer = await adminFetch(`/api/admin/tasks/assets/${assetId}`, "PUT", {
+      clipType: value === "" ? null : value,
+    });
+    setBusy(false);
+    if (!answer.ok) {
+      setError(describeError(answer));
+      return;
+    }
+    router.refresh();
+  }
+
+  return (
+    <span className="inline-flex items-center gap-2">
+      <select
+        aria-label="素材类型"
+        value={clipType ?? ""}
+        disabled={busy}
+        onChange={(event) => void change(event.target.value)}
+        className={SELECT}
+      >
+        <option value="">未分类</option>
+        {CLIP_TYPES.map((value) => (
+          <option key={value} value={value}>
+            {CLIP_TYPE_LABELS_ZH[value]}
+          </option>
+        ))}
+      </select>
+      {error && <span className="text-[12.5px] text-brand-error">{error}</span>}
+    </span>
+  );
+}
+
+const SELECT =
+  "h-9 rounded-[8px] border border-brand-border-strong bg-brand-bg px-2 text-[13.5px] text-text-dark-primary disabled:opacity-50";
+
 export function UploadControl({
   dramaId,
   purpose,
@@ -89,6 +178,7 @@ export function UploadControl({
   const router = useRouter();
   const input = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState("");
+  const [clipType, setClipType] = useState<ClipType | "">("");
   const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // A ref, not state: a second click in the same tick must already see it.
@@ -112,6 +202,7 @@ export function UploadControl({
     const start = await adminFetch(`/api/admin/tasks/dramas/${dramaId}/uploads`, "POST", {
       purpose,
       title: purpose === "asset" && title.trim() !== "" ? title.trim() : null,
+      clipType: purpose === "asset" && clipType !== "" ? clipType : null,
       fileName: file.name.slice(0, 255),
       contentType: file.type,
       byteSize: file.size,
@@ -121,6 +212,8 @@ export function UploadControl({
       setError(`${file.name}：${describeError(start)}`);
       return false;
     }
+    const posterUrl = start.data?.posterUploadUrl;
+    const poster = typeof posterUrl === "string" ? capturePoster(file) : Promise.resolve(null);
     const status = await putWithProgress(uploadUrl, file, (fraction) =>
       setProgress(`${file.name}：${Math.round(fraction * 100)}%`),
     );
@@ -129,11 +222,18 @@ export function UploadControl({
       setError(`${file.name}：上传到 R2 失败（${status || "被浏览器拦截，检查桶的 CORS"}）。`);
       return false;
     }
+    // The still is optional: if it cannot be cut or sent, the clip goes live without one.
+    let posterKey: string | undefined;
+    const still = await poster;
+    if (still !== null && typeof posterUrl === "string" && typeof start.data?.posterKey === "string") {
+      const posterStatus = await putWithProgress(posterUrl, still, () => {});
+      if (posterStatus >= 200 && posterStatus < 300) posterKey = start.data.posterKey;
+    }
     const done = await adminFetch(
       `/api/admin/tasks/dramas/${dramaId}/uploads/complete`,
       "POST",
       purpose === "asset"
-        ? { purpose, assetId: start.data?.assetId }
+        ? { purpose, assetId: start.data?.assetId, ...(posterKey === undefined ? {} : { posterKey }) }
         : { purpose, objectKey: start.data?.objectKey },
     );
     if (!done.ok) {
@@ -168,6 +268,21 @@ export function UploadControl({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-3">
+        {purpose === "asset" && (
+          <select
+            aria-label="素材类型"
+            value={clipType}
+            onChange={(event) => setClipType(event.target.value as ClipType | "")}
+            className={SELECT}
+          >
+            <option value="">类型：未分类</option>
+            {CLIP_TYPES.map((value) => (
+              <option key={value} value={value}>
+                类型：{CLIP_TYPE_LABELS_ZH[value]}
+              </option>
+            ))}
+          </select>
+        )}
         {purpose === "asset" && (
           <input
             value={title}
