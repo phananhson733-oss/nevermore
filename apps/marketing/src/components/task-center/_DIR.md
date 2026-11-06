@@ -1,6 +1,9 @@
 # apps/marketing/src/components/task-center
 
-Client components for the task center. The pages under `app/[locale]/tasks`, `earnings` and `admin/tasks` render on the server and use these only where the browser has to act.
+Client components for the task center. The pages under `app/[locale]/tasks`, `promotions`, `earnings` and `admin/tasks` render on the server and use these only where the browser has to act.
 
-- `claim-panel.tsx` — the four channel buttons on a drama page; claiming POSTs to `/api/tasks/<id>/claim` and shows the promo link and code with copy buttons. Signed-out visitors get a sign-in link instead.
+- `claim-panel.tsx` — one "get my promo link" button on a drama page; it POSTs to `/api/tasks/<id>/claim` and then shows the link and code with copy buttons. Claiming is never a side effect of opening the page. Signed-out visitors get a sign-in link instead.
+- `copy-row.tsx` — a label, a selectable monospace value and a copy button; takes the locale, not the copy object, because server pages render it.
+- `task-tabs.tsx` — the 任务中心 / 我的推广 / 我的收益 tabs at the top of all three promoter pages (server component).
+- `accounts-panel.tsx` — the 账号报白 section of /promotions: the promoter's TikTok/Facebook accounts with their status, the submit form, and withdraw for any still waiting for review.
 - `admin/` — the admin backend's forms and controls; Chinese only.

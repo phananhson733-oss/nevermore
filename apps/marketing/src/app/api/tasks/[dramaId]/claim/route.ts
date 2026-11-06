@@ -1,5 +1,5 @@
-// @input  -- POST {channel} from a signed-in browser on /tasks/<id>
-// @output -- this person's promo link and code for that drama and channel, created once and returned after
+// @input  -- POST {} from a signed-in browser on /tasks/<id>
+// @output -- this person's one promo link and code for that drama (channel "all"), created once and returned after
 // @pos    -- the only writer of task_center.task_claims
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -35,7 +35,7 @@ export async function POST(
     const result = await claimTask(db.value, {
       userId: authentication.userId,
       dramaId,
-      channel: parsed.data.channel,
+      channel: "all",
     });
     if (!result.ok) return privateError("not_found", 404);
     return privateJson(

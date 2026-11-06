@@ -1,5 +1,5 @@
 // @input  -- zod
-// @output -- promo channels, upload limits, and the parsers admin and promoter requests go through
+// @output -- claim channels, account platforms and statuses, upload limits, and the parsers admin and promoter requests go through
 // @pos    -- the task center's request contract; the SQL checks in db/tasks repeat these limits
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -12,6 +12,24 @@ export const PROMO_CHANNELS = [
   "youtube",
 ] as const;
 export type PromoChannel = (typeof PROMO_CHANNELS)[number];
+
+/**
+ * A claim's channel. New claims are always "all": one link per drama, posted
+ * anywhere. The four named channels are codes handed out before that and
+ * still redirect.
+ */
+export const CLAIM_CHANNELS = [...PROMO_CHANNELS, "all"] as const;
+export type ClaimChannel = (typeof CLAIM_CHANNELS)[number];
+
+/** Where a promoter can ask the operators to whitelist an account. */
+export const ACCOUNT_PLATFORMS = ["tiktok", "facebook"] as const;
+export type AccountPlatform = (typeof ACCOUNT_PLATFORMS)[number];
+
+export const ACCOUNT_STATUSES = ["submitted", "whitelisted", "rejected"] as const;
+export type AccountStatus = (typeof ACCOUNT_STATUSES)[number];
+
+/** How many accounts one person may have on file; plenty for real use, a cap on junk. */
+export const MAX_ACCOUNTS_PER_USER = 20;
 
 export const DRAMA_STATUSES = ["draft", "published", "archived"] as const;
 export type DramaStatus = (typeof DRAMA_STATUSES)[number];
@@ -129,8 +147,26 @@ export const uploadCompleteSchema = z.union([
     .strict(),
 ]);
 
+/**
+ * A claim needs no input: the drama is in the path and the channel is always
+ * "all". A named channel is still accepted, and ignored, so a page opened
+ * before the one-link change can still claim while a deploy rolls out.
+ */
 export const claimInputSchema = z
-  .object({ channel: z.enum(PROMO_CHANNELS) })
+  .object({ channel: z.enum(PROMO_CHANNELS).optional() })
+  .strict();
+
+export const accountInputSchema = z
+  .object({
+    platform: z.enum(ACCOUNT_PLATFORMS),
+    // A handle like @name or a profile URL; whichever the promoter has.
+    handle: z.string().trim().min(1).max(200),
+  })
+  .strict();
+export type AccountInput = z.infer<typeof accountInputSchema>;
+
+export const accountReviewSchema = z
+  .object({ status: z.enum(["whitelisted", "rejected"]) })
   .strict();
 
 export function isVideoType(contentType: string): boolean {

@@ -1,5 +1,5 @@
 // @input  -- a disposable Postgres rebuilt by db/tasks/migrate.sh
-// @output -- proof that the task center's SQL does what the stores promise
+// @output -- proof that the task center's SQL does what the stores promise, promoter accounts included
 // @pos    -- the only test that executes task center SQL
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -7,7 +7,7 @@ import { copyFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import type { Client } from "pg";
+import { Pool, type Client } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import {
@@ -17,7 +17,14 @@ import {
   listMyClaims,
   promoRedirectUrl,
 } from "./claims-store.ts";
-import type { DramaInput } from "./contracts.ts";
+import {
+  listAccountsForReview,
+  listMyAccounts,
+  reviewAccount,
+  submitAccount,
+  withdrawAccount,
+} from "./accounts-store.ts";
+import { MAX_ACCOUNTS_PER_USER, type DramaInput } from "./contracts.ts";
 import {
   createDrama,
   createPendingAsset,
@@ -32,7 +39,12 @@ import {
   updateDrama,
 } from "./dramas-store.ts";
 import { getMyEarnings, importEarnings, listEarningImports } from "./earnings-store.ts";
-import { connectFreshTaskSchema, migrateScript, runMigrations } from "./sql-test-harness.ts";
+import {
+  connectFreshTaskSchema,
+  migrateScript,
+  requireTaskTestDatabaseUrl,
+  runMigrations,
+} from "./sql-test-harness.ts";
 
 const ADMIN = "ops@gengrowth.ai";
 const USER_A = "11111111-1111-4111-8111-111111111111";
@@ -50,7 +62,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await db.query(
-    "truncate task_center.earnings, task_center.earning_imports, task_center.promo_clicks, task_center.task_claims, task_center.drama_assets, task_center.dramas",
+    "truncate task_center.earnings, task_center.earning_imports, task_center.promo_clicks, task_center.task_claims, task_center.drama_assets, task_center.dramas, task_center.promoter_accounts",
   );
 });
 
@@ -98,7 +110,7 @@ describe("migrate.sh", () => {
       expect(() => runMigrations(join(dir, "migrate.sh"))).toThrow();
       const { rows } = await db.query(
         `select to_regclass('task_center.half_done') as half, to_regclass('task_center.later') as later,
-                (select count(*)::int from task_center.schema_migrations where filename like '0002%') as recorded`,
+                (select count(*)::int from task_center.schema_migrations where filename = '0002_broken.sql') as recorded`,
       );
       expect(rows[0]).toEqual({ half: null, later: null, recorded: 0 });
     } finally {
@@ -245,6 +257,25 @@ describe("claims and promo links", () => {
     expect(other.claim.code).not.toBe(first.claim.code);
     expect((await listClaimsForDrama(db, USER_A, id)).map((c) => c.channel)).toEqual(["tiktok", "youtube"]);
     expect(await listClaimsForDrama(db, USER_B, id)).toEqual([]);
+  });
+
+  it("gives one link per drama on channel all, beside codes claimed per channel before", async () => {
+    const id = await publishedDrama();
+    const old = await claimTask(db, { userId: USER_A, dramaId: id, channel: "tiktok" });
+    const first = await claimTask(db, { userId: USER_A, dramaId: id, channel: "all" });
+    const again = await claimTask(db, { userId: USER_A, dramaId: id, channel: "all" });
+    if (!old.ok || !first.ok || !again.ok) throw new Error("claim failed");
+    expect(first.created).toBe(true);
+    expect(again).toMatchObject({ created: false, claim: { code: first.claim.code, channel: "all" } });
+    expect(first.claim.code).not.toBe(old.claim.code);
+    expect((await listClaimsForDrama(db, USER_A, id)).map((c) => c.channel)).toEqual(["tiktok", "all"]);
+    expect(await followPromoCode(db, first.claim.code)).not.toBeNull();
+    await expect(
+      db.query(
+        "insert into task_center.task_claims (user_id, drama_id, channel, code) values ($1, $2, 'twitter', 'cccc4444')",
+        [USER_B, id],
+      ),
+    ).rejects.toMatchObject({ constraint: "task_claims_channel_check" });
   });
 
   it("will not hand out a code for a drama that is not live", async () => {
@@ -418,5 +449,93 @@ describe("earnings", () => {
     expect((await getMyEarnings(db, USER_A)).totals).toMatchObject([
       { incomeMinor: { total: "18014398509481982", partial: false } },
     ]);
+  });
+});
+
+describe("promoter accounts", () => {
+  it("files an account once per handle in any letter case and keeps its review", async () => {
+    const first = await submitAccount(db, { userId: USER_A, userEmail: "a@example.com", platform: "tiktok", handle: " @Drama.Fan " });
+    if (!first.ok) throw new Error("submit failed");
+    expect(first).toMatchObject({ created: true, account: { handle: "@Drama.Fan", status: "submitted", reviewedAt: null } });
+
+    expect(await reviewAccount(db, first.account.id, "whitelisted", ADMIN)).toBe(true);
+    const again = await submitAccount(db, { userId: USER_A, userEmail: "a@example.com", platform: "tiktok", handle: "@drama.fan" });
+    expect(again).toMatchObject({ ok: true, created: false, account: { id: first.account.id, status: "whitelisted" } });
+
+    // The same handle on the other platform, or for someone else, is its own account.
+    const facebook = await submitAccount(db, { userId: USER_A, userEmail: null, platform: "facebook", handle: "@drama.fan" });
+    const other = await submitAccount(db, { userId: USER_B, userEmail: null, platform: "tiktok", handle: "@drama.fan" });
+    expect(facebook.ok && facebook.created && other.ok && other.created).toBe(true);
+    expect((await listMyAccounts(db, USER_A)).map((a) => a.platform)).toEqual(["tiktok", "facebook"]);
+  });
+
+  it("stops at the cap per person", async () => {
+    for (let i = 0; i < MAX_ACCOUNTS_PER_USER; i += 1) {
+      const result = await submitAccount(db, { userId: USER_A, userEmail: null, platform: "tiktok", handle: `@fan${i}` });
+      expect(result.ok).toBe(true);
+    }
+    expect(await submitAccount(db, { userId: USER_A, userEmail: null, platform: "tiktok", handle: "@one.more" })).toEqual({
+      ok: false,
+      code: "too_many_accounts",
+    });
+    // A handle already on file still answers, cap or not.
+    expect(await submitAccount(db, { userId: USER_A, userEmail: null, platform: "tiktok", handle: "@FAN0" })).toMatchObject({
+      ok: true,
+      created: false,
+    });
+  });
+
+  it("holds the cap when submissions arrive at the same time", async () => {
+    for (let i = 0; i < MAX_ACCOUNTS_PER_USER - 1; i += 1) {
+      await submitAccount(db, { userId: USER_A, userEmail: null, platform: "tiktok", handle: `@fan${i}` });
+    }
+    // Separate connections, so the submissions really overlap.
+    const pool = new Pool({ connectionString: requireTaskTestDatabaseUrl(), max: 6 });
+    try {
+      const results = await Promise.all(
+        Array.from({ length: 6 }, (_, i) =>
+          submitAccount(pool, { userId: USER_A, userEmail: null, platform: "facebook", handle: `@race${i}` }),
+        ),
+      );
+      expect(results.filter((r) => r.ok).length).toBe(1);
+      expect(await listMyAccounts(db, USER_A)).toHaveLength(MAX_ACCOUNTS_PER_USER);
+    } finally {
+      await pool.end();
+    }
+  });
+
+  it("lets a promoter withdraw only their own account, and only while it waits", async () => {
+    const a = await submitAccount(db, { userId: USER_A, userEmail: null, platform: "tiktok", handle: "@a" });
+    const b = await submitAccount(db, { userId: USER_A, userEmail: null, platform: "facebook", handle: "fb.com/a" });
+    const c = await submitAccount(db, { userId: USER_A, userEmail: null, platform: "tiktok", handle: "@c" });
+    if (!a.ok || !b.ok || !c.ok) throw new Error("submit failed");
+    await reviewAccount(db, b.account.id, "whitelisted", ADMIN);
+    await reviewAccount(db, c.account.id, "rejected", ADMIN);
+
+    expect(await withdrawAccount(db, USER_B, a.account.id)).toBe(false);
+    expect(await withdrawAccount(db, USER_A, b.account.id)).toBe(false);
+    // Deleting a rejection and resubmitting would wipe it, so it stays.
+    expect(await withdrawAccount(db, USER_A, c.account.id)).toBe(false);
+    expect(await withdrawAccount(db, USER_A, a.account.id)).toBe(true);
+    expect((await listMyAccounts(db, USER_A)).map((x) => x.id)).toEqual([b.account.id, c.account.id]);
+  });
+
+  it("lists waiting accounts first for review and records who reviewed", async () => {
+    const older = await submitAccount(db, { userId: USER_A, userEmail: "a@example.com", platform: "tiktok", handle: "@older" });
+    const reviewed = await submitAccount(db, { userId: USER_B, userEmail: "b@example.com", platform: "tiktok", handle: "@done" });
+    const newer = await submitAccount(db, { userId: USER_B, userEmail: "b@example.com", platform: "facebook", handle: "@newer" });
+    if (!older.ok || !reviewed.ok || !newer.ok) throw new Error("submit failed");
+    expect(await reviewAccount(db, reviewed.account.id, "rejected", ADMIN)).toBe(true);
+    expect(await reviewAccount(db, "33333333-3333-4333-8333-333333333333", "rejected", ADMIN)).toBe(false);
+
+    const list = await listAccountsForReview(db);
+    expect(list.map((a) => a.handle)).toEqual(["@older", "@newer", "@done"]);
+    expect(list[2]).toMatchObject({ status: "rejected", reviewedBy: ADMIN, userEmail: "b@example.com", userId: USER_B });
+    expect(list[2]!.reviewedAt).not.toBeNull();
+
+    // Reviewed rows must say by whom; the table refuses one that does not.
+    await expect(
+      db.query("update task_center.promoter_accounts set reviewed_by = null where id = $1", [reviewed.account.id]),
+    ).rejects.toThrow();
   });
 });

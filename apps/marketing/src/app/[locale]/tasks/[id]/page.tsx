@@ -1,6 +1,6 @@
 // @input  -- locale and drama id params; the task database; the verified session; R2 for the cover
-// @output -- one published drama: details, episode list with paid locks, clips, and the claim panel
-// @pos    -- /tasks/<id>, where a promoter claims a link and fetches clips
+// @output -- one published drama: details, the one-click promo link, numbered clip downloads with previews, how it works, and the episode list with paid locks
+// @pos    -- /tasks/<id>, where a promoter takes their link and downloads clips
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import { Lock } from "lucide-react";
@@ -10,7 +10,7 @@ import { notFound } from "next/navigation";
 import { ClaimPanel } from "@/components/task-center/claim-panel";
 import { siteConfig } from "@/config/site";
 import { getServerAuthenticatedUser } from "@/lib/auth/server-auth-user";
-import { listClaimsForDrama, type Claim } from "@/lib/task-center/claims-store";
+import { listClaimsForDrama } from "@/lib/task-center/claims-store";
 import { isUuid } from "@/lib/task-center/contracts";
 import { formatDay, languageName, promoLink, taskCopy } from "@/lib/task-center/copy";
 import { getTaskDb } from "@/lib/task-center/db";
@@ -72,9 +72,12 @@ export default async function TaskDetailPage({ params }: { params: Params }) {
 
   const user = await getServerAuthenticatedUser().catch(() => ({ status: "unavailable" as const }));
   const signedIn = user.status === "authenticated";
-  let claims: readonly Claim[] = [];
+  // Only the "all" claim is this drama's one link; per-channel codes from
+  // before stay listed on /promotions.
+  let code: string | null = null;
   if (user.status === "authenticated") {
-    claims = await listClaimsForDrama(loaded.db, user.userId, drama.id).catch(() => []);
+    const claims = await listClaimsForDrama(loaded.db, user.userId, drama.id).catch(() => []);
+    code = claims.find((claim) => claim.channel === "all")?.code ?? null;
   }
   const here = localePath(locale, `/tasks/${drama.id}`);
   const signInHref = `/api/auth/google/start?next=${encodeURIComponent(here)}`;
@@ -133,11 +136,7 @@ export default async function TaskDetailPage({ params }: { params: Params }) {
               locale={locale}
               signedIn={signedIn}
               signInHref={signInHref}
-              initialClaims={claims.map((claim) => ({
-                channel: claim.channel,
-                code: claim.code,
-                link: promoLink(siteConfig.url, claim.code),
-              }))}
+              initialLink={code === null ? null : { code, link: promoLink(siteConfig.url, code) }}
             />
           </div>
         </div>
@@ -154,32 +153,74 @@ export default async function TaskDetailPage({ params }: { params: Params }) {
               </a>
             </p>
           ) : (
-            <ul className="mt-4 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {assets.map((asset) => (
-                <li key={asset.id} className="overflow-hidden rounded-card border border-brand-border-card bg-brand-panel">
-                  {asset.kind === "video" ? (
-                    <video
-                      controls
-                      preload="none"
-                      className="aspect-[9/16] max-h-90 w-full bg-brand-panel-sunken"
-                      src={`/api/tasks/assets/${asset.id}`}
-                    />
-                  ) : (
-                    <img src={`/api/tasks/assets/${asset.id}`} alt="" loading="lazy" className="w-full" />
-                  )}
-                  <div className="flex items-center justify-between gap-3 p-4 text-[13.5px]">
-                    <span className="min-w-0 truncate text-text-dark-primary">{asset.title}</span>
+            <>
+              <p className="mt-2 text-[14px] text-text-dark-secondary">{copy.clipsBody}</p>
+              <ol className="mt-4 flex flex-wrap gap-2">
+                {assets.map((asset, index) => (
+                  <li key={asset.id}>
                     <a
                       href={`/api/tasks/assets/${asset.id}?download=1`}
-                      className="shrink-0 text-brand-accent-text hover:underline"
+                      title={`${asset.title} · ${formatBytes(asset.byteSize)}`}
+                      aria-label={copy.clipLabel(index + 1, asset.title, formatBytes(asset.byteSize))}
+                      className="flex size-11 items-center justify-center rounded-[10px] border border-brand-border-card bg-brand-panel font-mono text-[15px] text-text-dark-primary transition-colors hover:border-brand-accent-text hover:text-brand-accent-text"
                     >
-                      {copy.download} · {formatBytes(asset.byteSize)}
+                      {index + 1}
                     </a>
-                  </div>
-                </li>
-              ))}
-            </ul>
+                  </li>
+                ))}
+              </ol>
+              <details className="mt-5">
+                <summary className="cursor-pointer text-[14px] text-brand-accent-text">{copy.previewClips}</summary>
+                <ul className="mt-4 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                  {assets.map((asset, index) => (
+                    <li key={asset.id} className="overflow-hidden rounded-card border border-brand-border-card bg-brand-panel">
+                      {asset.kind === "video" ? (
+                        <video
+                          controls
+                          preload="none"
+                          className="aspect-[9/16] max-h-90 w-full bg-brand-panel-sunken"
+                          src={`/api/tasks/assets/${asset.id}`}
+                        />
+                      ) : (
+                        <img src={`/api/tasks/assets/${asset.id}`} alt="" loading="lazy" className="w-full" />
+                      )}
+                      <div className="flex items-center justify-between gap-3 p-4 text-[13.5px]">
+                        <span className="min-w-0 truncate text-text-dark-primary">
+                          <span className="mr-2 font-mono text-text-dark-secondary">{index + 1}</span>
+                          {asset.title}
+                        </span>
+                        <a
+                          href={`/api/tasks/assets/${asset.id}?download=1`}
+                          className="shrink-0 text-brand-accent-text hover:underline"
+                        >
+                          {copy.download} · {formatBytes(asset.byteSize)}
+                        </a>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            </>
           )}
+        </div>
+
+        <div className="mt-10 rounded-card border border-brand-border-card bg-brand-panel p-6">
+          <h2 className={H2}>{copy.howTo}</h2>
+          <ol className="mt-4 space-y-3 text-[14px] leading-[1.6] text-text-dark-secondary">
+            {copy.howToSteps.map((step, index) => (
+              <li key={step} className="flex gap-3">
+                <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-brand-bg font-mono text-[12.5px] text-text-dark-primary">
+                  {index + 1}
+                </span>
+                <span>{step}</span>
+              </li>
+            ))}
+          </ol>
+          <p className="mt-4 text-[13.5px]">
+            <Link href={localePath(locale, "/promotions")} className="text-brand-accent-text hover:underline">
+              {copy.tabPromotions} →
+            </Link>
+          </p>
         </div>
 
         <div className="mt-10">

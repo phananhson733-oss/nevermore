@@ -1,19 +1,14 @@
-// @input  -- locale param; the verified session; this person's claims and imported settlement rows
-// @output -- totals per currency, earnings by platform (a total missing some days is marked partial), and every promo link they hold with its clicks
+// @input  -- locale param; the verified session; this person's imported settlement rows
+// @output -- the promoter tabs, totals per currency and earnings by platform (a total missing some days is marked partial); the links themselves are on /promotions
 // @pos    -- /earnings, private to the signed-in promoter and kept out of search
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
-import Link from "next/link";
-
-import { siteConfig } from "@/config/site";
+import { TaskTabs } from "@/components/task-center/task-tabs";
 import { getServerAuthenticatedUser } from "@/lib/auth/server-auth-user";
-import { listMyClaims, type ClaimWithStats } from "@/lib/task-center/claims-store";
 import {
-  CHANNEL_LABELS,
   formatCount,
   formatDay,
   formatMoney,
-  promoLink,
   taskCopy,
   type TaskCopy,
 } from "@/lib/task-center/copy";
@@ -70,22 +65,19 @@ export default async function EarningsPage({
   } else if (user.status === "unavailable" || db === null) {
     body = <p className={NOTE}>{copy.unavailable}</p>;
   } else {
-    let data: { earnings: MyEarnings; claims: readonly ClaimWithStats[] } | null = null;
+    let earnings: MyEarnings | null = null;
     try {
-      const [earnings, claims] = await Promise.all([
-        getMyEarnings(db, user.userId),
-        listMyClaims(db, user.userId),
-      ]);
-      data = { earnings, claims };
+      earnings = await getMyEarnings(db, user.userId);
     } catch (error) {
       console.error("[earnings] load failed", error);
     }
-    body = data === null ? <p className={NOTE}>{copy.unavailable}</p> : <Earnings locale={locale} {...data} />;
+    body = earnings === null ? <p className={NOTE}>{copy.unavailable}</p> : <Earnings locale={locale} earnings={earnings} />;
   }
 
   return (
     <section className="bg-brand-bg px-6 pt-14 pb-24 md:px-8">
       <div className="mx-auto max-w-5xl">
+        <TaskTabs locale={locale} current="earnings" />
         <h1 className="text-page-title text-text-dark-primary">{copy.earningsTitle}</h1>
         <p className="mt-4 max-w-2xl text-[15px] leading-[1.65] text-text-dark-secondary">
           {copy.earningsSubtitle}
@@ -96,15 +88,7 @@ export default async function EarningsPage({
   );
 }
 
-function Earnings({
-  locale,
-  earnings,
-  claims,
-}: {
-  locale: string;
-  earnings: MyEarnings;
-  claims: readonly ClaimWithStats[];
-}) {
+function Earnings({ locale, earnings }: { locale: string; earnings: MyEarnings }) {
   const copy = taskCopy(locale);
   const money = (figure: SummedFigure, currency: string) =>
     marked(figure, formatMoney(figure.total, currency, locale), copy);
@@ -168,47 +152,6 @@ function Earnings({
       )}
 
       {anyPartial && <p className="text-[13px] text-text-dark-secondary">{copy.partialNote}</p>}
-
-      <div>
-        <h2 className={H2}>{copy.myLinks}</h2>
-        {claims.length === 0 ? (
-          <p className={`mt-4 ${NOTE}`}>
-            {copy.noLinks}{" "}
-            <Link href={localePath(locale, "/tasks")} className="text-brand-accent-text hover:underline">
-              {copy.browseTasks}
-            </Link>
-          </p>
-        ) : (
-          <div className="mt-4 overflow-x-auto rounded-card border border-brand-border-card">
-            <table className="w-full text-left text-[14px]">
-              <thead className="bg-brand-panel text-[12.5px] text-text-dark-secondary">
-                <tr>
-                  <th className={TH}>{copy.drama}</th>
-                  <th className={TH}>{copy.channel}</th>
-                  <th className={TH}>{copy.yourLink}</th>
-                  <th className={TH}>{copy.clicks}</th>
-                  <th className={TH}>{copy.claimedOn}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {claims.map((claim) => (
-                  <tr key={claim.id} className="border-t border-brand-border-card text-text-dark-primary">
-                    <td className={TD}>
-                      <Link href={localePath(locale, `/tasks/${claim.dramaId}`)} className="hover:text-brand-accent-text">
-                        {locale === "zh" && claim.dramaTitleCn ? claim.dramaTitleCn : claim.dramaTitle}
-                      </Link>
-                    </td>
-                    <td className={TD}>{CHANNEL_LABELS[claim.channel]}</td>
-                    <td className={`${TD} font-mono text-[12.5px] select-all`}>{promoLink(siteConfig.url, claim.code)}</td>
-                    <td className={TD}>{formatCount(claim.clicks, locale)}</td>
-                    <td className={TD}>{formatDay(claim.claimedAt, locale)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
     </div>
   );
 }
