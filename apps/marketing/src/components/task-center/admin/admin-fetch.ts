@@ -1,5 +1,5 @@
 // @input  -- an admin API path, method and JSON body
-// @output -- the parsed answer, plus a Chinese sentence for any error code the admin APIs return
+// @output -- the parsed answer, plus a Chinese sentence for any error code and field problem the admin APIs return
 // @pos    -- the one fetch wrapper the admin task components share
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -53,9 +53,26 @@ const MESSAGES: Readonly<Record<string, string>> = {
   payload_too_large: "文件太大。",
 };
 
+/** Field problems the forms can cause, by the message the server's check gives. */
+const FIELD_MESSAGES: Readonly<Record<string, string>> = {
+  genre_is_audience: "题材填的是男频/女频，请在「频道」里选，题材填 romance、revenge 这类。",
+  invalid_genre: "题材只能用小写英文、数字和短横线，如 romance、ceo-revenge。",
+  https_required: "推广目标地址必须是 https 开头的完整链接。",
+  invalid_param: "子渠道参数名只能用英文、数字和下划线。",
+  pay_start_after_last_episode: "收费起始集不能大于总集数。",
+};
+
 export function describeError(answer: AdminAnswer): string {
   const code = typeof answer.error?.code === "string" ? answer.error.code : "";
   const base = MESSAGES[code] ?? `请求失败（${answer.status || "无响应"}）。`;
-  const fields = Array.isArray(answer.error?.fields) ? answer.error.fields.join("；") : "";
+  const fields = Array.isArray(answer.error?.fields)
+    ? answer.error.fields
+        .map((field) => {
+          const text = String(field);
+          const message = text.slice(text.lastIndexOf(": ") + 2);
+          return FIELD_MESSAGES[message] ?? text;
+        })
+        .join("；")
+    : "";
   return fields ? `${base} ${fields}` : base;
 }

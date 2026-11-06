@@ -506,15 +506,18 @@ export async function markAssetReady(
   return rows[0] === undefined ? null : { posterKey: rows[0].poster_key };
 }
 
-/** Retags a clip; false when it does not exist. */
-export async function setAssetClipType(
+/** Retags and/or renames a clip; a field left out stays as it is. False when the clip does not exist. */
+export async function updateAsset(
   db: TaskDb,
   assetId: string,
-  clipType: ClipType | null,
+  change: { readonly clipType?: ClipType | null | undefined; readonly title?: string | undefined },
 ): Promise<boolean> {
   const { rowCount } = await db.query(
-    `update task_center.drama_assets set clip_type = $2 where id = $1`,
-    [assetId, clipType],
+    `update task_center.drama_assets
+        set clip_type = case when $2 then $3 else clip_type end,
+            title = coalesce($4, title)
+      where id = $1`,
+    [assetId, change.clipType !== undefined, change.clipType ?? null, change.title ?? null],
   );
   return rowCount === 1;
 }

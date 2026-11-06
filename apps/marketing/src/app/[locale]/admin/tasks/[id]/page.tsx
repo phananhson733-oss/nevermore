@@ -1,5 +1,5 @@
 // @input  -- locale and drama id params; the admin check; the drama and all its assets; R2 for the cover
-// @output -- the admin edit page: details form, publish switch with a note on what a draft hides, cover upload, clip upload, retag and delete
+// @output -- the admin edit page: details form, publish switch with a note on what a draft hides, cover upload, clip upload, rename, retag and delete
 // @pos    -- /admin/tasks/<id> (Chinese only); 404 for anyone not on TASK_ADMIN_EMAILS
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -7,6 +7,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import {
+  AssetTitle,
   ClipTypeSelect,
   DeleteAssetButton,
   StatusControl,
@@ -125,7 +126,7 @@ export default async function AdminDramaPage({
           <ul className="mt-6 divide-y divide-brand-border-card rounded-[8px] border border-brand-border-card">
             {assets.map((asset) => (
               <li key={asset.id} className="flex flex-wrap items-center gap-4 px-4 py-3 text-[13.5px]">
-                <span className="min-w-0 flex-1 truncate text-text-dark-primary">{asset.title}</span>
+                <AssetTitle assetId={asset.id} title={asset.title} />
                 <span className="text-text-dark-secondary">{asset.kind === "video" ? "视频" : "图片"}</span>
                 <ClipTypeSelect assetId={asset.id} clipType={asset.clipType} />
                 <span className="font-mono text-text-dark-secondary">{formatBytes(asset.byteSize)}</span>

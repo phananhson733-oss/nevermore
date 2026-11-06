@@ -1,5 +1,5 @@
 // @input  -- a drama id, its status and assets; the admin status, upload and asset APIs; R2 via signed PUT URLs
-// @output -- publish/take-down buttons, the cover and clip uploaders (one button opens the file picker, or files are dropped on the box, and the upload starts as soon as files are picked; progress, one upload at a time, a still cut from each video in the browser), per-clip type and delete
+// @output -- publish/take-down buttons, each clip's title rename, the cover and clip uploaders (one button opens the file picker, or files are dropped on the box, and the upload starts as soon as files are picked; progress, one upload at a time, a still cut from each video in the browser), per-clip type and delete
 // @pos    -- the interactive half of /admin/tasks/<id>
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
@@ -121,6 +121,84 @@ async function capturePoster(file: File): Promise<Blob | null> {
     video.removeAttribute("src");
     URL.revokeObjectURL(url);
   }
+}
+
+/** A clip's title with 改标题: the title is what promoters see on its card. */
+export function AssetTitle({ assetId, title }: { assetId: string; title: string }) {
+  const router = useRouter();
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(title);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save(): Promise<void> {
+    const next = value.trim();
+    if (next === "" || next === title) {
+      setEditing(false);
+      setValue(title);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    const answer = await adminFetch(`/api/admin/tasks/assets/${assetId}`, "PUT", { title: next });
+    setBusy(false);
+    if (!answer.ok) {
+      setError(describeError(answer));
+      return;
+    }
+    setEditing(false);
+    router.refresh();
+  }
+
+  if (!editing) {
+    return (
+      <span className="flex min-w-0 flex-1 items-center gap-2">
+        <span className="min-w-0 truncate text-text-dark-primary">{title}</span>
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="shrink-0 text-[12.5px] text-brand-accent-text hover:underline"
+        >
+          改标题
+        </button>
+      </span>
+    );
+  }
+  return (
+    <span className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+      <input
+        aria-label="素材标题"
+        value={value}
+        maxLength={200}
+        autoFocus
+        disabled={busy}
+        onChange={(event) => setValue(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") void save();
+          if (event.key === "Escape") {
+            setEditing(false);
+            setValue(title);
+          }
+        }}
+        className="h-8 min-w-48 flex-1 rounded-[8px] border border-brand-border-strong bg-brand-bg px-2 text-[13.5px] text-text-dark-primary"
+      />
+      <button type="button" disabled={busy} onClick={() => void save()} className="text-[12.5px] text-brand-accent-text hover:underline">
+        保存
+      </button>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => {
+          setEditing(false);
+          setValue(title);
+        }}
+        className="text-[12.5px] text-text-dark-secondary hover:underline"
+      >
+        取消
+      </button>
+      {error && <span className="text-[12.5px] text-brand-error">{error}</span>}
+    </span>
+  );
 }
 
 export function ClipTypeSelect({ assetId, clipType }: { assetId: string; clipType: ClipType | null }) {

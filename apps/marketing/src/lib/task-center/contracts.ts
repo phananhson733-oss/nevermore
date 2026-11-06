@@ -1,5 +1,5 @@
 // @input  -- zod
-// @output -- claim channels, account platforms and statuses, drama audiences, clip types, upload limits, and the parsers admin and promoter requests go through
+// @output -- claim channels, account platforms and statuses, drama audiences, clip types, suggested genres, upload limits, and the parsers admin and promoter requests go through
 // @pos    -- the task center's request contract; the SQL checks in db/tasks repeat these limits
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -44,6 +44,15 @@ export type ClipType = (typeof CLIP_TYPES)[number];
 
 /** A genre is a free slug like the platform: lowercase, digits and dashes. */
 export const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,31}$/;
+
+/** Words that name an audience, not a genre; typed into 题材 they belong in 频道. */
+export const AUDIENCE_WORDS: ReadonlySet<string> = new Set(["male", "female", "man", "woman", "men", "women"]);
+
+/** Genres the admin form suggests; any other slug is still accepted. */
+export const SUGGESTED_GENRES = [
+  "romance", "revenge", "billionaire", "werewolf", "ceo", "mafia", "fantasy", "urban",
+  "apocalypse", "system", "comeback", "family", "thriller", "historical", "comedy",
+] as const;
 
 export const VIDEO_TYPES = [
   "video/mp4",
@@ -117,7 +126,8 @@ export const dramaInputSchema = z
       .transform((value) => value ?? null),
     genre: optionalText(32)
       .transform((value) => value?.toLowerCase() ?? null)
-      .refine((value) => value === null || SLUG_PATTERN.test(value), { message: "invalid_genre" }),
+      .refine((value) => value === null || SLUG_PATTERN.test(value), { message: "invalid_genre" })
+      .refine((value) => value === null || !AUDIENCE_WORDS.has(value), { message: "genre_is_audience" }),
   })
   .strict()
   .refine(
@@ -176,10 +186,15 @@ export const uploadCompleteSchema = z.union([
     .strict(),
 ]);
 
-/** An admin retagging a clip; null clears the type. */
+/** An admin retagging or renaming a clip: either field or both; a null type clears it. */
 export const assetUpdateSchema = z
-  .object({ clipType: z.enum(CLIP_TYPES).nullable() })
-  .strict();
+  .object({
+    clipType: z.enum(CLIP_TYPES).nullable().optional(),
+    title: z.string().trim().min(1).max(200).optional(),
+  })
+  .strict()
+  .refine((value) => value.clipType !== undefined || value.title !== undefined, { message: "nothing_to_change" });
+export type AssetUpdate = z.infer<typeof assetUpdateSchema>;
 
 /**
  * A claim needs no input: the drama is in the path and the channel is always

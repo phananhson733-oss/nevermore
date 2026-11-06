@@ -1,8 +1,8 @@
-// @input  -- GET (the 预览 link), PUT {clipType} or DELETE from /admin/tasks/<id>, by an admin
+// @input  -- GET (the 预览 link), PUT {clipType?, title?} or DELETE from /admin/tasks/<id>, by an admin
 // @output -- GET: a 302 to a 15-minute signed R2 URL for a ready clip of any drama, draft or not;
-//            PUT: the clip retagged; DELETE: the clip's row deleted, then its R2 file and still
+//            PUT: the clip retagged and/or renamed; DELETE: the clip's row deleted, then its R2 file and still
 //            (a failed file delete is logged, not undone)
-// @pos    -- admin preview, retag and delete endpoint for task_center.drama_assets
+// @pos    -- admin preview, retag, rename and delete endpoint for task_center.drama_assets
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import { isSameOriginPost } from "../../../../../../lib/auth/disconnect.ts";
@@ -10,7 +10,7 @@ import { assetUpdateSchema, isUuid } from "../../../../../../lib/task-center/con
 import {
   deleteAsset,
   getAsset,
-  setAssetClipType,
+  updateAsset,
 } from "../../../../../../lib/task-center/dramas-store.ts";
 import { deleteR2Object, r2ObjectUrl } from "../../../../../../lib/task-center/r2.ts";
 import {
@@ -63,19 +63,19 @@ export async function PUT(
   request: Request,
   context: { readonly params: Promise<{ assetId: string }> },
 ): Promise<Response> {
-  const mutation = await readAdminMutation(request, 256);
+  const mutation = await readAdminMutation(request, 1024);
   if (!mutation.ok) return mutation.response;
   const { assetId } = await context.params;
   if (!isUuid(assetId)) return privateError("not_found", 404);
   const parsed = assetUpdateSchema.safeParse(mutation.value.body);
   if (!parsed.success) return invalidInput(parsed.error.issues);
   try {
-    if (!(await setAssetClipType(mutation.value.db, assetId, parsed.data.clipType))) {
+    if (!(await updateAsset(mutation.value.db, assetId, parsed.data))) {
       return privateError("not_found", 404);
     }
-    return privateJson({ data: { assetId, clipType: parsed.data.clipType } });
+    return privateJson({ data: { assetId, ...parsed.data } });
   } catch (error) {
-    console.error("[admin tasks] asset retag failed", error);
+    console.error("[admin tasks] asset update failed", error);
     return privateError("tasks_unavailable", 503);
   }
 }

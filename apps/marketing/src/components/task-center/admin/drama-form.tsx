@@ -1,5 +1,5 @@
 // @input  -- a drama's current fields (edit) or none (create); POST/PUT /api/admin/tasks/dramas
-// @output -- the admin form for a drama's details, audience and genre, and promo target
+// @output -- the admin form for a drama's details, audience and genre (with suggested genres), and promo target
 // @pos    -- create and edit on /admin/tasks and /admin/tasks/<id>
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
@@ -7,7 +7,7 @@
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
-import { DRAMA_AUDIENCES, type DramaAudience } from "../../../lib/task-center/contracts.ts";
+import { DRAMA_AUDIENCES, SUGGESTED_GENRES, type DramaAudience } from "../../../lib/task-center/contracts.ts";
 import { AUDIENCE_LABELS_ZH } from "../../../lib/task-center/copy.ts";
 import { adminFetch, describeError } from "./admin-fetch.ts";
 
@@ -132,14 +132,20 @@ export function DramaForm({
         </select>
       </label>
       <label className="text-[13px] text-text-dark-secondary">
-        题材（小写英文，如 romance、werewolf、billionaire）
+        题材（可选列表里的，也可自己填小写英文；男频/女频请选在「频道」里）
         <input
           name="genre"
+          list="genre-suggestions"
           pattern="[a-z0-9][a-z0-9\-]{0,31}"
           maxLength={32}
           defaultValue={initial?.genre ?? ""}
           className={FIELD}
         />
+        <datalist id="genre-suggestions">
+          {SUGGESTED_GENRES.map((value) => (
+            <option key={value} value={value} />
+          ))}
+        </datalist>
       </label>
       <label className="text-[13px] text-text-dark-secondary sm:col-span-2">
         推广目标地址（https，平台给的分销链接；上架前必填）
