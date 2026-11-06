@@ -1,5 +1,5 @@
 // @input  -- the page locale, one page of clip cards (signed poster and cover URLs made on the server), the visitor's links per drama
-// @output -- the clip grid with type and 本周爆款 badges; a card opens a dialog that plays the clip, downloads it and takes the drama's promo link
+// @output -- the clip grid with type and 本周爆款 badges; a card opens a dialog that plays the clip, shows the drama's tags, downloads it and takes the drama's promo link
 // @pos    -- the body of /tasks, the task center's 素材广场
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
@@ -27,6 +27,7 @@ export interface ClipCard {
   readonly dramaHref: string;
   readonly audience: DramaAudience | null;
   readonly genre: string | null;
+  readonly tags: readonly string[];
   readonly language: string;
 }
 
@@ -177,6 +178,15 @@ export function ClipPlaza({
                   {open.title}
                 </p>
                 <p className="mt-1 text-[13px] text-text-dark-secondary">{meta(open)}</p>
+                {open.tags.length > 0 && (
+                  <ul className="mt-2 flex flex-wrap gap-1.5">
+                    {open.tags.slice(0, 8).map((tag) => (
+                      <li key={tag} className="rounded-full bg-brand-panel-raised px-2.5 py-0.5 text-[12px] text-text-dark-secondary">
+                        {tag}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
               {signedIn && (
                 <a

@@ -1,5 +1,5 @@
 // @input  -- zod
-// @output -- claim channels, account platforms and statuses, drama audiences, clip types, suggested genres, upload limits, and the parsers admin and promoter requests go through
+// @output -- claim channels, account platforms and statuses, drama audiences, clip types, suggested genres, the 选剧台 lookup's platforms and languages, upload limits, and the parsers admin and promoter requests go through
 // @pos    -- the task center's request contract; the SQL checks in db/tasks repeat these limits
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -53,6 +53,21 @@ export const SUGGESTED_GENRES = [
   "romance", "revenge", "billionaire", "werewolf", "ceo", "mafia", "fantasy", "urban",
   "apocalypse", "system", "comeback", "family", "thriller", "historical", "comedy",
 ] as const;
+
+/** The platform keys the 选剧台 lookup knows (its BEIDOU_APPS, minus the alias kalos). */
+export const LOOKUP_PLATFORMS = [
+  "reelshort", "dramabox", "shortmax", "moboreels", "flickreels", "kalostv",
+  "netshort", "goodshort", "flareflow", "stardusttv", "yourchannel",
+] as const;
+export type LookupPlatform = (typeof LOOKUP_PLATFORMS)[number];
+
+/** 北斗's languages, as the lookup names them. */
+export const LOOKUP_LANGUAGES = [
+  "en", "es", "pt", "fr", "de", "it", "ru", "tr", "ar", "id", "th", "vi", "ja", "ko", "zh-TW", "ro", "pl", "cs",
+] as const;
+
+/** 0004 caps a drama's tags at 20. */
+export const MAX_TAGS = 20;
 
 export const VIDEO_TYPES = [
   "video/mp4",
@@ -128,6 +143,8 @@ export const dramaInputSchema = z
       .transform((value) => value?.toLowerCase() ?? null)
       .refine((value) => value === null || SLUG_PATTERN.test(value), { message: "invalid_genre" })
       .refine((value) => value === null || !AUDIENCE_WORDS.has(value), { message: "genre_is_audience" }),
+    // Left out, an edit keeps the tags the drama has (an import's, say).
+    tags: z.array(z.string().trim().min(1).max(40)).max(MAX_TAGS).optional(),
   })
   .strict()
   .refine(
@@ -138,6 +155,35 @@ export const dramaInputSchema = z
     { message: "pay_start_after_last_episode", path: ["payStart"] },
   );
 export type DramaInput = z.infer<typeof dramaInputSchema>;
+
+/** 查剧: what the operator types on /admin/tasks. */
+export const dramaLookupSchema = z
+  .object({
+    platform: z.enum(LOOKUP_PLATFORMS),
+    title: z.string().trim().min(1).max(200).transform((value) => value.replace(/\s+/g, " ")),
+    language: z
+      .enum(LOOKUP_LANGUAGES)
+      .nullable()
+      .optional()
+      .transform((value) => value ?? null),
+  })
+  .strict();
+export type DramaLookup = z.infer<typeof dramaLookupSchema>;
+
+/** 用这部: the same query plus which of its results to list. */
+export const dramaImportSchema = z
+  .object({
+    platform: z.enum(LOOKUP_PLATFORMS),
+    title: z.string().trim().min(1).max(200).transform((value) => value.replace(/\s+/g, " ")),
+    language: z
+      .enum(LOOKUP_LANGUAGES)
+      .nullable()
+      .optional()
+      .transform((value) => value ?? null),
+    platformDramaId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
+  })
+  .strict();
+export type DramaImport = z.infer<typeof dramaImportSchema>;
 
 export const dramaStatusInputSchema = z
   .object({ status: z.enum(DRAMA_STATUSES) })

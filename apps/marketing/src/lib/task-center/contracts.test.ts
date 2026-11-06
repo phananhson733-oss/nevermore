@@ -1,11 +1,11 @@
 // @input  -- the zod inputs in contracts.ts
-// @output -- proof that 题材 refuses audience words and that a clip update needs a field and leaves the other alone
+// @output -- proof that 题材 refuses audience words, that 查剧 takes only platforms and languages 选剧台 knows, and that a clip update needs a field and leaves the other alone
 // @pos    -- unit tests for the admin request contract; no database
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import { describe, expect, it } from "vitest";
 
-import { assetUpdateSchema, dramaInputSchema } from "./contracts.ts";
+import { assetUpdateSchema, dramaImportSchema, dramaInputSchema, dramaLookupSchema } from "./contracts.ts";
 
 const drama = { title: "Surf God's Revenge", platform: "reelshort", language: "en" };
 
@@ -23,6 +23,37 @@ describe("dramaInputSchema genre", () => {
       expect(result.error?.issues.map((issue) => issue.message)).toContain("genre_is_audience");
     }
     expect(dramaInputSchema.parse({ ...drama, audience: "male" }).audience).toBe("male");
+  });
+});
+
+describe("查剧", () => {
+  it("collapses spaces in the title and makes a missing language null", () => {
+    expect(dramaLookupSchema.parse({ platform: "kalostv", title: "  Surf   God " })).toEqual({
+      platform: "kalostv",
+      title: "Surf God",
+      language: null,
+    });
+  });
+
+  it("refuses a platform or language 选剧台 does not know, and any other field", () => {
+    expect(dramaLookupSchema.safeParse({ platform: "netflix", title: "x" }).success).toBe(false);
+    expect(dramaLookupSchema.safeParse({ platform: "reelshort", title: "x", language: "xx" }).success).toBe(false);
+    expect(dramaLookupSchema.safeParse({ platform: "reelshort", title: "x", episodes: 3 }).success).toBe(false);
+    expect(dramaLookupSchema.safeParse({ platform: "reelshort", title: "   " }).success).toBe(false);
+  });
+
+  it("imports only by a well-formed platform id", () => {
+    const query = { platform: "reelshort", title: "x" };
+    expect(dramaImportSchema.parse({ ...query, platformDramaId: "68a1-b2_c" }).platformDramaId).toBe("68a1-b2_c");
+    expect(dramaImportSchema.safeParse({ ...query, platformDramaId: "../etc" }).success).toBe(false);
+  });
+});
+
+describe("dramaInputSchema tags", () => {
+  it("leaves tags out when not sent and caps them", () => {
+    expect(dramaInputSchema.parse(drama).tags).toBeUndefined();
+    expect(dramaInputSchema.parse({ ...drama, tags: [" CEO "] }).tags).toEqual(["CEO"]);
+    expect(dramaInputSchema.safeParse({ ...drama, tags: Array.from({ length: 21 }, (_, n) => `t${n}`) }).success).toBe(false);
   });
 });
 
