@@ -1,5 +1,5 @@
 // @input  -- locale and drama id params; the task database; the verified session; R2 for the cover
-// @output -- one published drama: details, the one-click promo link, numbered clip downloads with previews, how it works, and the episode list with paid locks
+// @output -- one published drama: details with tags, the one-click promo link, numbered clip downloads with previews, how it works, and the episode list with paid locks
 // @pos    -- /tasks/<id>, where a promoter takes their link and downloads clips
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -12,7 +12,7 @@ import { siteConfig } from "@/config/site";
 import { getServerAuthenticatedUser } from "@/lib/auth/server-auth-user";
 import { listClaimsForDrama } from "@/lib/task-center/claims-store";
 import { isUuid } from "@/lib/task-center/contracts";
-import { formatDay, languageName, promoLink, taskCopy } from "@/lib/task-center/copy";
+import { formatDay, languageName, platformLabel, promoLink, taskCopy } from "@/lib/task-center/copy";
 import { getTaskDb } from "@/lib/task-center/db";
 import { getPublishedDrama } from "@/lib/task-center/dramas-store";
 import { coverImageUrl, readR2Config } from "@/lib/task-center/r2";
@@ -102,8 +102,20 @@ export default async function TaskDetailPage({ params }: { params: Params }) {
           <div>
             <h1 className="text-page-title text-text-dark-primary">{title}</h1>
             {subtitle && <p className="mt-2 text-[15px] text-text-dark-secondary">{subtitle}</p>}
+            {drama.tags.length > 0 && (
+              <ul className="mt-4 flex flex-wrap gap-2">
+                {drama.tags.map((tag) => (
+                  <li
+                    key={tag}
+                    className="rounded-full border border-brand-border-card bg-brand-panel-raised px-3 py-1 text-[12.5px] text-text-dark-secondary"
+                  >
+                    {tag}
+                  </li>
+                ))}
+              </ul>
+            )}
             <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-3 text-[14px] sm:grid-cols-3">
-              <Fact label={copy.platform} value={drama.platform} />
+              <Fact label={copy.platform} value={platformLabel(drama.platform)} />
               <Fact label={copy.language} value={languageName(drama.language, locale)} />
               <Fact
                 label={copy.contents}

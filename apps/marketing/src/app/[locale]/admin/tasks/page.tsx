@@ -1,14 +1,14 @@
 // @input  -- locale param; the admin check; every drama in the task database
-// @output -- links to 账号报白 and 结算导入, the admin drama list with status and promoter counts, and the new-drama form
+// @output -- links to 账号报白 and 结算导入, the admin drama list with status and promoter counts, and 查剧 to list a new drama by title and platform
 // @pos    -- /admin/tasks, the operators' entry page (Chinese only); 404 for anyone not on TASK_ADMIN_EMAILS
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { DramaForm } from "@/components/task-center/admin/drama-form";
+import { DramaQuickCreate } from "@/components/task-center/admin/drama-quick-create";
 import { checkTaskAdmin } from "@/lib/task-center/admin";
-import { DRAMA_STATUS_LABELS } from "@/lib/task-center/copy";
+import { DRAMA_STATUS_LABELS, platformLabel } from "@/lib/task-center/copy";
 import { getTaskDb } from "@/lib/task-center/db";
 import { listAllDramas, type DramaDetail } from "@/lib/task-center/dramas-store";
 import { readR2Config } from "@/lib/task-center/r2";
@@ -59,9 +59,11 @@ export default async function AdminTasksPage({
 
       <div className={PANEL}>
         <h2 className={H2}>新建短剧</h2>
-        <p className="mt-1 text-[13.5px] text-text-dark-secondary">新建后是草稿，传好封面和素材、填好推广目标地址再上架。</p>
+        <p className="mt-1 text-[13.5px] text-text-dark-secondary">
+          填剧名和平台，集数、收费集、简介、标签和封面从选剧台自动带出。建好是草稿，上传剪好的素材、填好推广目标地址再上架。
+        </p>
         <div className="mt-5">
-          <DramaForm adminBase={base} />
+          <DramaQuickCreate adminBase={base} />
         </div>
       </div>
 
@@ -92,7 +94,7 @@ export default async function AdminTasksPage({
                         {drama.titleCn ?? drama.title}
                       </Link>
                     </td>
-                    <td className={TD}>{drama.platform}</td>
+                    <td className={TD}>{platformLabel(drama.platform)}</td>
                     <td className={TD}>{drama.language}</td>
                     <td className={TD}>{DRAMA_STATUS_LABELS[drama.status]}</td>
                     <td className={TD}>{drama.promoterCount}</td>
