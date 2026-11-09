@@ -1,5 +1,5 @@
 // @input  -- POST {status: draft|published|archived} from /admin/tasks/<id>, by an admin
-// @output -- 200 when changed; 409 when publishing a drama that has no promo target
+// @output -- 200 when changed (a drama publishes without a platform link: promoters' links open its page on our site); 404 for an unknown drama
 // @pos    -- the admin publish / take-down switch
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -27,9 +27,7 @@ export async function POST(
   try {
     const result = await setDramaStatus(mutation.value.db, dramaId, parsed.data.status);
     if (result.ok) return privateJson({ data: { status: parsed.data.status } });
-    return result.code === "not_found"
-      ? privateError("not_found", 404)
-      : privateError(result.code, 409);
+    return privateError(result.code, 404);
   } catch (error) {
     console.error("[admin tasks] status failed", error);
     return privateError("tasks_unavailable", 503);

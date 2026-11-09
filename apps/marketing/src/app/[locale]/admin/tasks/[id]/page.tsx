@@ -1,5 +1,5 @@
 // @input  -- locale and drama id params, ?new=<cover outcome>&details=<official|beidou> after 查剧; the admin check; the drama and all its assets; R2 for the cover
-// @output -- the admin drama page: cover, title, episodes, pay start, tags, synopsis and where the details came from (a drama from 查剧 links to its page on the theater's site where there is a link to make: ReelShort, DramaBox, StardustTV, MoboReels, NetShort, YourChannel) up top, with a note after 查剧 on whether the theater's own page was read; promo link; publish switch with a note on what a draft hides; clip upload, rename, retag and delete; the full details form folded away
+// @output -- the admin drama page: cover, title, episodes, pay start, tags, synopsis and where the details came from (a drama from 查剧 links to its page on the theater's site where there is a link to make: ReelShort, DramaBox, StardustTV, MoboReels, NetShort, YourChannel) up top, with a note after 查剧 on whether the theater's own page was read; the optional platform link (what 去看全集 on the drama's page opens) with what promoters get instead; links to the promoter page and, once listed, the reader's drama page; publish switch with a note on what a draft hides; clip upload, rename, retag and delete; the full details form folded away
 // @pos    -- /admin/tasks/<id> (Chinese only); 404 for anyone not on TASK_ADMIN_EMAILS
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -33,7 +33,7 @@ function formatBytes(bytes: number): string {
 }
 
 const NEW_COVER_NOTES: Readonly<Record<string, string>> = {
-  saved: "封面也拷过来了。核对一下信息，上传素材、填推广目标地址后就能上架。",
+  saved: "封面也拷过来了。核对一下信息，上传素材后就能上架。",
   missing: "没找到这部剧的封面，请在左边上传一张。",
   failed: "封面没拷成功，请在左边上传一张。",
 };
@@ -107,14 +107,22 @@ export default async function AdminDramaPage({
                 </Link>
               </>
             )}
+            {drama.listedAt !== null && (
+              <>
+                {" · "}
+                <Link href={localePath(locale, `/watch/${drama.id}`)} className="text-brand-accent-text hover:underline">
+                  看读者的剧页面
+                </Link>
+              </>
+            )}
           </p>
         </div>
         <StatusControl dramaId={drama.id} status={drama.status} />
       </div>
       {drama.status !== "published" && (
         <p className="rounded-[8px] border border-brand-border-card bg-brand-panel-raised px-4 py-3 text-[13.5px] leading-[1.6] text-text-dark-secondary">
-          {drama.status === "draft" ? "草稿" : "已下架"}：推广者在任务中心看不到这部剧，也看不到它的素材，没法下载。
-          {drama.promoTargetUrl === null ? "先在下面填好推广目标地址，再点「上架」。" : "点「上架」后才对推广者显示。"}
+          {drama.status === "draft" ? "草稿" : "已下架"}：推广者在任务中心看不到这部剧，也看不到它的素材，没法下载。点「上架」后才对推广者显示。
+          {drama.status === "archived" && "已经发出去的推广链接照旧打开这部剧的页面。"}
         </p>
       )}
 
@@ -174,7 +182,10 @@ export default async function AdminDramaPage({
       </div>
 
       <div className={PANEL}>
-        <h2 className={H2}>推广链接{drama.promoTargetUrl === null && <span className="ml-2 text-[13px] font-normal text-brand-error">上架前必填</span>}</h2>
+        <h2 className={H2}>平台链接</h2>
+        <p className="mt-1 text-[13.5px] leading-[1.6] text-text-dark-secondary">
+          推广者拿到的是我们的链接（/t/推广码），点击记在他名下，然后打开我们站上这部剧的页面（封面、简介、预告片，按上传的素材自动生成）。这里填平台给的原始链接后，剧页面才有「去看全集」按钮，跳过去时带上推广码；不填也能上架。
+        </p>
         <div className="mt-4">
           <PromoLinkForm dramaId={drama.id} initial={values} />
         </div>

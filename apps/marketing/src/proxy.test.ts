@@ -169,9 +169,17 @@ describe("proxy referral landing", () => {
   );
 
   // "earnings" and "promotions" are long enough to look like short-link codes;
-  // "tasks" and "admin" are not, but stay reserved so a future short link
-  // cannot take them.
-  it.each(["/earnings", "/promotions", "/tasks", "/admin"])(
+  // "tasks", "admin" and "watch" are not, but stay reserved so a future short
+  // link cannot take them.
+  it.each([
+    "/earnings",
+    "/promotions",
+    "/tasks",
+    "/admin",
+    // Where /t/<code> sends the reader: the drama's page, and its 去看全集 hop.
+    "/watch/6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b",
+    "/watch/6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b/go",
+  ])(
     "keeps the task center page %s in locale routing",
     (path) => {
       const response = proxy(request(path));

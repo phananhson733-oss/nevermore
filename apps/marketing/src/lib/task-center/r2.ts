@@ -1,5 +1,5 @@
 // @input  -- R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY
-// @output -- time-limited S3 SigV4 URLs for R2: the browser PUTs uploads and GETs clips with them; the server HEADs, PUTs a fetched cover, and DELETEs; the fixed key of a clip's still
+// @output -- time-limited S3 SigV4 URLs for R2: the browser PUTs uploads and GETs clips with them, and gets hour-aligned URLs for public images (covers, stills); the server HEADs, PUTs a fetched cover, and DELETEs; the fixed key of a clip's still
 // @pos    -- the only code that talks to Cloudflare R2; nothing else ever sees the R2 secret
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 //
@@ -125,13 +125,18 @@ export function r2ObjectUrl(
 }
 
 /**
- * Cover images are public. Signing at the top of the hour gives every visitor
- * the same URL for that hour, so browsers can cache the image; the two-hour
- * lifetime keeps a page rendered at :59 working.
+ * An image anyone may see: a cover or a clip's still. Signing at the top of the hour gives every visitor the same URL for
+ * that hour, so browsers can cache it; the two-hour lifetime keeps a page
+ * rendered at :59 working.
  */
-export function coverImageUrl(config: R2Config, key: string, now = new Date()): string {
+export function publicObjectUrl(config: R2Config, key: string, now = new Date()): string {
   const hour = new Date(Math.floor(now.getTime() / 3_600_000) * 3_600_000);
   return r2ObjectUrl(config, "GET", key, { expiresSeconds: 7_200, now: hour });
+}
+
+/** Cover images are public; see publicObjectUrl. */
+export function coverImageUrl(config: R2Config, key: string, now = new Date()): string {
+  return publicObjectUrl(config, key, now);
 }
 
 /** Where a video clip's poster still lives; one per clip, named by its asset id. */

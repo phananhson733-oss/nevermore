@@ -44,7 +44,6 @@ const MESSAGES: Readonly<Record<string, string>> = {
   tasks_unavailable: "任务数据库暂时不可用。",
   storage_unavailable: "R2 存储没配置或暂时不可用。",
   invalid_input: "有字段不合要求。",
-  published_needs_target: "上架中的剧必须填推广目标地址。",
   upload_missing: "R2 里没找到刚传的文件，上传可能没完成。",
   upload_mismatch: "R2 里的文件大小或类型和申报的不一致，请重新上传。",
   invalid_key: "文件键不对。",
@@ -53,11 +52,14 @@ const MESSAGES: Readonly<Record<string, string>> = {
   payload_too_large: "文件太大。",
 };
 
-/** Field problems the forms can cause, by the message the server's check gives. */
+/**
+ * Field problems the forms can cause, by the message the server's check gives,
+ * or by "field: message" where two fields share a message.
+ */
 const FIELD_MESSAGES: Readonly<Record<string, string>> = {
   genre_is_audience: "题材填的是男频/女频，请在「频道」里选，题材填 romance、revenge 这类。",
   invalid_genre: "题材只能用小写英文、数字和短横线，如 romance、ceo-revenge。",
-  https_required: "推广目标地址必须是 https 开头的完整链接。",
+  https_required: "平台链接必须是 https:// 开头的完整链接。",
   invalid_param: "子渠道参数名只能用英文、数字和下划线。",
   pay_start_after_last_episode: "收费起始集不能大于总集数。",
 };
@@ -70,7 +72,7 @@ export function describeError(answer: AdminAnswer): string {
         .map((field) => {
           const text = String(field);
           const message = text.slice(text.lastIndexOf(": ") + 2);
-          return FIELD_MESSAGES[message] ?? text;
+          return FIELD_MESSAGES[text] ?? FIELD_MESSAGES[message] ?? text;
         })
         .join("；")
     : "";

@@ -1,5 +1,5 @@
 // @input  -- a TaskDb and admin or visitor requests already parsed by contracts.ts
-// @output -- dramas and their clip assets: the public clip grid (with this week's hot dramas), the drama list and detail, and the admin reads and writes, including a drama imported from 查剧 (北斗 through the 选剧台 lookup, filled in from the theater's own page)
+// @output -- dramas (with their optional platform link) and their clip assets: the public clip grid (with this week's hot dramas and each listed drama's details and clips), the drama list and detail, the reader's drama page (/watch/<id>: cover, synopsis, trailer, whether there is a platform link, never the link itself), and the admin reads and writes, including a drama imported from 查剧 (北斗 through the 选剧台 lookup, filled in from the theater's own page)
 // @pos    -- every SQL statement on task_center.dramas and task_center.drama_assets
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -32,6 +32,11 @@ export interface DramaDetail extends DramaSummary {
   readonly source: "beidou" | null;
   readonly sourceDramaId: string | null;
   readonly status: DramaStatus;
+  /**
+   * The platform's own link to this drama: where 去看全集 on our drama page
+   * goes, with the promoter's code in `promoCodeParam`. Optional: without it
+   * our drama page is the whole landing.
+   */
   readonly promoTargetUrl: string | null;
   readonly promoCodeParam: string | null;
   readonly createdAt: string;
@@ -277,6 +282,54 @@ export async function listPublishedAssets(
   };
 }
 
+/**
+ * What a clip's dialog on /tasks shows about its drama beyond the card: the
+ * synopsis and the drama's ready clips in the same order as /tasks/<id>, for
+ * the numbered downloads. Never the platform's link: this goes to the browser.
+ */
+export interface PlazaDramaDetail {
+  readonly synopsis: string | null;
+  readonly clips: readonly {
+    readonly id: string;
+    readonly title: string;
+    readonly byteSize: number;
+  }[];
+}
+
+/** Details for the published dramas on one page of the grid, by drama id. Unknown or unpublished ids are left out. */
+export async function listPlazaDramaDetails(
+  db: TaskDb,
+  dramaIds: readonly string[],
+): Promise<Readonly<Record<string, PlazaDramaDetail>>> {
+  const ids = [...new Set(dramaIds)];
+  if (ids.length === 0) return {};
+  // One after the other: a TaskDb may be a single client, which runs one query at a time.
+  const dramas = await db.query<{ id: string; synopsis: string | null }>(
+    `select d.id, d.synopsis
+       from task_center.dramas d
+      where d.id = any($1::uuid[]) and d.status = 'published'`,
+    [ids],
+  );
+  const assets = await db.query<{ id: string; drama_id: string; title: string; byte_size: string | number }>(
+    `select a.id, a.drama_id, a.title, a.byte_size
+       from task_center.drama_assets a
+      where a.drama_id = any($1::uuid[]) and a.status = 'ready'
+      order by a.drama_id, a.sort, a.created_at, a.id`,
+    [ids],
+  );
+  const clips = new Map<string, PlazaDramaDetail["clips"][number][]>();
+  for (const row of assets.rows) {
+    const list = clips.get(row.drama_id) ?? [];
+    list.push({ id: row.id, title: row.title, byteSize: toSafeInteger(row.byte_size) ?? 0 });
+    clips.set(row.drama_id, list);
+  }
+  const details: Record<string, PlazaDramaDetail> = {};
+  for (const row of dramas.rows) {
+    details[row.id] = { synopsis: row.synopsis, clips: clips.get(row.id) ?? [] };
+  }
+  return details;
+}
+
 /** The platforms, languages and genres that currently have something published. */
 export async function listPublishedFacets(
   db: TaskDb,
@@ -316,7 +369,7 @@ export async function getPublishedDrama(
   const assets = await db.query<AssetRow>(
     `select * from task_center.drama_assets
       where drama_id = $1 and status = 'ready'
-      order by sort, created_at`,
+      order by sort, created_at, id`,
     [id],
   );
   return { drama: toDetail(rows[0]), assets: assets.rows.map(toAsset) };
@@ -334,6 +387,80 @@ export async function getPublicAsset(
     [assetId],
   );
   return rows[0] === undefined ? null : toAsset(rows[0]);
+}
+
+/**
+ * What a reader sees on /watch/<id>, the page a promoter's link opens. The
+ * platform link itself is never read here, only whether there is one: the
+ * page is HTML for anyone, and the link is only ever a 302 from /go.
+ */
+export interface LandingDrama {
+  readonly id: string;
+  readonly title: string;
+  readonly titleCn: string | null;
+  readonly platform: string;
+  readonly language: string;
+  readonly episodes: number | null;
+  readonly genre: string | null;
+  readonly tags: readonly string[];
+  readonly synopsis: string | null;
+  readonly coverKey: string | null;
+  readonly hasPlatformLink: boolean;
+  /** One ready video to play: a clip tagged trailer first, else the first in the drama's order. */
+  readonly trailer: { readonly objectKey: string; readonly posterKey: string | null } | null;
+}
+
+/**
+ * Any drama that has ever been listed: one taken down still has its page,
+ * because the links promoters posted while it was up keep opening it. A draft
+ * never published has no page (and no claims, so no links point at it).
+ */
+export async function getLandingDrama(db: TaskDb, id: string): Promise<LandingDrama | null> {
+  const { rows } = await db.query<{
+    id: string;
+    title: string;
+    title_cn: string | null;
+    platform: string;
+    language: string;
+    episodes: number | null;
+    genre: string | null;
+    tags: string[] | null;
+    synopsis: string | null;
+    cover_key: string | null;
+    has_platform_link: boolean;
+    trailer_key: string | null;
+    trailer_poster_key: string | null;
+  }>(
+    `select d.id, d.title, d.title_cn, d.platform, d.language, d.episodes, d.genre, d.tags,
+            d.synopsis, d.cover_key, d.promo_target_url is not null as has_platform_link,
+            t.object_key as trailer_key, t.poster_key as trailer_poster_key
+       from task_center.dramas d
+       left join lateral (
+         select a.object_key, a.poster_key
+           from task_center.drama_assets a
+          where a.drama_id = d.id and a.status = 'ready' and a.kind = 'video'
+          order by (a.clip_type is not distinct from 'trailer') desc, a.sort, a.created_at, a.id
+          limit 1
+       ) t on true
+      where d.id = $1 and d.listed_at is not null`,
+    [id],
+  );
+  const row = rows[0];
+  if (row === undefined) return null;
+  return {
+    id: row.id,
+    title: row.title,
+    titleCn: row.title_cn,
+    platform: row.platform,
+    language: row.language,
+    episodes: row.episodes,
+    genre: row.genre,
+    tags: row.tags ?? [],
+    synopsis: row.synopsis,
+    coverKey: row.cover_key,
+    hasPlatformLink: row.has_platform_link,
+    trailer: row.trailer_key === null ? null : { objectKey: row.trailer_key, posterKey: row.trailer_poster_key },
+  };
 }
 
 // ----------------------------------------------------------------- admin reads
@@ -356,7 +483,7 @@ export async function getDramaForAdmin(
   );
   if (rows[0] === undefined) return null;
   const assets = await db.query<AssetRow>(
-    `select * from task_center.drama_assets where drama_id = $1 order by sort, created_at`,
+    `select * from task_center.drama_assets where drama_id = $1 order by sort, created_at, id`,
     [id],
   );
   return { drama: toDetail(rows[0]), assets: assets.rows.map(toAsset) };
@@ -477,31 +604,25 @@ export async function listedBySource(
 
 export type DramaWriteResult =
   | { readonly ok: true }
-  | { readonly ok: false; readonly code: "not_found" | "published_needs_target" };
+  | { readonly ok: false; readonly code: "not_found" };
 
 export async function updateDrama(
   db: TaskDb,
   id: string,
   input: DramaInput,
 ): Promise<DramaWriteResult> {
-  const values = [...dramaValues(input), id, input.tags ?? null];
-  try {
-    const { rowCount } = await db.query(
-      `update task_center.dramas
-          set title = $1, title_cn = $2, platform = $3, language = $4, episodes = $5,
-              pay_start = $6, synopsis = $7, promo_target_url = $8,
-              promo_code_param = $9, audience = $10, genre = $11,
-              tags = coalesce($13::text[], tags), updated_at = now()
-        where id = $12`,
-      values,
-    );
-    return rowCount === 0 ? { ok: false, code: "not_found" } : { ok: true };
-  } catch (error) {
-    if (isConstraint(error, "dramas_published_has_target")) {
-      return { ok: false, code: "published_needs_target" };
-    }
-    throw error;
-  }
+  // Tags left out of the request keep what the drama has.
+  const { rowCount } = await db.query(
+    `update task_center.dramas
+        set title = $1, title_cn = $2, platform = $3, language = $4, episodes = $5,
+            pay_start = $6, synopsis = $7, promo_target_url = $8,
+            promo_code_param = $9, audience = $10, genre = $11,
+            tags = coalesce($13::text[], tags),
+            updated_at = now()
+      where id = $12`,
+    [...dramaValues(input), id, input.tags ?? null],
+  );
+  return rowCount === 0 ? { ok: false, code: "not_found" } : { ok: true };
 }
 
 export async function setDramaStatus(
@@ -509,22 +630,15 @@ export async function setDramaStatus(
   id: string,
   status: DramaStatus,
 ): Promise<DramaWriteResult> {
-  try {
-    const { rowCount } = await db.query(
-      `update task_center.dramas
-          set status = $2,
-              listed_at = case when $2 = 'published' then coalesce(listed_at, now()) else listed_at end,
-              updated_at = now()
-        where id = $1`,
-      [id, status],
-    );
-    return rowCount === 0 ? { ok: false, code: "not_found" } : { ok: true };
-  } catch (error) {
-    if (isConstraint(error, "dramas_published_has_target")) {
-      return { ok: false, code: "published_needs_target" };
-    }
-    throw error;
-  }
+  const { rowCount } = await db.query(
+    `update task_center.dramas
+        set status = $2,
+            listed_at = case when $2 = 'published' then coalesce(listed_at, now()) else listed_at end,
+            updated_at = now()
+      where id = $1`,
+    [id, status],
+  );
+  return rowCount === 0 ? { ok: false, code: "not_found" } : { ok: true };
 }
 
 /**
@@ -618,12 +732,4 @@ export async function deleteAsset(
     [assetId],
   );
   return rows[0] === undefined ? null : { objectKey: rows[0].object_key, posterKey: rows[0].poster_key };
-}
-
-function isConstraint(error: unknown, name: string): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    (error as { constraint?: unknown }).constraint === name
-  );
 }

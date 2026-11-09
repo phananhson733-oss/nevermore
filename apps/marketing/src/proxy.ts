@@ -49,6 +49,7 @@ const reservedRootPaths = new Set([
   "tools",
   "use-cases",
   "waitlist",
+  "watch",
   "zh",
 ]);
 
@@ -102,7 +103,8 @@ export function proxy(request: NextRequest): NextResponse {
     localeGoPath.test(pathname) ||
     pathname === "/r" ||
     pathname.startsWith("/r/") ||
-    // /t/{code} is a promo link: one click recorded and a redirect off-site.
+    // /t/{code} is a promo link: one click recorded and a redirect to the
+    // drama's page, /watch/<id>, which is an ordinary localized page.
     pathname === "/t" ||
     pathname.startsWith("/t/")
   ) {

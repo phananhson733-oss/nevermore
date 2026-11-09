@@ -1,5 +1,5 @@
 // @input  -- locale and drama id params; the task database; the verified session; R2 for the cover
-// @output -- one published drama: details with tags, the one-click promo link, numbered clip downloads with previews, how it works, and the episode list with paid locks
+// @output -- one published drama laid out like RS Boost's resource page: cover, title, chips, 上架时间 · 共 N 集 · 前 M 集免费, synopsis; numbered free clip downloads with previews; the promo link (短剧推广链接, no 口令) and a link to the drama page it opens, with the 账号报白 banner; how it works; the episode list with paid locks
 // @pos    -- /tasks/<id>, where a promoter takes their link and downloads clips
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -8,11 +8,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { ClaimPanel } from "@/components/task-center/claim-panel";
+import { ClipDownloads, DramaChips, DramaFacts, HowTo, WhitelistBanner } from "@/components/task-center/drama-info";
 import { siteConfig } from "@/config/site";
 import { getServerAuthenticatedUser } from "@/lib/auth/server-auth-user";
 import { listClaimsForDrama } from "@/lib/task-center/claims-store";
-import { isUuid } from "@/lib/task-center/contracts";
-import { formatDay, languageName, platformLabel, promoLink, taskCopy } from "@/lib/task-center/copy";
+import { isUuid, MAX_TAGS } from "@/lib/task-center/contracts";
+import { formatBytes, platformLabel, promoLink, taskCopy } from "@/lib/task-center/copy";
 import { getTaskDb } from "@/lib/task-center/db";
 import { getPublishedDrama } from "@/lib/task-center/dramas-store";
 import { coverImageUrl, readR2Config } from "@/lib/task-center/r2";
@@ -48,12 +49,6 @@ export async function generateMetadata({ params }: { params: Params }) {
   });
 }
 
-function formatBytes(bytes: number): string {
-  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
-  if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
-  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
-}
-
 export default async function TaskDetailPage({ params }: { params: Params }) {
   const { locale, id } = await params;
   const copy = taskCopy(locale);
@@ -86,6 +81,9 @@ export default async function TaskDetailPage({ params }: { params: Params }) {
   const title = locale === "zh" && drama.titleCn ? drama.titleCn : drama.title;
   const subtitle = locale === "zh" ? (drama.titleCn ? drama.title : null) : drama.titleCn;
 
+  const initialLink = code === null ? null : { link: promoLink(siteConfig.url, code) };
+  const promotionsHref = localePath(locale, "/promotions");
+
   return (
     <section className="bg-brand-bg px-6 pt-10 pb-24 md:px-8">
       <div className="mx-auto max-w-5xl">
@@ -93,63 +91,31 @@ export default async function TaskDetailPage({ params }: { params: Params }) {
           ← {copy.back}
         </Link>
 
-        <div className="mt-6 grid gap-8 md:grid-cols-[240px_1fr]">
+        <div className="mt-6 grid gap-8 md:grid-cols-[220px_1fr]">
           <div className="aspect-[3/4] overflow-hidden rounded-card border border-brand-border-card bg-brand-panel-raised">
-            {coverUrl !== null && (
-              <img src={coverUrl} alt="" className="h-full w-full object-cover" />
-            )}
+            {coverUrl !== null && <img src={coverUrl} alt="" className="h-full w-full object-cover" />}
           </div>
-          <div>
+          <div className="space-y-3">
             <h1 className="text-page-title text-text-dark-primary">{title}</h1>
-            {subtitle && <p className="mt-2 text-[15px] text-text-dark-secondary">{subtitle}</p>}
-            {drama.tags.length > 0 && (
-              <ul className="mt-4 flex flex-wrap gap-2">
-                {drama.tags.map((tag) => (
-                  <li
-                    key={tag}
-                    className="rounded-full border border-brand-border-card bg-brand-panel-raised px-3 py-1 text-[12.5px] text-text-dark-secondary"
-                  >
-                    {tag}
-                  </li>
-                ))}
-              </ul>
-            )}
-            <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-3 text-[14px] sm:grid-cols-3">
-              <Fact label={copy.platform} value={platformLabel(drama.platform)} />
-              <Fact label={copy.language} value={languageName(drama.language, locale)} />
-              <Fact
-                label={copy.contents}
-                value={drama.episodes === null ? "—" : copy.episodes(drama.episodes)}
-              />
-              <Fact
-                label={copy.payStart}
-                value={drama.payStart === null ? "—" : copy.payStartValue(drama.payStart)}
-              />
-              <Fact label={copy.listedOn} value={formatDay(drama.listedAt, locale)} />
-              <Fact label={copy.promotersLabel} value={String(drama.promoterCount)} />
-            </dl>
+            {subtitle && <p className="text-[15px] text-text-dark-secondary">{subtitle}</p>}
+            <DramaChips
+              locale={locale}
+              language={drama.language}
+              audience={drama.audience}
+              genre={drama.genre}
+              tags={drama.tags}
+              max={MAX_TAGS}
+            />
+            <DramaFacts locale={locale} listedAt={drama.listedAt} episodes={drama.episodes} payStart={drama.payStart} />
+            <p className="text-[13px] text-text-dark-secondary">
+              {copy.platform} {platformLabel(drama.platform)} · {copy.promoters(drama.promoterCount)}
+            </p>
             {drama.synopsis && (
-              <div className="mt-6">
-                <h2 className={H2}>{copy.synopsis}</h2>
-                <p className="mt-2 text-[14.5px] leading-[1.7] whitespace-pre-line text-text-dark-secondary">
-                  {drama.synopsis}
-                </p>
+              <div className="pt-2">
+                <h2 className="sr-only">{copy.synopsis}</h2>
+                <p className="text-[14.5px] leading-[1.7] whitespace-pre-line text-text-dark-secondary">{drama.synopsis}</p>
               </div>
             )}
-          </div>
-        </div>
-
-        <div className="mt-10 rounded-card border border-brand-border-card bg-brand-panel p-6">
-          <h2 className={H2}>{copy.promote}</h2>
-          <p className="mt-2 text-[14px] leading-[1.6] text-text-dark-secondary">{copy.promoteBody}</p>
-          <div className="mt-5">
-            <ClaimPanel
-              dramaId={drama.id}
-              locale={locale}
-              signedIn={signedIn}
-              signInHref={signInHref}
-              initialLink={code === null ? null : { code, link: promoLink(siteConfig.url, code) }}
-            />
           </div>
         </div>
 
@@ -167,20 +133,9 @@ export default async function TaskDetailPage({ params }: { params: Params }) {
           ) : (
             <>
               <p className="mt-2 text-[14px] text-text-dark-secondary">{copy.clipsBody}</p>
-              <ol className="mt-4 flex flex-wrap gap-2">
-                {assets.map((asset, index) => (
-                  <li key={asset.id}>
-                    <a
-                      href={`/api/tasks/assets/${asset.id}?download=1`}
-                      title={`${asset.title} · ${formatBytes(asset.byteSize)}`}
-                      aria-label={copy.clipLabel(index + 1, asset.title, formatBytes(asset.byteSize))}
-                      className="flex size-11 items-center justify-center rounded-[10px] border border-brand-border-card bg-brand-panel font-mono text-[15px] text-text-dark-primary transition-colors hover:border-brand-accent-text hover:text-brand-accent-text"
-                    >
-                      {index + 1}
-                    </a>
-                  </li>
-                ))}
-              </ol>
+              <div className="mt-4">
+                <ClipDownloads locale={locale} clips={assets} />
+              </div>
               <details className="mt-5">
                 <summary className="cursor-pointer text-[14px] text-brand-accent-text">{copy.previewClips}</summary>
                 <ul className="mt-4 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
@@ -217,19 +172,31 @@ export default async function TaskDetailPage({ params }: { params: Params }) {
         </div>
 
         <div className="mt-10 rounded-card border border-brand-border-card bg-brand-panel p-6">
+          <h2 className={H2}>{copy.promote}</h2>
+          <p className="mt-2 text-[14px] leading-[1.6] text-text-dark-secondary">{copy.promoteBody}</p>
+          <div className="mt-5 max-w-2xl">
+            <ClaimPanel
+              dramaId={drama.id}
+              watchHref={localePath(locale, `/watch/${drama.id}`)}
+              locale={locale}
+              signedIn={signedIn}
+              signInHref={signInHref}
+              initialLink={initialLink}
+              linkLevel={3}
+            />
+          </div>
+          <div className="mt-5 max-w-2xl">
+            <WhitelistBanner locale={locale} href={`${promotionsHref}#accounts`} />
+          </div>
+        </div>
+
+        <div className="mt-10 rounded-card border border-brand-border-card bg-brand-panel p-6">
           <h2 className={H2}>{copy.howTo}</h2>
-          <ol className="mt-4 space-y-3 text-[14px] leading-[1.6] text-text-dark-secondary">
-            {copy.howToSteps.map((step, index) => (
-              <li key={step} className="flex gap-3">
-                <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-brand-bg font-mono text-[12.5px] text-text-dark-primary">
-                  {index + 1}
-                </span>
-                <span>{step}</span>
-              </li>
-            ))}
-          </ol>
+          <div className="mt-4">
+            <HowTo locale={locale} />
+          </div>
           <p className="mt-4 text-[13.5px]">
-            <Link href={localePath(locale, "/promotions")} className="text-brand-accent-text hover:underline">
+            <Link href={promotionsHref} className="text-brand-accent-text hover:underline">
               {copy.tabPromotions} →
             </Link>
           </p>
@@ -269,12 +236,3 @@ export default async function TaskDetailPage({ params }: { params: Params }) {
 const H2 = "text-[18px] font-semibold text-text-dark-primary";
 const NOTE =
   "rounded-card border border-brand-border-card bg-brand-panel p-6 text-[14px] leading-[1.6] text-text-dark-secondary";
-
-function Fact({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <dt className="text-[12px] text-text-dark-secondary">{label}</dt>
-      <dd className="mt-0.5 text-text-dark-primary">{value}</dd>
-    </div>
-  );
-}

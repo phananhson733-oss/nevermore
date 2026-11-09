@@ -1,5 +1,5 @@
 // @input  -- the page locale ("en" or "zh")
-// @output -- every visitor-facing string of /tasks (the clip grid), /tasks/<id>, /promotions and /earnings, audience, genre, clip-type and platform labels, and the Chinese labels the admin pages share
+// @output -- every visitor-facing string of /tasks (the clip grid and its drama dialog), /tasks/<id>, /promotions, /earnings and the reader's drama page /watch/<id>, audience, genre, clip-type and platform labels, the Chinese labels the admin pages share, and the promo link's URL
 // @pos    -- task center copy, kept beside the code like the waitlist page's; the admin pages are Chinese only
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -28,6 +28,9 @@ const en = {
   unavailable: "The task center is unavailable right now. Please try again later.",
   episodes: (n: number) => `${n} episodes`,
   episodesUnknown: "Episodes —",
+  freeEpisodes: (n: number) => `first ${n} free`,
+  allFree: "all free",
+  paidFromFirst: "paid from episode 1",
   promoters: (n: number) => `${n} promoting`,
   previous: "Previous",
   next: "Next",
@@ -36,47 +39,51 @@ const en = {
   platform: "Platform",
   language: "Language",
   listedOn: "Listed",
-  payStart: "Paid from",
-  payStartValue: (n: number) => `episode ${n}`,
   synopsis: "Synopsis",
   contents: "Episodes",
   contentsUnknown: "The episode count has not been provided.",
   lockedNote: "Episodes with a lock are paid on the platform.",
-  clips: "Clips to post",
+  clips: "Free clips to download",
   clipsBody: "Click a number to download that clip.",
+  allClips: "All clips of this drama",
   clipLabel: (n: number, title: string, size: string) => `Download clip ${n}: ${title}, ${size}`,
   previewClips: "Preview the clips",
   noClips: "No clips have been uploaded for this drama yet.",
   signInForClips: "Sign in to preview and download the clips.",
   download: "Download",
-  promote: "Your promo link",
+  promote: "Promo links",
   promoteBody:
-    "One link and code for this drama. Use the same one on TikTok, Facebook or anywhere else: when the platform settles, orders are matched back to you by the code.",
+    "Your own link for this drama, the same on TikTok, Facebook or anywhere else. Every click counts under your name, and when the platform settles, orders are matched back to your link.",
   signInToPromote: "Sign in with Google to get your promo link.",
   signIn: "Sign in",
   getLink: "Get my promo link",
   claiming: "Getting your link…",
   claimFailed: "That did not work. Please try again.",
-  yourLink: "Your link",
-  yourCode: "Code",
+  dramaLink: "Drama link",
+  dramaLinkBody:
+    "Opens this drama's page on our site, with its cover, story and trailer. Put it in the video's caption or pin it in the comments.",
+  previewPage: "See the page your link opens",
+  linkAfterClaim: "Shows here once you get your link.",
+  whitelistTitle: "Whitelist your accounts",
+  whitelistBody: "Submit the TikTok and Facebook accounts you post from, so our team can whitelist them on the platform.",
+  whitelistAction: "Submit accounts",
   copy: "Copy",
   copied: "Copied",
   howTo: "How it works",
   howToSteps: [
-    "Download the clips above.",
-    "Copy your promo link (and code).",
-    "Post the clips on TikTok or Facebook with your link in the caption or bio. Submit the accounts you post from on My Promotions so our team can whitelist them.",
-    "After each settlement, orders through your code are credited to you and show on My Earnings.",
+    "Download the clips.",
+    "Get your promo link and copy it.",
+    "Post the clips on TikTok or Facebook, with your link in the caption or a pinned comment. It opens the drama's page on our site.",
+    "After each settlement, orders through your link are credited to you and show on My Earnings.",
   ] as readonly string[],
   tabTasks: "Task Center",
   tabPromotions: "My Promotions",
   tabEarnings: "My Earnings",
   promotionsTitle: "My Promotions",
   promotionsSubtitle:
-    "Every drama you took a link for, with its code and how often the link was followed, and the accounts you post from.",
+    "Every drama you took links for, how often each link was followed, and the accounts you post from.",
   signInForPromotions: "Sign in with Google to see your promo links and accounts.",
   anyChannel: "Any",
-  code: "Code",
   accountsTitle: "Accounts to whitelist",
   accountsBody:
     "Add the TikTok and Facebook accounts you post from. Our team whitelists them on the platform; the status shows here.",
@@ -115,7 +122,6 @@ const en = {
   partialValue: (value: string) => `${value} (partial)`,
   partialNote:
     "Partial: the platform reported this figure for some days and not others, so the total covers only the days it reported.",
-  promotersLabel: "Promoters",
   searchClips: "Search by drama or clip",
   allAudiences: "All audiences",
   allGenres: "All genres",
@@ -135,6 +141,9 @@ const en = {
   playClip: (title: string) => `Play ${title}`,
   viewDrama: "View the drama",
   close: "Close",
+  watchFull: (platform: string) => `Watch the full drama on ${platform}`,
+  watchTrailer: "Trailer",
+  watchUnavailable: "This page cannot be shown right now. Please try again later.",
 };
 
 export type TaskCopy = typeof en;
@@ -153,6 +162,9 @@ const zh: TaskCopy = {
   unavailable: "任务中心暂时不可用，请稍后再试。",
   episodes: (n: number) => `共 ${n} 集`,
   episodesUnknown: "集数 —",
+  freeEpisodes: (n: number) => `前 ${n} 集免费`,
+  allFree: "全部免费",
+  paidFromFirst: "第 1 集起付费",
   promoters: (n: number) => `${n} 人推广`,
   previous: "上一页",
   next: "下一页",
@@ -161,45 +173,48 @@ const zh: TaskCopy = {
   platform: "平台",
   language: "语言",
   listedOn: "上架时间",
-  payStart: "收费起始",
-  payStartValue: (n: number) => `第 ${n} 集`,
   synopsis: "简介",
   contents: "目录",
   contentsUnknown: "还没有提供集数。",
   lockedNote: "带锁的集数在平台上需要付费观看。",
-  clips: "素材下载",
+  clips: "免费素材下载",
   clipsBody: "点数字下载对应的素材。",
+  allClips: "这部剧的全部素材",
   clipLabel: (n: number, title: string, size: string) => `下载素材 ${n}：${title}，${size}`,
   previewClips: "预览素材",
   noClips: "这部剧还没有上传素材。",
   signInForClips: "登录后可以预览和下载素材。",
   download: "下载",
-  promote: "我的推广链接",
-  promoteBody: "这部剧给你一条专属链接和口令码，TikTok、Facebook 都用这一条。平台结算时按口令码把订单对回到你。",
+  promote: "推广链接",
+  promoteBody: "这部剧给你的专属链接，TikTok、Facebook 都用这一条。每次点击都记在你名下，平台结算时按你的链接把订单对回到你。",
   signInToPromote: "用 Google 登录后领取推广链接。",
   signIn: "登录",
   getLink: "一键获取推广链接",
   claiming: "获取中…",
   claimFailed: "没有成功，请再试一次。",
-  yourLink: "推广链接",
-  yourCode: "口令码",
+  dramaLink: "短剧推广链接",
+  dramaLinkBody: "点开是这部剧在我们站上的页面，有封面、简介和预告片。适合放在视频文案里或评论区置顶。",
+  previewPage: "看看链接打开的页面",
+  linkAfterClaim: "领取后显示在这里。",
+  whitelistTitle: "账号报白",
+  whitelistBody: "发布用的 TikTok、Facebook 账号，先提交给运营去平台报白。",
+  whitelistAction: "去提交账号",
   copy: "复制",
   copied: "已复制",
   howTo: "使用说明",
   howToSteps: [
-    "下载上面的素材。",
-    "复制你的推广链接（和口令码）。",
-    "把素材发到 TikTok 或 Facebook，链接放在文案或主页里。发布用的账号先到「我的推广」提交报白。",
-    "每次平台结算后，通过你口令码产生的订单会记到你名下，在「我的收益」里查看。",
+    "下载素材。",
+    "领取并复制你的推广链接。",
+    "把素材发到 TikTok 或 Facebook，推广链接放视频文案或评论区置顶。读者点开先到我们站上这部剧的页面。",
+    "每次平台结算后，你的链接带来的订单会记到你名下，在「我的收益」里查看。",
   ],
   tabTasks: "任务中心",
   tabPromotions: "我的推广",
   tabEarnings: "我的收益",
   promotionsTitle: "我的推广",
-  promotionsSubtitle: "你领过链接的每部剧、口令码、链接被点开的次数，以及你用来发布的账号。",
+  promotionsSubtitle: "你领过链接的每部剧、每条链接被点开的次数，以及你用来发布的账号。",
   signInForPromotions: "用 Google 登录后查看你的推广链接和账号。",
   anyChannel: "通用",
-  code: "口令码",
   accountsTitle: "账号报白",
   accountsBody: "填上你用来发布的 TikTok、Facebook 账号，运营会去平台上报白，进度在这里看。",
   accountHandle: "账号（@用户名或主页链接）",
@@ -230,7 +245,6 @@ const zh: TaskCopy = {
   claimedOn: "领取时间",
   partialValue: (value: string) => `${value}（部分）`,
   partialNote: "部分：平台只给了其中一些天的这一项，合计只算了给了的那些天。",
-  promotersLabel: "推广人数",
   searchClips: "按剧名或素材名搜索",
   allAudiences: "全部频道",
   allGenres: "全部题材",
@@ -250,6 +264,9 @@ const zh: TaskCopy = {
   playClip: (title: string) => `播放 ${title}`,
   viewDrama: "查看这部剧",
   close: "关闭",
+  watchFull: (platform: string) => `去 ${platform} 看全集`,
+  watchTrailer: "预告片",
+  watchUnavailable: "页面暂时打不开，请稍后再试。",
 };
 
 export function taskCopy(locale: string): TaskCopy {
@@ -353,6 +370,28 @@ export function formatDay(iso: string | null, locale: string): string {
   }).format(new Date(iso));
 }
 
+/**
+ * "共 60 集 · 前 9 集免费": what the platform shows free, from the first paid
+ * episode. Either half is left out when unknown; null when both are.
+ */
+export function episodeLine(episodes: number | null, payStart: number | null, copy: TaskCopy): string | null {
+  const parts: string[] = [];
+  if (episodes !== null) parts.push(copy.episodes(episodes));
+  if (payStart !== null) {
+    if (payStart <= 1) parts.push(copy.paidFromFirst);
+    else if (episodes !== null && payStart > episodes) parts.push(copy.allFree);
+    else parts.push(copy.freeEpisodes(payStart - 1));
+  }
+  return parts.length === 0 ? null : parts.join(" · ");
+}
+
+export function formatBytes(bytes: number): string {
+  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
+  if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
+/** The promo link we hand out: opens the drama's page on our site, /watch/<id>. */
 export function promoLink(origin: string, code: string): string {
   return `${origin}/t/${code}`;
 }

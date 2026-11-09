@@ -1,5 +1,5 @@
-// @input  -- a TaskDb, a verified Supabase user id, a promo code from /t/<code>
-// @output -- claims (one per person, drama and channel; new ones are channel "all"), the promo redirect target, click counts
+// @input  -- a TaskDb, a verified Supabase user id, a promo code from /t/<code> or from a drama page's ?ref=
+// @output -- claims (one per person, drama and channel; new ones are channel "all"), which drama page a followed code opens (one click recorded), the drama's platform link for 去看全集 with the code only when it was claimed for that drama (a sub-channel value stored in the link is replaced or dropped, never passed on), click counts
 // @pos    -- every SQL statement on task_center.task_claims and task_center.promo_clicks
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -57,8 +57,9 @@ export type ClaimResult =
  * Claiming twice returns the first claim, so a double click or a second tab
  * never hands out a second code for the same channel.
  *
- * Only a published drama can be claimed; publishing requires a promo target,
- * so every code handed out has somewhere to send its visitors.
+ * Only a published drama can be claimed. Every code handed out opens the
+ * drama's page on our site, which exists whether or not the drama has a
+ * platform link yet.
  */
 export async function claimTask(
   db: TaskDb,
@@ -80,6 +81,8 @@ export async function claimTask(
       if (rows[0] !== undefined) {
         return { ok: true, claim: toClaim(rows[0]), created: true };
       }
+      // An existing claim is returned even if the drama was taken down since:
+      // the links it handed out still open the drama's page.
       const existing = await db.query<ClaimRow>(
         `select id, drama_id, channel, code, claimed_at from task_center.task_claims
           where user_id = $1 and drama_id = $2 and channel = $3`,
@@ -139,48 +142,78 @@ export async function listMyClaims(
   }));
 }
 
+/**
+ * Records one click and returns the drama whose page the code opens, or null
+ * for a code nobody claimed. Any claimed code opens its drama's page, even
+ * after the drama was taken down: codes are only handed out while a drama is
+ * published, and a promoter's post outlives the listing.
+ */
+export async function followPromoCode(
+  db: TaskDb,
+  code: string,
+): Promise<{ readonly dramaId: string } | null> {
+  // The insert runs once whether or not anything reads its result.
+  const { rows } = await db.query<{ drama_id: string }>(
+    `with followed as (
+       select id as claim_id, drama_id from task_center.task_claims where code = $1
+     ), click as (
+       insert into task_center.promo_clicks (claim_id)
+       select claim_id from followed
+     )
+     select drama_id from followed`,
+    [code],
+  );
+  return rows[0] === undefined ? null : { dramaId: rows[0].drama_id };
+}
+
 export interface PromoTarget {
   readonly targetUrl: string;
   readonly codeParam: string | null;
 }
 
 /**
- * Records one click and returns where to send the visitor, or null for a code
- * nobody claimed. A drama taken down, or moved back to draft, later still
- * forwards: codes are only handed out while a drama is published, the
- * promoter's post outlives the listing, and the platform decides what its link
- * shows.
+ * Where 去看全集 on a drama's page goes: the platform link of a drama that has
+ * been listed (published now or taken down since, like the page itself), or
+ * null when it has none. The code rides along only when it was claimed for
+ * this drama, so a ref copied onto another drama's page earns nobody anything.
  */
-export async function followPromoCode(
+export async function getPlatformLink(
   db: TaskDb,
-  code: string,
-): Promise<PromoTarget | null> {
-  const { rows } = await db.query<{ promo_target_url: string | null; promo_code_param: string | null }>(
-    `with target as (
-       select c.id as claim_id, d.promo_target_url, d.promo_code_param
-         from task_center.task_claims c
-         join task_center.dramas d on d.id = c.drama_id
-        where c.code = $1 and d.promo_target_url is not null
-     ), click as (
-       insert into task_center.promo_clicks (claim_id)
-       select claim_id from target
-     )
-     select promo_target_url, promo_code_param from target`,
-    [code],
+  dramaId: string,
+  code: string | null,
+): Promise<{ readonly target: PromoTarget; readonly code: string | null } | null> {
+  const { rows } = await db.query<{
+    promo_target_url: string;
+    promo_code_param: string | null;
+    code_claimed: boolean;
+  }>(
+    `select d.promo_target_url, d.promo_code_param,
+            exists (select 1 from task_center.task_claims c
+                     where c.code = $2 and c.drama_id = d.id) as code_claimed
+       from task_center.dramas d
+      where d.id = $1 and d.listed_at is not null and d.promo_target_url is not null`,
+    [dramaId, code],
   );
   const row = rows[0];
-  if (row === undefined || row.promo_target_url === null) return null;
-  return { targetUrl: row.promo_target_url, codeParam: row.promo_code_param };
+  if (row === undefined) return null;
+  return {
+    target: { targetUrl: row.promo_target_url, codeParam: row.promo_code_param },
+    code: row.code_claimed ? code : null,
+  };
 }
 
 /**
- * The target URL with the promo code added as the platform's sub-channel
- * parameter. Always serialised through URL, which percent-encodes a path like
- * /剧 and punycodes the host: a Location header only takes ASCII, and the
- * click is already recorded by the time it is built.
+ * The target URL with the promo code as the platform's sub-channel parameter.
+ * A value already stored in that parameter never goes out on its own: without
+ * a vouched-for code it is dropped, so nobody's code rides on another
+ * reader's visit. Always serialised through URL, which percent-encodes a path
+ * like /剧 and punycodes the host: a Location header only takes ASCII.
  */
-export function promoRedirectUrl(target: PromoTarget, code: string): string {
+export function promoRedirectUrl(target: PromoTarget, code: string | null): string {
   const url = new URL(target.targetUrl);
-  if (target.codeParam !== null) url.searchParams.set(target.codeParam, code);
+  if (target.codeParam !== null) {
+    if (code !== null) url.searchParams.set(target.codeParam, code);
+    else if (url.searchParams.has(target.codeParam)) url.searchParams.delete(target.codeParam);
+  }
   return url.toString();
 }

@@ -1,12 +1,12 @@
 // @input  -- locale param; q, platform, language, audience, genre, type, sort and page query; the task database; the session; R2 for stills and covers
-// @output -- the promoter tabs, then every ready clip of a published drama as a filterable, paged 素材广场 grid
+// @output -- the promoter tabs, then every ready clip of a published drama as a filterable, paged 素材广场 grid, with what each listed drama's dialog shows (details, clips, the visitor's link and the drama page it opens)
 // @pos    -- /tasks, the task center's entry page
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import Link from "next/link";
 
 import type { LinkView } from "@/components/task-center/claim-panel";
-import { ClipPlaza, type ClipCard } from "@/components/task-center/clip-plaza";
+import { ClipPlaza, type ClipCard, type PlazaDrama } from "@/components/task-center/clip-plaza";
 import { TaskTabs } from "@/components/task-center/task-tabs";
 import { siteConfig } from "@/config/site";
 import { getServerAuthenticatedUser } from "@/lib/auth/server-auth-user";
@@ -19,12 +19,14 @@ import {
   type ClipType,
   type DramaAudience,
 } from "@/lib/task-center/contracts";
-import { genreLabel, languageName, promoLink, taskCopy } from "@/lib/task-center/copy";
+import { formatBytes, genreLabel, languageName, promoLink, taskCopy } from "@/lib/task-center/copy";
 import { getTaskDb } from "@/lib/task-center/db";
 import {
+  listPlazaDramaDetails,
   listPublishedAssets,
   listPublishedFacets,
   type DramaSort,
+  type PlazaDramaDetail,
 } from "@/lib/task-center/dramas-store";
 import { coverImageUrl, readR2Config } from "@/lib/task-center/r2";
 import { localePath } from "@/lib/locale-path";
@@ -61,12 +63,6 @@ function one(value: string | string[] | undefined): string | null {
 
 function member<T extends string>(list: readonly T[], value: string | null): T | null {
   return value !== null && (list as readonly string[]).includes(value) ? (value as T) : null;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
-  if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
-  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
 export default async function TasksPage({
@@ -113,6 +109,18 @@ export default async function TasksPage({
       result = null;
     }
   }
+  // The dialogs' extra details, for the dramas on this page only. Without
+  // them a dialog still plays, downloads and claims; it just says less.
+  let details: Readonly<Record<string, PlazaDramaDetail>> = {};
+  if (db !== null && result !== null && result.items.length > 0) {
+    details = await listPlazaDramaDetails(
+      db,
+      result.items.map((item) => item.drama.id),
+    ).catch((error: unknown) => {
+      console.error("[tasks] drama details failed", error);
+      return {};
+    });
+  }
 
   const user = await getServerAuthenticatedUser().catch(() => ({ status: "unavailable" as const }));
   const signedIn = user.status === "authenticated";
@@ -123,7 +131,7 @@ export default async function TasksPage({
     const claims = await listMyClaims(db, user.userId).catch(() => []);
     for (const claim of claims) {
       if (claim.channel === "all") {
-        links[claim.dramaId] = { code: claim.code, link: promoLink(siteConfig.url, claim.code) };
+        links[claim.dramaId] = { link: promoLink(siteConfig.url, claim.code) };
       }
     }
   }
@@ -144,12 +152,26 @@ export default async function TasksPage({
       dramaId: drama.id,
       dramaTitle: locale === "zh" && drama.titleCn ? drama.titleCn : drama.title,
       dramaHref: localePath(locale, `/tasks/${drama.id}`),
+      watchHref: localePath(locale, `/watch/${drama.id}`),
       audience: drama.audience,
       genre: drama.genre,
       tags: drama.tags,
       language: drama.language,
     };
   });
+
+  const dramas: Record<string, PlazaDrama> = {};
+  for (const { drama } of result?.items ?? []) {
+    const detail = details[drama.id];
+    dramas[drama.id] = {
+      synopsis: detail?.synopsis ?? null,
+      listedAt: drama.listedAt,
+      episodes: drama.episodes,
+      payStart: drama.payStart,
+      // Downloads need sign-in, and the dialog lists them only then.
+      clips: signedIn ? (detail?.clips ?? []) : [],
+    };
+  }
 
   const filtered = Boolean(platform || language || audience || genre || clipType || search);
   const pages = result === null ? 1 : Math.max(1, Math.ceil(result.total / PAGE_SIZE));
@@ -247,7 +269,15 @@ export default async function TasksPage({
           <p className={`mt-10 ${NOTE}`}>{filtered ? copy.noClipResults : copy.noClipsListed}</p>
         ) : (
           <>
-            <ClipPlaza locale={locale} cards={cards} signedIn={signedIn} signInHref={signInHref} links={links} />
+            <ClipPlaza
+              locale={locale}
+              cards={cards}
+              dramas={dramas}
+              signedIn={signedIn}
+              signInHref={signInHref}
+              promotionsHref={`${localePath(locale, "/promotions")}#accounts`}
+              links={links}
+            />
             {pages > 1 && (
               <nav className="mt-10 flex items-center justify-center gap-4 text-[14px] text-text-dark-secondary">
                 {page > 1 && (

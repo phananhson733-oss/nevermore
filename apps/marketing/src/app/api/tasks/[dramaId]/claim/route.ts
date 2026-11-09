@@ -1,5 +1,5 @@
 // @input  -- POST {} from a signed-in browser on /tasks/<id>
-// @output -- this person's one promo link and code for that drama (channel "all"), created once and returned after
+// @output -- this person's one claim for that drama (channel "all"), created once and returned after: its code and its link /t/<code>, which opens the drama's page on our site
 // @pos    -- the only writer of task_center.task_claims
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 

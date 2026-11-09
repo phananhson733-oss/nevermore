@@ -1,5 +1,5 @@
 // @input  -- a drama's current fields (edit) or none (create); POST/PUT /api/admin/tasks/dramas
-// @output -- the admin form for a drama's details, tags, audience and genre (with suggested genres), and promo target
+// @output -- the admin form for a drama's details, tags, audience and genre (with suggested genres), and its optional platform link (where 去看全集 on the drama's page goes)
 // @pos    -- the manual create on /admin/tasks (when 查剧 finds nothing) and edit on /admin/tasks/<id>
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
@@ -172,7 +172,7 @@ export function DramaForm({
         <input name="tags" maxLength={1000} defaultValue={initial?.tags?.join(", ") ?? ""} className={FIELD} />
       </label>
       <label className="text-[13px] text-text-dark-secondary sm:col-span-2">
-        推广目标地址（https，平台给的分销链接；上架前必填）
+        平台链接（https，可不填。推广链接都先打开我们站上的剧页面，填了这个，剧页面才有「去看全集」按钮跳到平台）
         <input name="promoTargetUrl" type="url" maxLength={2048} defaultValue={initial?.promoTargetUrl ?? ""} className={FIELD} />
       </label>
       <label className="text-[13px] text-text-dark-secondary">
@@ -208,7 +208,8 @@ export function DramaForm({
 }
 
 /**
- * Just the promo link, the one thing 查剧 cannot fill and publishing needs.
+ * Just the platform link, which 查剧 cannot fill. Optional: promoters' links
+ * open our own drama page either way, and this only adds its 去看全集 button.
  * Saves through the same PUT, with every other field as the page loaded it.
  */
 export function PromoLinkForm({ dramaId, initial }: { dramaId: string; initial: DramaFormValues }) {
@@ -240,7 +241,7 @@ export function PromoLinkForm({ dramaId, initial }: { dramaId: string; initial: 
   return (
     <form onSubmit={(event) => void submit(event)} className="grid gap-4 sm:grid-cols-[minmax(0,3fr)_minmax(0,1fr)]">
       <label className="text-[13px] text-text-dark-secondary">
-        推广目标地址（https，平台给的分销链接）
+        平台链接（https，可不填；剧页面的「去看全集」跳到这里）
         <input
           name="promoTargetUrl"
           type="url"
