@@ -1,10 +1,15 @@
 // @input  -- a StardustTV video id 北斗 gave; www.stardusttv.net/episodes/01-x-<id> through theater-http.ts
-// @output -- the drama as that page shows it (its labels below 频道 as tags, 女频/男频 and the genre slug from its own label levels, pay start), or null; the page's link
+// @output -- the drama as that page shows it (its labels below 频道 as tags, 女频/男频 and the genre slug from its own label levels, pay start), or null after a second try; the page's link
 // @pos    -- StardustTV's reader for theater-details.ts
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 //
-// StardustTV is a Nuxt 3 site (2026-11-08). /episodes/01-x-<id> answers 200
-// even for an id it does not have, with an `_errors` entry instead of data.
+// StardustTV is a Nuxt 3 site (2026-11-08). For an id it does not have,
+// /episodes/01-x-<id> answers with an `_errors` entry instead of data (a 200
+// page earlier that day, a 404 "not available in this region" later). Its own
+// server also fails now and then for a drama it has: 3 of 20 tries from the
+// production server got a 200 page whose entry is a 500 "[nuxt] instance
+// unavailable", or a 404. From outside the two look alike, so a page without
+// the drama is asked for once more, within the same deadline.
 // The page's state is the `__NUXT_DATA__` script: a devalue array where every
 // object value and array item is the index of another entry, and reactive
 // wrappers are ["ShallowReactive", index]. The drama sits at
@@ -40,9 +45,17 @@ export function stardustTvPageUrl(id: string): string {
   return `https://${HOST}/episodes/01-x-${id}`;
 }
 
+/** One try and one more: the site's own failures come and go between requests. */
+const ATTEMPTS = 2;
+
 export async function readStardustTv(id: string, get: TheaterGet): Promise<TheaterDetails | null> {
-  const html = await get({ url: stardustTvPageUrl(id), hosts: [HOST], accept: "html" });
-  return html === null ? null : parseStardustTvPage(html, id);
+  if (!STARDUSTTV_ID.test(id)) return null;
+  for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
+    const html = await get({ url: stardustTvPageUrl(id), hosts: [HOST], accept: "html" });
+    const details = html === null ? null : parseStardustTvPage(html, id);
+    if (details !== null) return details;
+  }
+  return null;
 }
 
 /** The page for one id, read field by field; null when the page has no such drama. */

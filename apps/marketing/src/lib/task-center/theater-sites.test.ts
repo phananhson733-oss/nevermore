@@ -1,5 +1,5 @@
 // @input  -- theater-details.ts and the StardustTV, MoboReels, NetShort and YourChannel readers (and DramaBox's, switched off) with a fake fetch; data trimmed from what each site served on 2026-11-08
-// @output -- proof that each site is read as it shows the drama (tags, 频道 and genre only where the site marks them, pay start only where it says), that each reader asks only its own host, that each site's "no such drama" answer gives null, and that a hostile page stays fast and gives nothing wrong
+// @output -- proof that each site is read as it shows the drama (tags, 频道 and genre only where the site marks them, pay start only where it says), that each reader asks only its own host, that each site's "no such drama" answer gives null, that StardustTV is asked twice and no more when its server fails, and that a hostile page stays fast and gives nothing wrong
 // @pos    -- unit tests for 查剧's second step beyond ReelShort; no network, no database
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -195,6 +195,19 @@ describe("StardustTV", () => {
     expect(seen.map((request) => request.url)).toEqual([`https://www.stardusttv.net/episodes/01-x-${ID}`]);
   });
 
+  it("asks once more when the site's own server fails, and no more than that", async () => {
+    const failing = page({}, { [`episodes-data-${ID}`]: { message: "[nuxt] instance unavailable", statusCode: 500 } });
+    const PAGE = `https://www.stardusttv.net/episodes/01-x-${ID}`;
+    for (const first of [html(failing), html("<html>not here</html>", 404)]) {
+      const { fetchImpl, seen } = site(first, html(page(DATA)));
+      expect(await fetchTheaterDetails("stardusttv", ID, fetchImpl)).toMatchObject({ dramaId: ID, title: "Blood Throne" });
+      expect(seen.map((request) => request.url)).toEqual([PAGE, PAGE]);
+    }
+    const { fetchImpl, seen } = site(html(failing), html(failing), html(page(DATA)));
+    expect(await fetchTheaterDetails("stardusttv", ID, fetchImpl)).toBeNull();
+    expect(seen).toHaveLength(2);
+  });
+
   it("tells a free drama from one it cannot say", () => {
     const with_ = (info: Record<string, unknown>) =>
       parseStardustTvPage(page({ [`episodes-data-${ID}`]: { video_info: { ...INFO, ...info }, video_language: "es_ES" } }), ID);
@@ -208,7 +221,7 @@ describe("StardustTV", () => {
     });
   });
 
-  it("gives null for the 200 page the site serves for an id it does not have", () => {
+  it("gives null for the page the site serves for an id it does not have", () => {
     expect(parseStardustTvPage(page({}, { [`episodes-data-${ID}`]: { statusCode: 500 } }), ID)).toBeNull();
     expect(parseStardustTvPage(page(DATA), "23561")).toBeNull();
     expect(parseStardustTvPage(page({ [`episodes-data-${ID}`]: { video_info: { ...INFO, id: 1 } } }), ID)).toBeNull();
