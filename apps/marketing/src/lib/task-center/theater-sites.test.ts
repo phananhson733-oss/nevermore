@@ -452,6 +452,7 @@ describe("a hostile or broken page", () => {
   });
 
   it("does not repeat work for a devalue payload that points at one huge label many times", () => {
+    // Every value is an index: labels are 100 000 pointers to entry 6, a level-2 label named by entry 7.
     const raw = [
       { data: 1 },
       { "episodes-data-1": 2 },
@@ -459,8 +460,9 @@ describe("a hostile or broken page", () => {
       { id: 4, labels: 5 },
       1,
       Array(100_000).fill(6),
-      { level: 2, english_name: 7 },
+      { level: 8, english_name: 7 },
       "a".repeat(1_000_000),
+      2,
     ];
     expect(quickly(() => parseStardustTvPage(nuxt(raw), "1"))).toMatchObject({ genre: null });
   });
@@ -474,7 +476,8 @@ describe("a hostile or broken page", () => {
 
   it("never takes 频道 or genre from an object's built-in keys", () => {
     for (const name of ["__proto__", "constructor", "toString"]) {
-      const raw = [{ data: 1 }, { "episodes-data-1": 2 }, { video_info: 3 }, { id: 4, labels: 5 }, 1, [6], { level: 1, name: 7 }, name];
+      // A level-1 label (entry 4 is the number 1) whose name is the built-in key.
+      const raw = [{ data: 1 }, { "episodes-data-1": 2 }, { video_info: 3 }, { id: 4, labels: 5 }, 1, [6], { level: 4, name: 7 }, name];
       expect(parseStardustTvPage(nuxt(raw), "1")?.audience).toBeNull();
       const data = {
         book_id: "6ad88d9e996727b60c007958",
