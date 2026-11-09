@@ -27,6 +27,8 @@ import { prepareGeoKnowledgeSynthesisV2, type GeoKnowledgeSynthesisV2Result } fr
 import { parseGeoKbPayloadV3, type GeoKbPayloadV3 } from "./kb-v3-contract.ts";
 import { parseGeoKbPayloadV2 } from "./kb-v2-contract.ts";
 import { buildGeoPreparedKnowledgeBase } from "./kb-preparation.ts";
+import { createGeoKbEditorLoader } from "./kb-editor-loader.ts";
+import { parseGeoKbPreparedWire } from "../../components/tools/geo-kb-v2-wire.ts";
 
 const USER = "11111111-1111-4111-8111-111111111111";
 const CONFIG: KeywordLlmConfig = { apiKey: "offline-private-key", model: "offline-model", url: "https://provider.example/complete?private=offline-url-secret", authScheme: "api-key", temperature: 0.4 };
@@ -484,6 +486,47 @@ describe("optional knowledge generation bound to question preparation", () => {
     expect(candidate.knowledgePack.sourceCatalogue).toEqual(knowledge.result.evidence.sourceCatalogue);
     expect(candidate.knowledgePack.meta.generatedAt).toBe(knowledge.result.generatedAt);
     expect(state.deps.synthesizeQuestions).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * What this preparer writes, the v2 editor load has to read back.
+   *
+   * The load re-parses its own view through the browser wire, so a field the
+   * producers write and that wire lacks is a 503 for the owner, not a render
+   * detail. From 2026-09-10 to the fix, `limitationKeys` on a `partial` pack
+   * module was exactly that: every v2 owner holding a prepared candidate got
+   * `complete_editor_unavailable`.
+   */
+  it("hands the v2 editor load a candidate it can show, partial modules and their limitation keys included", async () => {
+    const state = setup();
+    await seedKnowledgeGeneration(state);
+    const ready = await state.prepare({ ...state.request, kind: "questions", knowledgeGenerationId: ID });
+    if (ready.kind !== "ready") throw new Error(`Question fixture was ${ready.kind}`);
+    const generated = await ready.invoke("55555555-5555-4555-8555-555555555555");
+    if (!generated.ok) throw new Error(`Question fixture failed: ${generated.reason}`);
+    const candidate = parseGeoPreparedCandidateV2(generated.value);
+    // The case has to be present for the test to mean anything.
+    const modules: unknown[] = Object.values(candidate.knowledgePack);
+    const partial = modules.filter((module): module is { status: "partial"; limitationKeys?: unknown } =>
+      typeof module === "object" && module !== null && "status" in module && module.status === "partial");
+    expect(partial.length).toBeGreaterThan(0);
+    expect(partial.every(module => Array.isArray(module.limitationKeys) && module.limitationKeys.length > 0)).toBe(true);
+
+    expect(parseGeoKbPreparedWire(generated.value)).toEqual(candidate);
+    const load = createGeoKbEditorLoader({
+      ensure: async () => ({ kind: "ok", value: { kbId: KB, created: false } }),
+      readDetails: async () => ({ kind: "ok", value: { kbId: KB, origin: "https://example.com", host: "example.com", canonicalSiteKey: "example.com",
+        createdAt: "2026-08-31T00:00:00.000Z", updatedAt: "2026-08-31T00:00:00.000Z", draft: state.draft, frozen: null } }),
+      readProfile: async () => ({ kind: "missing" }),
+      readFrozen: async () => { throw new Error("nothing is frozen"); },
+      readSource: async () => ({ kind: "ok", value: null }),
+      readPrepared: async () => ({ kind: "ok", value: candidate }),
+      readGeneration: async () => ({ kind: "ok", generation: null }),
+    });
+    const loaded = await load({ userId: USER, url: "https://example.com" });
+    expect(loaded.kind).toBe("ok");
+    if (loaded.kind !== "ok") return;
+    expect(loaded.value.prepared).toEqual(candidate);
   });
 
   it("rejects a succeeded knowledge result whose receipt set differs from question preparation", async () => {
