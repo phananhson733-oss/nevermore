@@ -1,5 +1,5 @@
 // @input  -- a disposable Postgres rebuilt by db/tasks/migrate.sh
-// @output -- proof that the task center's SQL does what the stores promise: the clip grid and its 本周爆款 rule, promoter accounts included
+// @output -- proof that the task center's SQL does what the stores promise: the clip grid and its 本周爆款 rule, imports from 查剧 and tags, promoter accounts included
 // @pos    -- the only test that executes task center SQL
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -29,8 +29,11 @@ import {
   createDrama,
   createPendingAsset,
   deleteAsset,
+  getDramaForAdmin,
   getPublicAsset,
   getPublishedDrama,
+  importDrama,
+  listedBySource,
   listPublishedAssets,
   listPublishedFacets,
   markAssetReady,
@@ -280,6 +283,66 @@ describe("dramas", () => {
     const id = await createDrama(db, drama(), ADMIN);
     expect(await setDramaCover(db, id, "covers/a.jpg")).toBe(true);
     expect(await setDramaCover(db, USER_A, "covers/c.jpg")).toBe(false);
+  });
+});
+
+describe("imports from 查剧", () => {
+  const beidou = {
+    title: "Surf God's Revenge",
+    titleCn: "冲浪之神的复仇",
+    platform: "reelshort",
+    language: "en",
+    episodes: 70,
+    payStart: 8,
+    synopsis: "He came back.",
+    tags: ["Revenge", "Sports"],
+    finished: true,
+    sourceDramaId: "68a1b2c3d4",
+  };
+
+  it("lists a platform drama once: a second import gets the first one's id", async () => {
+    const first = await importDrama(db, beidou, ADMIN);
+    expect(first.ok).toBe(true);
+    const id = first.id;
+    expect(await importDrama(db, { ...beidou, title: "Surf God's Revenge (again)" }, ADMIN)).toEqual({
+      ok: false,
+      code: "already_listed",
+      id,
+    });
+
+    const found = await getDramaForAdmin(db, id);
+    expect(found?.drama).toMatchObject({
+      status: "draft",
+      source: "beidou",
+      sourceDramaId: "68a1b2c3d4",
+      tags: ["Revenge", "Sports"],
+      finished: true,
+      episodes: 70,
+      payStart: 8,
+    });
+    expect(await listedBySource(db, "reelshort", ["68a1b2c3d4", "nope"])).toEqual(new Map([["68a1b2c3d4", id]]));
+    expect(await listedBySource(db, "dramabox", ["68a1b2c3d4"])).toEqual(new Map());
+    // The same platform id on another platform is another drama.
+    expect((await importDrama(db, { ...beidou, platform: "dramabox" }, ADMIN)).ok).toBe(true);
+  });
+
+  it("keeps tags through an edit that leaves them out and replaces them when sent", async () => {
+    const id = await createDrama(db, drama({ tags: ["Romance"] }), ADMIN);
+    await updateDrama(db, id, drama({ title: "Renamed" }));
+    expect((await getDramaForAdmin(db, id))?.drama.tags).toEqual(["Romance"]);
+    await updateDrama(db, id, drama({ tags: ["CEO", "Revenge"] }));
+    expect((await getDramaForAdmin(db, id))?.drama).toMatchObject({ title: "The Heiress Returns", tags: ["CEO", "Revenge"] });
+  });
+
+  it("refuses more than twenty tags and a source without its id", async () => {
+    await expect(createDrama(db, drama({ tags: Array.from({ length: 21 }, (_, n) => `t${n}`) }), ADMIN)).rejects.toThrow();
+    await expect(
+      db.query(
+        `insert into task_center.dramas (title, platform, language, source, created_by)
+         values ('x', 'reelshort', 'en', 'beidou', $1)`,
+        [ADMIN],
+      ),
+    ).rejects.toThrow(/dramas_source_has_id/);
   });
 });
 

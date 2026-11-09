@@ -146,6 +146,7 @@ export default async function TasksPage({
       dramaHref: localePath(locale, `/tasks/${drama.id}`),
       audience: drama.audience,
       genre: drama.genre,
+      tags: drama.tags,
       language: drama.language,
     };
   });

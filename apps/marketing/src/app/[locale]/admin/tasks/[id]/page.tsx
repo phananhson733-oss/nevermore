@@ -1,5 +1,5 @@
-// @input  -- locale and drama id params; the admin check; the drama and all its assets; R2 for the cover
-// @output -- the admin edit page: details form, publish switch with a note on what a draft hides, cover upload, clip upload, rename, retag and delete
+// @input  -- locale and drama id params, ?new=<cover outcome> after 查剧; the admin check; the drama and all its assets; R2 for the cover
+// @output -- the admin drama page: cover, title, episodes, pay start, tags and synopsis up top; promo link; publish switch with a note on what a draft hides; clip upload, rename, retag and delete; the full details form folded away
 // @pos    -- /admin/tasks/<id> (Chinese only); 404 for anyone not on TASK_ADMIN_EMAILS
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -13,10 +13,11 @@ import {
   StatusControl,
   UploadControl,
 } from "@/components/task-center/admin/drama-admin-controls";
-import { DramaForm } from "@/components/task-center/admin/drama-form";
+import { DramaForm, PromoLinkForm, type DramaFormValues } from "@/components/task-center/admin/drama-form";
+import { TagList } from "@/components/task-center/admin/drama-quick-create";
 import { checkTaskAdmin } from "@/lib/task-center/admin";
 import { isUuid } from "@/lib/task-center/contracts";
-import { DRAMA_STATUS_LABELS } from "@/lib/task-center/copy";
+import { DRAMA_STATUS_LABELS, languageName, platformLabel } from "@/lib/task-center/copy";
 import { getTaskDb } from "@/lib/task-center/db";
 import { getDramaForAdmin } from "@/lib/task-center/dramas-store";
 import { coverImageUrl, readR2Config } from "@/lib/task-center/r2";
@@ -29,12 +30,22 @@ function formatBytes(bytes: number): string {
   return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
 }
 
+const NEW_DRAMA_NOTES: Readonly<Record<string, string>> = {
+  saved: "已从选剧台建好草稿，封面也拷过来了。核对一下信息，上传素材、填推广目标地址后就能上架。",
+  missing: "已从选剧台建好草稿，但北斗没有这部剧的封面，请在左边上传一张。",
+  failed: "已从选剧台建好草稿，但封面没拷成功，请在左边上传一张。",
+};
+
 export default async function AdminDramaPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ locale: string; id: string }>;
+  searchParams: Promise<{ new?: string | string[] }>;
 }) {
   const { locale, id } = await params;
+  const fresh = (await searchParams).new;
+  const newNote = typeof fresh === "string" ? (NEW_DRAMA_NOTES[fresh] ?? null) : null;
   const admin = await checkTaskAdmin();
   if (admin.status !== "admin" || !isUuid(id)) notFound();
   const base = localePath(locale, "/admin/tasks");
@@ -46,6 +57,20 @@ export default async function AdminDramaPage({
   if (found === null) notFound();
   const { drama, assets } = found;
   const r2 = readR2Config();
+  const values: DramaFormValues = {
+    title: drama.title,
+    titleCn: drama.titleCn,
+    platform: drama.platform,
+    language: drama.language,
+    episodes: drama.episodes,
+    payStart: drama.payStart,
+    synopsis: drama.synopsis,
+    promoTargetUrl: drama.promoTargetUrl,
+    promoCodeParam: drama.promoCodeParam,
+    audience: drama.audience,
+    genre: drama.genre,
+    tags: drama.tags,
+  };
 
   return (
     <div className="mx-auto max-w-5xl space-y-8">
@@ -76,41 +101,49 @@ export default async function AdminDramaPage({
         </p>
       )}
 
-      <div className={PANEL}>
-        <h2 className={H2}>基本信息</h2>
-        <div className="mt-5">
-          <DramaForm
-            dramaId={drama.id}
-            adminBase={base}
-            initial={{
-              title: drama.title,
-              titleCn: drama.titleCn,
-              platform: drama.platform,
-              language: drama.language,
-              episodes: drama.episodes,
-              payStart: drama.payStart,
-              synopsis: drama.synopsis,
-              promoTargetUrl: drama.promoTargetUrl,
-              promoCodeParam: drama.promoCodeParam,
-              audience: drama.audience,
-              genre: drama.genre,
-            }}
-          />
+      {newNote !== null && (
+        <p role="status" className="rounded-[8px] border border-brand-border-card bg-brand-panel-raised px-4 py-3 text-[13.5px] leading-[1.6] text-brand-accent-text">
+          {newNote}
+        </p>
+      )}
+
+      <div className={`${PANEL} flex flex-col gap-6 sm:flex-row`}>
+        <div className="w-full shrink-0 sm:w-48">
+          <div className="aspect-[3/4] w-full overflow-hidden rounded-[10px] border border-brand-border-card bg-brand-panel-raised">
+            {r2 !== null && drama.coverKey !== null ? (
+              <img src={coverImageUrl(r2, drama.coverKey)} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <p className="flex h-full items-center justify-center text-[13px] text-text-dark-secondary">还没有封面</p>
+            )}
+          </div>
+          <div className="mt-3">
+            <UploadControl dramaId={drama.id} purpose="cover" storageReady={r2 !== null} />
+          </div>
+          <p className="mt-2 text-[12px] leading-[1.5] text-text-dark-secondary">JPG、PNG 或 WebP，不超过 20 MB，建议竖版 3:4。换封面会删掉旧的。</p>
+        </div>
+        <div className="min-w-0 flex-1 space-y-4">
+          <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-[13.5px] md:grid-cols-3">
+            <Fact label="平台" value={platformLabel(drama.platform)} />
+            <Fact label="语言" value={`${languageName(drama.language, "zh")}（${drama.language}）`} />
+            <Fact label="集数" value={drama.episodes === null ? "未知" : `${drama.episodes} 集`} />
+            <Fact label="收费起始" value={drama.payStart === null ? "未知" : `第 ${drama.payStart} 集`} />
+            <Fact label="完结" value={drama.finished === null ? "未知" : drama.finished ? "已完结" : "连载中"} />
+            <Fact label="来源" value={drama.source === "beidou" ? `选剧台（${drama.sourceDramaId}）` : "手填"} />
+          </dl>
+          {drama.titleCn !== null && drama.titleCn !== drama.title && (
+            <p className="text-[13.5px] text-text-dark-secondary">原名：{drama.title}</p>
+          )}
+          {drama.tags.length > 0 && <TagList tags={drama.tags} />}
+          <p className="whitespace-pre-line text-[14px] leading-[1.65] text-text-dark-primary">
+            {drama.synopsis ?? <span className="text-text-dark-secondary">没有简介。</span>}
+          </p>
         </div>
       </div>
 
       <div className={PANEL}>
-        <h2 className={H2}>封面</h2>
-        <div className="mt-4 flex flex-wrap items-start gap-6">
-          <div className="aspect-[3/4] w-32 overflow-hidden rounded-[8px] border border-brand-border-card bg-brand-panel-raised">
-            {r2 !== null && drama.coverKey !== null && (
-              <img src={coverImageUrl(r2, drama.coverKey)} alt="" className="h-full w-full object-cover" />
-            )}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="mb-3 text-[13.5px] text-text-dark-secondary">JPG、PNG 或 WebP，不超过 20 MB，建议竖版 3:4。换封面会删掉旧的。</p>
-            <UploadControl dramaId={drama.id} purpose="cover" storageReady={r2 !== null} />
-          </div>
+        <h2 className={H2}>推广链接{drama.promoTargetUrl === null && <span className="ml-2 text-[13px] font-normal text-brand-error">上架前必填</span>}</h2>
+        <div className="mt-4">
+          <PromoLinkForm dramaId={drama.id} initial={values} />
         </div>
       </div>
 
@@ -149,6 +182,22 @@ export default async function AdminDramaPage({
           </ul>
         )}
       </div>
+
+      <details className={PANEL}>
+        <summary className="cursor-pointer text-[15px] font-medium text-text-dark-primary">修改剧集信息（剧名、集数、简介、标签等）</summary>
+        <div className="mt-5">
+          <DramaForm dramaId={drama.id} adminBase={base} initial={values} />
+        </div>
+      </details>
+    </div>
+  );
+}
+
+function Fact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-[12px] text-text-dark-secondary">{label}</dt>
+      <dd className="mt-0.5 truncate text-text-dark-primary">{value}</dd>
     </div>
   );
 }

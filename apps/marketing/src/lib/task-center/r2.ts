@@ -1,5 +1,5 @@
 // @input  -- R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY
-// @output -- time-limited S3 SigV4 URLs for R2: the browser PUTs uploads and GETs clips with them; the server HEADs and DELETEs; the fixed key of a clip's still
+// @output -- time-limited S3 SigV4 URLs for R2: the browser PUTs uploads and GETs clips with them; the server HEADs, PUTs a fetched cover, and DELETEs; the fixed key of a clip's still
 // @pos    -- the only code that talks to Cloudflare R2; nothing else ever sees the R2 secret
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 //
@@ -166,6 +166,25 @@ export async function headR2Object(
     byteSize: Number(response.headers.get("content-length") ?? "NaN"),
     contentType: response.headers.get("content-type"),
   };
+}
+
+/** Writes a small object from the server: a cover fetched from 北斗 at import. */
+export async function putR2Object(
+  config: R2Config,
+  key: string,
+  bytes: Uint8Array<ArrayBuffer>,
+  contentType: string,
+  fetchImpl: typeof fetch = fetch,
+  timeoutMs = 30_000,
+): Promise<void> {
+  const response = await fetchImpl(r2ObjectUrl(config, "PUT", key, { expiresSeconds: 60 }), {
+    method: "PUT",
+    headers: { "content-type": contentType },
+    body: bytes,
+    cache: "no-store",
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!response.ok) throw new Error(`R2 PUT answered ${response.status}`);
 }
 
 export async function deleteR2Object(

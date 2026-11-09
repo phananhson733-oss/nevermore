@@ -1,13 +1,13 @@
 // @input  -- a drama's current fields (edit) or none (create); POST/PUT /api/admin/tasks/dramas
-// @output -- the admin form for a drama's details, audience and genre (with suggested genres), and promo target
-// @pos    -- create and edit on /admin/tasks and /admin/tasks/<id>
+// @output -- the admin form for a drama's details, tags, audience and genre (with suggested genres), and promo target
+// @pos    -- the manual create on /admin/tasks (when 查剧 finds nothing) and edit on /admin/tasks/<id>
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
 
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
-import { DRAMA_AUDIENCES, SUGGESTED_GENRES, type DramaAudience } from "../../../lib/task-center/contracts.ts";
+import { DRAMA_AUDIENCES, MAX_TAGS, SUGGESTED_GENRES, type DramaAudience } from "../../../lib/task-center/contracts.ts";
 import { AUDIENCE_LABELS_ZH } from "../../../lib/task-center/copy.ts";
 import { adminFetch, describeError } from "./admin-fetch.ts";
 
@@ -23,6 +23,7 @@ export interface DramaFormValues {
   readonly promoCodeParam: string | null;
   readonly audience: DramaAudience | null;
   readonly genre: string | null;
+  readonly tags: readonly string[];
 }
 
 const FIELD =
@@ -33,6 +34,23 @@ function count(value: FormDataEntryValue | null): number | null {
   if (text === "") return null;
   const n = Number(text);
   return Number.isInteger(n) ? n : Number.NaN;
+}
+
+/**
+ * "Romance, CEO，Revenge" → three tags; repeats (in any case) count once, and
+ * each is cut to 40 characters and the list to MAX_TAGS, the server's limits.
+ */
+function tagList(value: FormDataEntryValue | null): string[] {
+  const seen = new Set<string>();
+  return String(value ?? "")
+    .split(/[,，、]/)
+    .map((tag) => tag.trim().slice(0, 40).trim())
+    .filter((tag) => {
+      if (tag === "" || seen.has(tag.toLowerCase())) return false;
+      seen.add(tag.toLowerCase());
+      return true;
+    })
+    .slice(0, MAX_TAGS);
 }
 
 function text(value: FormDataEntryValue | null): string | null {
@@ -46,7 +64,8 @@ export function DramaForm({
   adminBase,
 }: {
   dramaId?: string;
-  initial?: DramaFormValues;
+  /** A drama's fields to edit, or what 查剧 already knows for a new one. */
+  initial?: Partial<DramaFormValues>;
   /** Locale-prefixed /admin/tasks, where a newly created drama's page lives. */
   adminBase: string;
 }) {
@@ -69,6 +88,7 @@ export function DramaForm({
       promoCodeParam: text(form.get("promoCodeParam")),
       audience: text(form.get("audience")),
       genre: text(form.get("genre")),
+      tags: tagList(form.get("tags")),
     };
     setSaving(true);
     setMessage(null);
@@ -148,6 +168,10 @@ export function DramaForm({
         </datalist>
       </label>
       <label className="text-[13px] text-text-dark-secondary sm:col-span-2">
+        标签（逗号隔开，最多 {MAX_TAGS} 个，如 Romance, CEO, Revenge）
+        <input name="tags" maxLength={1000} defaultValue={initial?.tags?.join(", ") ?? ""} className={FIELD} />
+      </label>
+      <label className="text-[13px] text-text-dark-secondary sm:col-span-2">
         推广目标地址（https，平台给的分销链接；上架前必填）
         <input name="promoTargetUrl" type="url" maxLength={2048} defaultValue={initial?.promoTargetUrl ?? ""} className={FIELD} />
       </label>
@@ -172,6 +196,70 @@ export function DramaForm({
           className="h-10 rounded-[10px] bg-primary px-5 text-[14px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
         >
           {saving ? "保存中…" : dramaId ? "保存" : "新建（草稿）"}
+        </button>
+        {message && (
+          <p role="status" className={`text-[13.5px] ${message.ok ? "text-brand-accent-text" : "text-brand-error"}`}>
+            {message.text}
+          </p>
+        )}
+      </div>
+    </form>
+  );
+}
+
+/**
+ * Just the promo link, the one thing 查剧 cannot fill and publishing needs.
+ * Saves through the same PUT, with every other field as the page loaded it.
+ */
+export function PromoLinkForm({ dramaId, initial }: { dramaId: string; initial: DramaFormValues }) {
+  const router = useRouter();
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+
+  async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const { tags: _tags, ...rest } = initial;
+    setSaving(true);
+    setMessage(null);
+    // Tags left out, so the save keeps whatever the drama has now.
+    const answer = await adminFetch(`/api/admin/tasks/dramas/${dramaId}`, "PUT", {
+      ...rest,
+      promoTargetUrl: text(form.get("promoTargetUrl")),
+      promoCodeParam: text(form.get("promoCodeParam")),
+    });
+    setSaving(false);
+    if (!answer.ok) {
+      setMessage({ ok: false, text: describeError(answer) });
+      return;
+    }
+    setMessage({ ok: true, text: "已保存。" });
+    router.refresh();
+  }
+
+  return (
+    <form onSubmit={(event) => void submit(event)} className="grid gap-4 sm:grid-cols-[minmax(0,3fr)_minmax(0,1fr)]">
+      <label className="text-[13px] text-text-dark-secondary">
+        推广目标地址（https，平台给的分销链接）
+        <input
+          name="promoTargetUrl"
+          type="url"
+          maxLength={2048}
+          defaultValue={initial.promoTargetUrl ?? ""}
+          className={FIELD}
+        />
+      </label>
+      <label className="text-[13px] text-text-dark-secondary">
+        子渠道参数名（如 sub_id，可不填）
+        <input name="promoCodeParam" pattern="[A-Za-z0-9_]{1,32}" defaultValue={initial.promoCodeParam ?? ""} className={FIELD} />
+      </label>
+      <div className="flex items-center gap-4 sm:col-span-2">
+        <button
+          type="submit"
+          disabled={saving}
+          className="h-10 rounded-[10px] bg-primary px-5 text-[14px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+        >
+          {saving ? "保存中…" : "保存链接"}
         </button>
         {message && (
           <p role="status" className={`text-[13.5px] ${message.ok ? "text-brand-accent-text" : "text-brand-error"}`}>

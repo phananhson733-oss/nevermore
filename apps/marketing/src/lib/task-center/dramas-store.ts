@@ -1,5 +1,5 @@
 // @input  -- a TaskDb and admin or visitor requests already parsed by contracts.ts
-// @output -- dramas and their clip assets: the public clip grid (with this week's hot dramas), the drama list and detail, and the admin reads and writes
+// @output -- dramas and their clip assets: the public clip grid (with this week's hot dramas), the drama list and detail, and the admin reads and writes, including a drama imported from the 选剧台 lookup
 // @pos    -- every SQL statement on task_center.dramas and task_center.drama_assets
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -17,6 +17,8 @@ export interface DramaSummary {
   readonly coverKey: string | null;
   readonly audience: DramaAudience | null;
   readonly genre: string | null;
+  /** As 北斗 gave them, or as typed; shown, never filtered on. */
+  readonly tags: readonly string[];
   readonly listedAt: string | null;
   /** People who claimed at least one channel, counted from task_claims. */
   readonly promoterCount: number;
@@ -24,6 +26,11 @@ export interface DramaSummary {
 
 export interface DramaDetail extends DramaSummary {
   readonly synopsis: string | null;
+  /** Null when nobody told us whether every episode is out. */
+  readonly finished: boolean | null;
+  /** "beidou" when the details came from the 选剧台 lookup; null when typed. */
+  readonly source: "beidou" | null;
+  readonly sourceDramaId: string | null;
   readonly status: DramaStatus;
   readonly promoTargetUrl: string | null;
   readonly promoCodeParam: string | null;
@@ -63,6 +70,10 @@ interface DramaRow {
   listed_at: Date | null;
   promoter_count: string | number;
   synopsis?: string | null;
+  tags?: string[];
+  finished?: boolean | null;
+  source?: "beidou" | null;
+  source_drama_id?: string | null;
   status?: DramaStatus;
   promo_target_url?: string | null;
   promo_code_param?: string | null;
@@ -88,10 +99,10 @@ interface AssetRow {
 const PROMOTER_COUNT = `(select count(distinct c.user_id) from task_center.task_claims c where c.drama_id = d.id)`;
 
 const SUMMARY_COLUMNS = `d.id, d.title, d.title_cn, d.platform, d.language, d.episodes, d.pay_start,
-  d.cover_key, d.audience, d.genre, d.listed_at, ${PROMOTER_COUNT} as promoter_count`;
+  d.cover_key, d.audience, d.genre, d.tags, d.listed_at, ${PROMOTER_COUNT} as promoter_count`;
 
-const DETAIL_COLUMNS = `${SUMMARY_COLUMNS}, d.synopsis, d.status, d.promo_target_url,
-  d.promo_code_param, d.created_at, d.updated_at`;
+const DETAIL_COLUMNS = `${SUMMARY_COLUMNS}, d.synopsis, d.finished, d.source, d.source_drama_id,
+  d.status, d.promo_target_url, d.promo_code_param, d.created_at, d.updated_at`;
 
 function toSummary(row: DramaRow): DramaSummary {
   return {
@@ -105,6 +116,7 @@ function toSummary(row: DramaRow): DramaSummary {
     coverKey: row.cover_key,
     audience: row.audience,
     genre: row.genre,
+    tags: row.tags ?? [],
     listedAt: row.listed_at?.toISOString() ?? null,
     promoterCount: toSafeInteger(row.promoter_count) ?? 0,
   };
@@ -114,6 +126,9 @@ function toDetail(row: DramaRow): DramaDetail {
   return {
     ...toSummary(row),
     synopsis: row.synopsis ?? null,
+    finished: row.finished ?? null,
+    source: row.source ?? null,
+    sourceDramaId: row.source_drama_id ?? null,
     status: row.status ?? "draft",
     promoTargetUrl: row.promo_target_url ?? null,
     promoCodeParam: row.promo_code_param ?? null,
@@ -382,12 +397,78 @@ export async function createDrama(
   const { rows } = await db.query<{ id: string }>(
     `insert into task_center.dramas
        (title, title_cn, platform, language, episodes, pay_start, synopsis,
-        promo_target_url, promo_code_param, audience, genre, created_by)
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        promo_target_url, promo_code_param, audience, genre, tags, created_by)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      returning id`,
-    [...dramaValues(input), adminEmail],
+    [...dramaValues(input), input.tags ?? [], adminEmail],
   );
   return rows[0]!.id;
+}
+
+/** What the 选剧台 lookup told us about a drama, already checked against 0001 and 0004's limits. */
+export interface ImportedDrama {
+  readonly title: string;
+  readonly titleCn: string | null;
+  readonly platform: string;
+  readonly language: string;
+  readonly episodes: number | null;
+  readonly payStart: number | null;
+  readonly synopsis: string | null;
+  readonly tags: readonly string[];
+  readonly finished: boolean;
+  readonly sourceDramaId: string;
+}
+
+export type ImportResult =
+  | { readonly ok: true; readonly id: string }
+  | { readonly ok: false; readonly code: "already_listed"; readonly id: string };
+
+/**
+ * A draft from the lookup. A platform drama is listed once: a second import,
+ * even a concurrent one, gets the existing drama's id back instead.
+ */
+export async function importDrama(db: TaskDb, drama: ImportedDrama, adminEmail: string): Promise<ImportResult> {
+  const { rows } = await db.query<{ id: string }>(
+    `insert into task_center.dramas
+       (title, title_cn, platform, language, episodes, pay_start, synopsis, tags, finished,
+        source, source_drama_id, created_by)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'beidou', $10, $11)
+     on conflict (platform, source_drama_id) where source_drama_id is not null do nothing
+     returning id`,
+    [
+      drama.title,
+      drama.titleCn,
+      drama.platform,
+      drama.language,
+      drama.episodes,
+      drama.payStart,
+      drama.synopsis,
+      drama.tags,
+      drama.finished,
+      drama.sourceDramaId,
+      adminEmail,
+    ],
+  );
+  if (rows[0] !== undefined) return { ok: true, id: rows[0].id };
+  const existing = await listedBySource(db, drama.platform, [drama.sourceDramaId]);
+  const id = existing.get(drama.sourceDramaId);
+  if (id === undefined) throw new Error("import conflicted but no listed drama was found");
+  return { ok: false, code: "already_listed", id };
+}
+
+/** Which of these platform drama ids are already listed here, and as which drama. */
+export async function listedBySource(
+  db: TaskDb,
+  platform: string,
+  sourceDramaIds: readonly string[],
+): Promise<ReadonlyMap<string, string>> {
+  if (sourceDramaIds.length === 0) return new Map();
+  const { rows } = await db.query<{ id: string; source_drama_id: string }>(
+    `select id, source_drama_id from task_center.dramas
+      where platform = $1 and source_drama_id = any($2::text[])`,
+    [platform, sourceDramaIds],
+  );
+  return new Map(rows.map((row) => [row.source_drama_id, row.id]));
 }
 
 export type DramaWriteResult =
@@ -399,13 +480,14 @@ export async function updateDrama(
   id: string,
   input: DramaInput,
 ): Promise<DramaWriteResult> {
-  const values = [...dramaValues(input), id];
+  const values = [...dramaValues(input), id, input.tags ?? null];
   try {
     const { rowCount } = await db.query(
       `update task_center.dramas
           set title = $1, title_cn = $2, platform = $3, language = $4, episodes = $5,
               pay_start = $6, synopsis = $7, promo_target_url = $8,
-              promo_code_param = $9, audience = $10, genre = $11, updated_at = now()
+              promo_code_param = $9, audience = $10, genre = $11,
+              tags = coalesce($13::text[], tags), updated_at = now()
         where id = $12`,
       values,
     );

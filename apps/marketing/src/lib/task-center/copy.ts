@@ -1,5 +1,5 @@
 // @input  -- the page locale ("en" or "zh")
-// @output -- every visitor-facing string of /tasks (the clip grid), /tasks/<id>, /promotions and /earnings, audience, genre and clip-type labels, and the Chinese labels the admin pages share
+// @output -- every visitor-facing string of /tasks (the clip grid), /tasks/<id>, /promotions and /earnings, audience, genre, clip-type and platform labels, and the Chinese labels the admin pages share
 // @pos    -- task center copy, kept beside the code like the waitlist page's; the admin pages are Chinese only
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -9,6 +9,7 @@ import {
   type ClaimChannel,
   type ClipType,
   type DramaAudience,
+  type LookupPlatform,
   type PromoChannel,
 } from "./contracts.ts";
 
@@ -267,6 +268,26 @@ export function genreLabel(slug: string): string {
     .join(" ");
 }
 
+
+/** How each platform the 选剧台 lookup knows writes its own name. */
+export const PLATFORM_LABELS: Readonly<Record<LookupPlatform, string>> = {
+  reelshort: "ReelShort",
+  dramabox: "DramaBox",
+  shortmax: "ShortMax",
+  moboreels: "MoboReels",
+  flickreels: "FlickReels",
+  kalostv: "KalosTV",
+  netshort: "NetShort",
+  goodshort: "GoodShort",
+  flareflow: "FlareFlow",
+  stardusttv: "StardustTV",
+  yourchannel: "YourChannel",
+};
+
+/** A platform slug as its name; one typed by hand shows as itself. */
+export function platformLabel(slug: string): string {
+  return (PLATFORM_LABELS as Readonly<Record<string, string>>)[slug] ?? slug;
+}
 
 export const DRAMA_STATUS_LABELS = { draft: "草稿", published: "上架中", archived: "已下架" } as const;
 
