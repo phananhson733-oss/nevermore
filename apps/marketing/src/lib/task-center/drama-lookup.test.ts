@@ -1,5 +1,5 @@
 // @input  -- drama-lookup.ts with a fake fetch in place of 选剧台 and the cover CDN
-// @output -- proof that the lookup client reads only well-formed answers, maps errors, fits a 北斗 row to the dramas table with the theater's own page taking over field by field, and fetches only a sane cover
+// @output -- proof that the lookup client reads only well-formed answers (GoodShort's base64 ids included), maps errors, fits a 北斗 row to the dramas table with the theater's own page taking over field by field, and fetches only a sane cover
 // @pos    -- unit tests for the task center's side of pick-workbench's lookup contract; no network, no database
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -56,6 +56,15 @@ describe("lookupDramas", () => {
       url: "http://drama-platform-web-1:8088/api/pick/lookup/drama/?platform=reelshort&title=Surf+God&language=es",
       auth: "Bearer t0ken",
     });
+  });
+
+  it("keeps GoodShort's base64 ids and still drops ids that could be a path", async () => {
+    // 2026-11-08: every GoodShort id 北斗 gave was 24 characters of base64.
+    const goodShort = { ...ROW, platformDramaId: "157KwomEt0CA6EFVXKKgcQ==" };
+    const slashed = { ...ROW, platformDramaId: "9i/dssELM0MvEetSwJbzYw==" };
+    const rows = [goodShort, slashed, { ...ROW, platformDramaId: "../etc" }, { ...ROW, platformDramaId: "a b" }];
+    const result = await lookupDramas(CONFIG, { ...QUERY, platform: "goodshort" }, answer(200, { ok: true, dramas: rows }));
+    expect(result).toEqual({ ok: true, dramas: [goodShort, slashed] });
   });
 
   it("tells a query that will never work from one to retry", async () => {
@@ -120,6 +129,16 @@ describe("toImportedDrama", () => {
       QUERY,
     );
     expect(fitted).toMatchObject({ title: "Surf God", titleCn: null, synopsis: "a\nb", tags: ["Revenge"] });
+  });
+
+  it("keys a GoodShort drama on 北斗's base64 id", () => {
+    const row = { ...ROW, platformDramaId: "157KwomEt0CA6EFVXKKgcQ==" };
+    expect(toImportedDrama(row, { platform: "goodshort", language: null })).toMatchObject({
+      platform: "goodshort",
+      sourceDramaId: "157KwomEt0CA6EFVXKKgcQ==",
+      audience: null,
+      genre: null,
+    });
   });
 
   it("gives up when nobody knows the language", () => {

@@ -1,5 +1,5 @@
 // @input  -- a disposable Postgres rebuilt by db/tasks/migrate.sh
-// @output -- proof that the task center's SQL does what the stores promise: the clip grid and its 本周爆款 rule, imports from 查剧 (频道 and genre from the theater's page, one drama whichever 北斗 id found it) and tags, promoter accounts included
+// @output -- proof that the task center's SQL does what the stores promise: the clip grid and its 本周爆款 rule, imports from 查剧 (频道 and genre from the theater's page, one drama whichever 北斗 id found it, GoodShort's base64 ids) and tags, promoter accounts included
 // @pos    -- the only test that executes task center SQL
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -376,6 +376,23 @@ describe("imports from 查剧", () => {
       audience: "female",
       genre: "romance",
     });
+  });
+
+  it("lists a GoodShort drama once by 北斗's base64 id (0005)", async () => {
+    // 2026-11-08: 北斗's GoodShort ids are base64; 0004 refused them.
+    const goodShort = { ...beidou, platform: "goodshort", audience: null, genre: null, sourceDramaId: "9i/dssELM0MvEetSwJbzYw==" };
+    const first = await importDrama(db, goodShort, ADMIN);
+    expect(first.ok).toBe(true);
+    expect(await importDrama(db, goodShort, ADMIN)).toEqual({ ok: false, code: "already_listed", id: first.id });
+    expect(await listedBySource(db, "goodshort", ["9i/dssELM0MvEetSwJbzYw==", "9i/dssELM0MvEetSwJbzYw"])).toEqual(
+      new Map([["9i/dssELM0MvEetSwJbzYw==", first.id]]),
+    );
+    expect((await getDramaForAdmin(db, first.id))?.drama).toMatchObject({ source: "beidou", sourceDramaId: "9i/dssELM0MvEetSwJbzYw==" });
+    for (const bad of ["../etc", "a=b", "a b", "x".repeat(65)]) {
+      await expect(importDrama(db, { ...goodShort, sourceDramaId: bad }, ADMIN)).rejects.toMatchObject({
+        constraint: "dramas_source_drama_id_check",
+      });
+    }
   });
 
   it("keeps tags through an edit that leaves them out and replaces them when sent", async () => {

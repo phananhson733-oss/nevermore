@@ -14,8 +14,10 @@
 // 2026-11-08). Its reader is built and tested (theater-dramabox.ts); giving
 // the entry its `read` back turns it on.
 // No reader: kalostv and flareflow only answer a signed, encrypted API;
-// goodshort's 北斗 id is not the id its site uses; shortmax and flickreels
-// had nothing in 北斗 to read.
+// goodshort's 北斗 id (base64) is not the id its site uses, and its API
+// answers the production server "Access Denied" (2026-11-08), so GoodShort
+// keeps 北斗's details and its base64 id; shortmax and flickreels had nothing
+// in 北斗 to read.
 
 import type { LookupPlatform } from "./contracts.ts";
 import { DRAMABOX_ID, dramaBoxPageUrl } from "./theater-dramabox.ts";

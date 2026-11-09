@@ -1,5 +1,5 @@
 // @input  -- zod
-// @output -- claim channels, account platforms and statuses, drama audiences, clip types, suggested genres, the 选剧台 lookup's platforms and languages (and which platforms 查剧 also reads from their own site), upload limits, and the parsers admin and promoter requests go through
+// @output -- claim channels, account platforms and statuses, drama audiences, clip types, suggested genres, the 选剧台 lookup's platforms and languages (and which platforms 查剧 also reads from their own site), the platform drama id shape, upload limits, and the parsers admin and promoter requests go through
 // @pos    -- the task center's request contract; the SQL checks in db/tasks repeat these limits
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -65,6 +65,14 @@ export type LookupPlatform = (typeof LOOKUP_PLATFORMS)[number];
 export const THEATER_PLATFORMS: ReadonlySet<string> = new Set<LookupPlatform>([
   "reelshort", "stardusttv", "moboreels", "netshort", "yourchannel",
 ]);
+
+/**
+ * A platform's own drama id as 北斗 gives it and the dramas table keeps it
+ * (0004, widened by 0005): letters, digits, `_` and `-`, or base64, which is
+ * what 北斗 has for GoodShort (`157KwomEt0CA6EFVXKKgcQ==`). Never a path or a
+ * query: `/` only ever sits inside a base64 id, which no site is asked about.
+ */
+export const PLATFORM_DRAMA_ID = /^(?:[A-Za-z0-9_-]{1,64}|[A-Za-z0-9+/]{1,62}={0,2})$/;
 
 /** 北斗's languages, as the lookup names them. */
 export const LOOKUP_LANGUAGES = [
@@ -185,7 +193,7 @@ export const dramaImportSchema = z
       .nullable()
       .optional()
       .transform((value) => value ?? null),
-    platformDramaId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
+    platformDramaId: z.string().regex(PLATFORM_DRAMA_ID),
   })
   .strict();
 export type DramaImport = z.infer<typeof dramaImportSchema>;
