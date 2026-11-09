@@ -1,5 +1,5 @@
 // @input  -- locale param; q, platform, language, audience, genre, type, sort and page query; the task database; the session; R2 for stills and covers
-// @output -- the promoter tabs, then every ready clip of a published drama as a filterable, paged 素材广场 grid, with what each listed drama's dialog shows (details, clips, the visitor's link and the drama page it opens)
+// @output -- the promoter tabs, then every ready clip of a published drama as a filterable, paged 素材广场 grid, with what each listed drama's dialog shows (details with its platform and promoter count, clips, the visitor's link and the drama page it opens)
 // @pos    -- /tasks, the task center's entry page
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -164,6 +164,8 @@ export default async function TasksPage({
   for (const { drama } of result?.items ?? []) {
     const detail = details[drama.id];
     dramas[drama.id] = {
+      platform: drama.platform,
+      promoterCount: drama.promoterCount,
       synopsis: detail?.synopsis ?? null,
       listedAt: drama.listedAt,
       episodes: drama.episodes,

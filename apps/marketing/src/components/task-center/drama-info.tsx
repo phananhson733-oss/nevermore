@@ -1,5 +1,5 @@
 // @input  -- the page locale and a published drama's public facts (never its platform URLs), its ready clips, the /promotions href
-// @output -- the pieces of a drama's details laid out like RS Boost's resource page: language, 频道, genre and tag chips; the 上架时间 · 共 N 集 · 前 M 集免费 line; numbered free clip downloads; the 账号报白 banner; the compact how-to
+// @output -- the pieces of a drama's details: language (optional), 频道, genre and tag chips; the 上架时间 · 共 N 集 · 前 M 集免费 line; the labelled facts grid (平台, 语言, 集数, 收费起始, 上架时间, 推广人数); numbered free clip downloads; the 账号报白 banner; the compact how-to
 // @pos    -- shared by the clip dialog on /tasks (client) and /tasks/<id> (server); no state, so either side can render it
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -7,7 +7,18 @@ import { ShieldCheck } from "lucide-react";
 import Link from "next/link";
 
 import type { DramaAudience } from "../../lib/task-center/contracts.ts";
-import { episodeLine, formatBytes, formatDay, genreLabel, languageName, taskCopy } from "../../lib/task-center/copy.ts";
+import {
+  clipTitle,
+  episodeLine,
+  formatBytes,
+  formatCount,
+  formatDay,
+  genreLabel,
+  languageName,
+  paidFrom,
+  platformLabel,
+  taskCopy,
+} from "../../lib/task-center/copy.ts";
 
 export function DramaChips({
   locale,
@@ -16,6 +27,7 @@ export function DramaChips({
   genre,
   tags,
   max = 8,
+  showLanguage = true,
 }: {
   locale: string;
   language: string;
@@ -23,10 +35,12 @@ export function DramaChips({
   genre: string | null;
   tags: readonly string[];
   max?: number;
+  /** False where a facts grid beside the chips already names the language. */
+  showLanguage?: boolean | undefined;
 }) {
   const copy = taskCopy(locale);
   const facts = [
-    languageName(language, locale),
+    showLanguage ? languageName(language, locale) : null,
     audience === null ? null : copy.audience[audience],
     genre === null ? null : genreLabel(genre),
   ].filter((chip): chip is string => chip !== null);
@@ -70,6 +84,48 @@ export function DramaFacts({
   return <p className="text-[13px] text-text-dark-secondary">{parts.join(" · ")}</p>;
 }
 
+/**
+ * The drama's facts as labelled cells, the way MoboBoost lays them out:
+ * 平台, 语言, 集数, 收费起始, 上架时间, 推广人数. A cell nobody knows is left out.
+ */
+export function DramaFactGrid({
+  locale,
+  platform,
+  language,
+  episodes,
+  payStart,
+  listedAt,
+  promoterCount,
+}: {
+  locale: string;
+  platform: string;
+  language: string;
+  episodes: number | null;
+  payStart: number | null;
+  listedAt: string | null;
+  promoterCount: number;
+}) {
+  const copy = taskCopy(locale);
+  const cells = [
+    { label: copy.platform, value: platformLabel(platform) },
+    { label: copy.language, value: languageName(language, locale) },
+    { label: copy.episodesLabel, value: episodes === null ? null : formatCount(episodes, locale) },
+    { label: copy.payStartLabel, value: paidFrom(episodes, payStart, copy) },
+    { label: copy.listedOn, value: listedAt === null ? null : formatDay(listedAt, locale) },
+    { label: copy.promotersLabel, value: formatCount(promoterCount, locale) },
+  ].filter((cell): cell is { label: string; value: string } => cell.value !== null);
+  return (
+    <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3">
+      {cells.map((cell) => (
+        <div key={cell.label} className="min-w-0">
+          <dt className="text-[12px] text-text-dark-secondary">{cell.label}</dt>
+          <dd className="mt-0.5 truncate text-[14px] font-medium text-text-dark-primary">{cell.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 export interface DownloadClip {
   readonly id: string;
   readonly title: string;
@@ -89,23 +145,27 @@ export function ClipDownloads({
   const copy = taskCopy(locale);
   return (
     <ol className="flex flex-wrap gap-2">
-      {clips.map((clip, index) => (
-        <li key={clip.id}>
-          <a
-            href={`/api/tasks/assets/${clip.id}?download=1`}
-            title={`${clip.title} · ${formatBytes(clip.byteSize)}`}
-            aria-label={copy.clipLabel(index + 1, clip.title, formatBytes(clip.byteSize))}
-            aria-current={clip.id === current ? "true" : undefined}
-            className={`flex size-11 items-center justify-center rounded-[8px] border font-mono text-[14px] transition-colors hover:border-brand-accent-text hover:text-brand-accent-text ${
-              clip.id === current
-                ? "border-brand-accent-text bg-brand-accent-soft text-brand-accent-text"
-                : "border-brand-border-card bg-brand-panel text-text-dark-primary"
-            }`}
-          >
-            {index + 1}
-          </a>
-        </li>
-      ))}
+      {clips.map((clip, index) => {
+        const name = clipTitle(clip.title);
+        const size = formatBytes(clip.byteSize);
+        return (
+          <li key={clip.id}>
+            <a
+              href={`/api/tasks/assets/${clip.id}?download=1`}
+              title={name === null ? size : `${name} · ${size}`}
+              aria-label={copy.clipLabel(index + 1, name, size)}
+              aria-current={clip.id === current ? "true" : undefined}
+              className={`flex size-11 items-center justify-center rounded-[8px] border font-mono text-[14px] transition-colors hover:border-brand-accent-text hover:text-brand-accent-text ${
+                clip.id === current
+                  ? "border-brand-accent-text bg-brand-accent-soft text-brand-accent-text"
+                  : "border-brand-border-card bg-brand-panel text-text-dark-primary"
+              }`}
+            >
+              {index + 1}
+            </a>
+          </li>
+        );
+      })}
     </ol>
   );
 }
