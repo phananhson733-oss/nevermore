@@ -107,6 +107,14 @@
   --color-brand-accent-soft: var(--sc-accent-soft);
   --color-brand-accent-text: var(--sc-accent-text);
   --color-brand-on-accent: var(--sc-on-accent); /* 渐变按钮上的墨绿黑，不用纯白 */
+  --color-brand-on-warning: var(--sc-on-warning); /* 实心 warning 底上的字：深色主题的 warning 是浅琥珀，白字压不住 */
+  /*
+   * 压在图片和视频上的角标、播放钮、视频黑边。画面本身不随主题变，所以这一对
+   * 两套主题取同一个值：半透明黑底 + 白字，浅色主题下照样
+   * 压得住任何截图。只给盖在媒体上的东西用，页面和卡片的底仍走 brand-panel。
+   */
+  --color-media: var(--sc-media);
+  --color-on-media: var(--sc-on-media);
 
   /* 描边四级：表格行 → 区块分隔 → 卡片外框 → 输入/chip/可点元素 */
   --color-brand-border-faint: var(--sc-border-faint);
@@ -189,6 +197,9 @@
   --sc-accent-soft: rgba(61, 220, 151, 0.08);
   --sc-accent-text: #3ddc97; /* on #0B0F14 ≈ 10.9:1 */
   --sc-on-accent: #06110c;
+  --sc-on-warning: #0b0f14; /* on #E5C878 ≈ 11.7:1；白字只有 1.6:1 */
+  --sc-media: #000000; /* 浅色块里同值，见 @theme 里 --color-media 的说明 */
+  --sc-on-media: #ffffff;
 
   --sc-border-faint: #141c26;
   --sc-border: #1b2430;
@@ -322,6 +333,9 @@
   --sc-accent-soft: rgba(9, 117, 80, 0.09);
   --sc-accent-text: #097550;
   --sc-on-accent: #06110c;
+  --sc-on-warning: #ffffff; /* on #845800 ≈ 6.2:1 */
+  --sc-media: #000000; /* 有意与深色相同：画面不随主题变 */
+  --sc-on-media: #ffffff;
 
   --sc-border-faint: #e9eef4;
   --sc-border: #dce3eb;

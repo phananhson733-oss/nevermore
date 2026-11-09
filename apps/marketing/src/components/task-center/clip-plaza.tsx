@@ -80,13 +80,13 @@ export function ClipPlaza({
                     <img src={still} alt="" loading="lazy" className="h-full w-full object-cover" />
                   )}
                   {card.clipType !== null && (
-                    <span className="absolute top-2 left-2 rounded-[6px] bg-black/60 px-2 py-0.5 text-[12px] text-white">
+                    <span className="absolute top-2 left-2 rounded-[6px] bg-media/60 px-2 py-0.5 text-[12px] text-on-media">
                       {copy.clipType[card.clipType]}
                     </span>
                   )}
                   {card.kind === "video" && (
                     <span className="absolute inset-0 flex items-center justify-center">
-                      <span className="flex size-11 items-center justify-center rounded-full bg-black/45 text-white transition-transform group-hover:scale-110">
+                      <span className="flex size-11 items-center justify-center rounded-full bg-media/45 text-on-media transition-transform group-hover:scale-110">
                         <Play aria-hidden className="size-5 translate-x-px fill-current" />
                       </span>
                     </span>
@@ -94,7 +94,7 @@ export function ClipPlaza({
                   {card.hot && (
                     <span
                       title={copy.hotNote}
-                      className="absolute bottom-2 left-2 inline-flex items-center gap-1 rounded-[6px] bg-brand-warning px-2 py-0.5 text-[12px] font-medium text-white"
+                      className="absolute bottom-2 left-2 inline-flex items-center gap-1 rounded-[6px] bg-brand-warning px-2 py-0.5 text-[12px] font-medium text-brand-on-warning"
                     >
                       <Flame aria-hidden className="size-3.5" />
                       {copy.hotThisWeek}
@@ -126,17 +126,17 @@ export function ClipPlaza({
         onClick={(event) => {
           if (event.target === event.currentTarget) event.currentTarget.close();
         }}
-        className="m-auto w-[min(880px,calc(100vw-32px))] overflow-hidden rounded-card border border-brand-border-card bg-brand-panel p-0 text-text-dark-primary backdrop:bg-black/60"
+        className="m-auto w-[min(880px,calc(100vw-32px))] overflow-hidden rounded-card border border-brand-border-card bg-brand-panel p-0 text-text-dark-primary backdrop:bg-scrim"
       >
         {open !== null && (
           <div className="grid md:grid-cols-[minmax(0,340px)_1fr]">
-            <div className="flex items-center justify-center bg-black">
+            <div className="flex items-center justify-center bg-media">
               {!signedIn ? (
                 <div className="relative aspect-[9/16] max-h-[70vh] w-full">
                   {(open.posterUrl ?? open.coverUrl) !== null && (
                     <img src={open.posterUrl ?? open.coverUrl ?? ""} alt="" className="h-full w-full object-cover opacity-60" />
                   )}
-                  <p className="absolute inset-x-4 top-1/2 -translate-y-1/2 text-center text-[14px] text-white">
+                  <p className="absolute inset-x-4 top-1/2 -translate-y-1/2 text-center text-[14px] text-on-media">
                     {copy.signInForClips}{" "}
                     <a href={signInHref} className="underline">
                       {copy.signIn}

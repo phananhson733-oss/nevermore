@@ -85,11 +85,14 @@ describe("Signal Console 主题 token", () => {
       (t) => valueOf(darkBody, t) === valueOf(lightBody, t),
     );
     // 只有品牌本体是刻意两套共用的：那条渐变，以及压在渐变按钮上的墨绿黑
-    // （对渐变两端分别是 10.9:1 和 9.6:1，换到浅色页面上依然成立）。
-    // 见 globals.css 里对应的注释。除这两个以外不该有别的。
+    // （对渐变两端分别是 10.9:1 和 9.6:1，换到浅色页面上依然成立）；以及压在
+    // 图片、视频上的那一对 media 色：画面不随主题变，盖在上面的黑底白字也不该变。
+    // 见 globals.css 里对应的注释。除这几个以外不该有别的。
     expect([...identical].sort()).toEqual([
       "--sc-gradient-brand",
+      "--sc-media",
       "--sc-on-accent",
+      "--sc-on-media",
     ]);
   });
 
