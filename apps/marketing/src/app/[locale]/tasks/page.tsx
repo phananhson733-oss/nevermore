@@ -1,9 +1,10 @@
 // @input  -- locale param; q, platform, language, audience, genre, type, sort and page query; the task database; the session; R2 for stills and covers
-// @output -- the promoter tabs, then every ready clip of a published drama as a filterable, paged 素材广场 grid, with what each listed drama's dialog shows (details with its platform and promoter count, clips, the visitor's link and the drama page it opens)
+// @output -- the promoter tabs, the filters (search, 语言, 频道, 题材, 素材类型, 平台 when there is more than one, 排序), each named by a label above it as MoboReels lays them out, then every ready clip of a published drama as a paged 素材广场 grid, with what each listed drama's dialog shows (details with its platform and promoter count, clips, the visitor's link and the drama page it opens)
 // @pos    -- /tasks, the task center's entry page
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import Link from "next/link";
+import type { ReactNode } from "react";
 
 import type { LinkView } from "@/components/task-center/claim-panel";
 import { ClipPlaza, type ClipCard, type PlazaDrama } from "@/components/task-center/clip-plaza";
@@ -19,7 +20,7 @@ import {
   type ClipType,
   type DramaAudience,
 } from "@/lib/task-center/contracts";
-import { formatBytes, genreLabel, languageName, promoLink, taskCopy } from "@/lib/task-center/copy";
+import { formatBytes, genreLabel, languageName, platformLabel, promoLink, taskCopy } from "@/lib/task-center/copy";
 import { getTaskDb } from "@/lib/task-center/db";
 import {
   listPlazaDramaDetails,
@@ -202,64 +203,85 @@ export default async function TasksPage({
           {copy.tasksSubtitle}
         </p>
 
-        <form method="get" action={here} className="mt-8 flex flex-wrap items-center gap-3">
-          <input
-            type="search"
-            name="q"
-            defaultValue={search ?? ""}
-            placeholder={copy.searchClips}
-            className={`${FIELD} min-w-50 flex-1`}
-            maxLength={100}
-          />
-          <select name="language" defaultValue={language ?? ""} className={FIELD} aria-label={copy.language}>
-            <option value="">{copy.allLanguages}</option>
-            {facets.languages.map((value) => (
-              <option key={value} value={value}>
-                {languageName(value, locale)}
-              </option>
-            ))}
-          </select>
-          <select name="audience" defaultValue={audience ?? ""} className={FIELD} aria-label={copy.allAudiences}>
-            <option value="">{copy.allAudiences}</option>
-            {DRAMA_AUDIENCES.map((value) => (
-              <option key={value} value={value}>
-                {copy.audience[value]}
-              </option>
-            ))}
-          </select>
-          <select name="genre" defaultValue={genre ?? ""} className={FIELD} aria-label={copy.allGenres}>
-            <option value="">{copy.allGenres}</option>
-            {facets.genres.map((value) => (
-              <option key={value} value={value}>
-                {genreLabel(value)}
-              </option>
-            ))}
-          </select>
-          <select name="type" defaultValue={clipType ?? ""} className={FIELD} aria-label={copy.allClipTypes}>
-            <option value="">{copy.allClipTypes}</option>
-            {CLIP_TYPES.map((value) => (
-              <option key={value} value={value}>
-                {copy.clipType[value]}
-              </option>
-            ))}
-          </select>
-          {facets.platforms.length > 1 && (
-            <select name="platform" defaultValue={platform ?? ""} className={FIELD} aria-label={copy.platform}>
-              <option value="">{copy.allPlatforms}</option>
-              {facets.platforms.map((value) => (
+        {/* Every filter under its own label, as MoboReels lays its filters out,
+            so a select can say just 全部. One row from lg up; a two- or
+            three-column grid below it. */}
+        <form
+          method="get"
+          action={here}
+          className="mt-8 grid grid-cols-2 items-end gap-x-3 gap-y-4 sm:grid-cols-3 lg:flex"
+        >
+          <Field label={copy.searchLabel} className="col-span-2 sm:col-span-3 lg:flex-[2]">
+            <input
+              type="search"
+              name="q"
+              defaultValue={search ?? ""}
+              placeholder={copy.searchClips}
+              className={FIELD}
+              maxLength={100}
+            />
+          </Field>
+          <Field label={copy.language}>
+            <select name="language" defaultValue={language ?? ""} className={FIELD}>
+              <option value="">{copy.allOption}</option>
+              {facets.languages.map((value) => (
                 <option key={value} value={value}>
-                  {value}
+                  {languageName(value, locale)}
                 </option>
               ))}
             </select>
+          </Field>
+          <Field label={copy.audienceLabel}>
+            <select name="audience" defaultValue={audience ?? ""} className={FIELD}>
+              <option value="">{copy.allOption}</option>
+              {DRAMA_AUDIENCES.map((value) => (
+                <option key={value} value={value}>
+                  {copy.audience[value]}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label={copy.genreField}>
+            <select name="genre" defaultValue={genre ?? ""} className={FIELD}>
+              <option value="">{copy.allOption}</option>
+              {facets.genres.map((value) => (
+                <option key={value} value={value}>
+                  {genreLabel(value)}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label={copy.clipTypeField}>
+            <select name="type" defaultValue={clipType ?? ""} className={FIELD}>
+              <option value="">{copy.allOption}</option>
+              {CLIP_TYPES.map((value) => (
+                <option key={value} value={value}>
+                  {copy.clipType[value]}
+                </option>
+              ))}
+            </select>
+          </Field>
+          {facets.platforms.length > 1 && (
+            <Field label={copy.platform}>
+              <select name="platform" defaultValue={platform ?? ""} className={FIELD}>
+                <option value="">{copy.allOption}</option>
+                {facets.platforms.map((value) => (
+                  <option key={value} value={value}>
+                    {platformLabel(value)}
+                  </option>
+                ))}
+              </select>
+            </Field>
           )}
-          <select name="sort" defaultValue={sort} className={FIELD} aria-label={copy.sortNewest}>
-            <option value="newest">{copy.sortNewest}</option>
-            <option value="promoters">{copy.sortPromoters}</option>
-          </select>
+          <Field label={copy.sortField}>
+            <select name="sort" defaultValue={sort} className={FIELD}>
+              <option value="newest">{copy.sortNewest}</option>
+              <option value="promoters">{copy.sortPromoters}</option>
+            </select>
+          </Field>
           <button
             type="submit"
-            className="h-10 rounded-[10px] bg-primary px-5 text-[14px] font-medium text-primary-foreground hover:bg-primary/90"
+            className="h-10 w-full rounded-[10px] bg-primary px-6 text-[14px] font-medium text-primary-foreground hover:bg-primary/90 lg:w-auto lg:shrink-0"
           >
             {copy.apply}
           </button>
@@ -302,7 +324,17 @@ export default async function TasksPage({
   );
 }
 
+/** One filter: its name above the control, the label wrapping it so the name is the control's name too. */
+function Field({ label, className = "", children }: { label: string; className?: string | undefined; children: ReactNode }) {
+  return (
+    <label className={`flex min-w-0 flex-col gap-1.5 lg:flex-1 ${className}`}>
+      <span className="text-[13px] font-medium text-text-dark-secondary">{label}</span>
+      {children}
+    </label>
+  );
+}
+
 const FIELD =
-  "h-10 rounded-[10px] border border-brand-border-strong bg-brand-panel px-3 text-[14px] text-text-dark-primary";
+  "h-10 w-full min-w-0 rounded-[10px] border border-brand-border-strong bg-brand-panel px-3 text-[14px] text-text-dark-primary";
 const NOTE =
   "rounded-card border border-brand-border-card bg-brand-panel p-6 text-[14px] leading-[1.6] text-text-dark-secondary";
