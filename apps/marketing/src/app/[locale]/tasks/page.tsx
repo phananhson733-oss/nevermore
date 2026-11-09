@@ -1,5 +1,5 @@
-// @input  -- locale param; q, platform, language, audience, genre, type, sort and page query; the task database; the session; R2 for stills and covers
-// @output -- the promoter tabs, the filters (search, 语言, 频道, 题材, 素材类型, 平台 when there is more than one, 排序), each named by a label above it as MoboReels lays them out, then every ready clip of a published drama as a paged 素材广场 grid, with what each listed drama's dialog shows (details with its platform and promoter count, clips, the visitor's link and the drama page it opens)
+// @input  -- locale param; q, platform, language, audience, genre, tag, type, sort and page query; the task database; the session; R2 for stills and covers
+// @output -- the promoter tabs, the filters (search, 语言, 频道, 题材, 标签 from the tags of published dramas, 素材类型, 平台 when there is more than one, 排序), each named by a label above it as MoboReels lays them out, then every ready clip of a published drama as a paged 素材广场 grid, with what each listed drama's dialog shows (details with its platform and promoter count, clips, the visitor's link and the drama page it opens)
 // @pos    -- /tasks, the task center's entry page
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -81,6 +81,9 @@ export default async function TasksPage({
   const audience = member<DramaAudience>(DRAMA_AUDIENCES, one(query.audience));
   const genreParam = one(query.genre);
   const genre = genreParam !== null && SLUG_PATTERN.test(genreParam) ? genreParam : null;
+  // Free text matched exactly against a drama's tags, so any value is safe;
+  // one no drama has just finds nothing.
+  const tag = one(query.tag);
   const clipType = member<ClipType>(CLIP_TYPES, one(query.type));
   const search = one(query.q);
   const sort: DramaSort = one(query.sort) === "promoters" ? "promoters" : "newest";
@@ -88,7 +91,7 @@ export default async function TasksPage({
 
   const db = getTaskDb();
   let result: Awaited<ReturnType<typeof listPublishedAssets>> | null = null;
-  let facets: Awaited<ReturnType<typeof listPublishedFacets>> = { platforms: [], languages: [], genres: [] };
+  let facets: Awaited<ReturnType<typeof listPublishedFacets>> = { platforms: [], languages: [], genres: [], tags: [] };
   if (db !== null) {
     try {
       [result, facets] = await Promise.all([
@@ -97,6 +100,7 @@ export default async function TasksPage({
           language,
           audience,
           genre,
+          tag,
           clipType,
           search,
           sort,
@@ -176,7 +180,10 @@ export default async function TasksPage({
     };
   }
 
-  const filtered = Boolean(platform || language || audience || genre || clipType || search);
+  const filtered = Boolean(platform || language || audience || genre || tag || clipType || search);
+  // A tag in the link that no published drama has any more stays a choice,
+  // so the select shows the filter that is on instead of 全部.
+  const tagOptions = tag !== null && !facets.tags.includes(tag) ? [tag, ...facets.tags] : facets.tags;
   const pages = result === null ? 1 : Math.max(1, Math.ceil(result.total / PAGE_SIZE));
   const queryString = (target: number) => {
     const next = new URLSearchParams();
@@ -185,6 +192,7 @@ export default async function TasksPage({
     if (language) next.set("language", language);
     if (audience) next.set("audience", audience);
     if (genre) next.set("genre", genre);
+    if (tag) next.set("tag", tag);
     if (clipType) next.set("type", clipType);
     if (sort !== "newest") next.set("sort", sort);
     if (target > 1) next.set("page", String(target));
@@ -251,6 +259,17 @@ export default async function TasksPage({
               ))}
             </select>
           </Field>
+          {/* Shown even with no tags yet, like 语言 and 题材: the row keeps one shape. */}
+          <Field label={copy.tagField}>
+            <select name="tag" defaultValue={tag ?? ""} className={FIELD}>
+              <option value="">{copy.allOption}</option>
+              {tagOptions.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </select>
+          </Field>
           <Field label={copy.clipTypeField}>
             <select name="type" defaultValue={clipType ?? ""} className={FIELD}>
               <option value="">{copy.allOption}</option>
@@ -281,7 +300,7 @@ export default async function TasksPage({
           </Field>
           <button
             type="submit"
-            className="h-10 w-full rounded-[10px] bg-primary px-6 text-[14px] font-medium text-primary-foreground hover:bg-primary/90 lg:w-auto lg:shrink-0"
+            className="col-span-2 h-10 w-full rounded-[10px] bg-primary px-6 text-[14px] font-medium text-primary-foreground hover:bg-primary/90 sm:col-span-1 lg:w-auto lg:shrink-0"
           >
             {copy.apply}
           </button>
