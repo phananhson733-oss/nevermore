@@ -23,7 +23,7 @@ interface Candidate {
   readonly language: string | null;
   readonly episodes: number | null;
   readonly payStart: number | null;
-  readonly finished: boolean;
+  readonly finished: boolean | null;
   readonly synopsis: string | null;
   readonly tags: readonly string[];
   readonly hasCover: boolean;
@@ -239,7 +239,7 @@ export function DramaQuickCreate({ adminBase }: { adminBase: string }) {
                     candidate.language === null ? null : languageName(candidate.language, "zh"),
                     candidate.episodes === null ? null : `${candidate.episodes} 集`,
                     candidate.payStart === null ? null : `第 ${candidate.payStart} 集起收费`,
-                    candidate.finished ? "已完结" : null,
+                    candidate.finished === true ? "已完结" : null,
                     candidate.hasCover ? "有封面" : "无封面",
                   ]
                     .filter((part) => part !== null)

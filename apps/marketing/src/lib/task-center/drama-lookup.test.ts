@@ -1,5 +1,5 @@
 // @input  -- drama-lookup.ts with a fake fetch in place of 选剧台 and the cover CDN
-// @output -- proof that the lookup client reads only well-formed answers (GoodShort's base64 ids included), maps errors, fits a 北斗 row to the dramas table with the theater's own page taking over field by field, and fetches only a sane cover
+// @output -- proof that the lookup client reads only well-formed answers (GoodShort's base64 ids and a 剧库 row's unknown 完结 included), maps errors, fits a 北斗 row to the dramas table with the theater's own page taking over field by field, and fetches only a sane cover
 // @pos    -- unit tests for the task center's side of pick-workbench's lookup contract; no network, no database
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -65,6 +65,14 @@ describe("lookupDramas", () => {
     const rows = [goodShort, slashed, { ...ROW, platformDramaId: "../etc" }, { ...ROW, platformDramaId: "a b" }];
     const result = await lookupDramas(CONFIG, { ...QUERY, platform: "goodshort" }, answer(200, { ok: true, dramas: rows }));
     expect(result).toEqual({ ok: true, dramas: [goodShort, slashed] });
+  });
+
+  it("keeps a 剧库 row, whose 完结 is unknown, and imports it as unknown", async () => {
+    // What 选剧台 answers from its own 剧库 (2026-11-09): no synopsis, cover, tags or 完结.
+    const fromCatalog = { ...ROW, finished: null, description: null, tags: [], coverUrl: null };
+    const result = await lookupDramas(CONFIG, QUERY, answer(200, { ok: true, source: "catalog", dramas: [fromCatalog] }));
+    expect(result).toEqual({ ok: true, dramas: [fromCatalog] });
+    expect(toImportedDrama(fromCatalog, QUERY)).toMatchObject({ finished: null, synopsis: null, tags: [] });
   });
 
   it("tells a query that will never work from one to retry", async () => {

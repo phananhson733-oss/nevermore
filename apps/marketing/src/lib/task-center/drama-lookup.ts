@@ -1,12 +1,15 @@
 // @input  -- PICK_LOOKUP_URL and PICK_LOOKUP_TOKEN; a platform, a title and maybe a language from the admin; what the theater's own page shows, when theater-details.ts could read it
-// @output -- the 北斗 dramas the 选剧台 lookup found (its signed cover URL kept server-side), one of them fitted to the dramas table with the theater's page taking over field by field, and a cover image fetched from a URL either gave
+// @output -- the dramas the 选剧台 lookup found in its own 剧库 or on 北斗 (北斗's signed cover URL kept server-side; 完结 unknown for a 剧库 row), one of them fitted to the dramas table with the theater's page taking over field by field, and a cover image fetched from a URL either gave
 // @pos    -- the only code that talks to pick-workbench's /api/pick/lookup/drama/ (contract: its deploy/lookup-api.md)
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 //
 // 选剧台 runs on the same machine; the URL is its web container on the drama
-// network, never a public address. Every lookup takes 北斗's shared account
-// lock there, so one can take tens of seconds; the same query is cached for
-// ten minutes on that side, which is what lets the import re-run it cheaply.
+// network, never a public address. For ReelShort, StardustTV, MoboReels and
+// NetShort it answers from its own 剧库 when the drama is there (a second or
+// two, no synopsis, cover, tags or 完结: the theater's page fills those). Any
+// other lookup takes 北斗's shared account lock there, so one can take tens of
+// seconds; the same 北斗 query is cached for ten minutes on that side, which
+// is what lets the import re-run it cheaply.
 
 import { z } from "zod";
 
@@ -35,7 +38,8 @@ const dramaSchema = z.object({
   listedOn: z.string().nullable(),
   episodeCount: z.number().int().nullable(),
   payStart: z.number().int().nullable(),
-  finished: z.boolean(),
+  /** null: 选剧台's 剧库 does not say. */
+  finished: z.boolean().nullable(),
   description: z.string().nullable(),
   tags: z.array(z.string()),
   coverUrl: z.string().nullable(),
