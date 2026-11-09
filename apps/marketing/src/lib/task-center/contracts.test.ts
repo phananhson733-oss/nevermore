@@ -46,6 +46,13 @@ describe("查剧", () => {
     const query = { platform: "reelshort", title: "x" };
     expect(dramaImportSchema.parse({ ...query, platformDramaId: "68a1-b2_c" }).platformDramaId).toBe("68a1-b2_c");
     expect(dramaImportSchema.safeParse({ ...query, platformDramaId: "../etc" }).success).toBe(false);
+    // GoodShort's ids in 北斗 are base64.
+    expect(dramaImportSchema.parse({ ...query, platformDramaId: "9i/dssELM0MvEetSwJbzYw==" }).platformDramaId).toBe(
+      "9i/dssELM0MvEetSwJbzYw==",
+    );
+    for (const bad of ["a=b", "==", "a/../b?", "x".repeat(65), "a+b".padEnd(64, "c") + "=="]) {
+      expect(dramaImportSchema.safeParse({ ...query, platformDramaId: bad }).success).toBe(false);
+    }
   });
 });
 

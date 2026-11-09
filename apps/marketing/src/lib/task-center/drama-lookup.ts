@@ -10,7 +10,7 @@
 
 import { z } from "zod";
 
-import { IMAGE_TYPES, LOOKUP_LANGUAGES, MAX_IMAGE_BYTES, MAX_TAGS } from "./contracts.ts";
+import { IMAGE_TYPES, LOOKUP_LANGUAGES, MAX_IMAGE_BYTES, MAX_TAGS, PLATFORM_DRAMA_ID } from "./contracts.ts";
 import type { ImportedDrama } from "./dramas-store.ts";
 import type { TheaterDetails } from "./theater-details.ts";
 
@@ -27,7 +27,7 @@ export function readLookupConfig(env: Readonly<Record<string, string | undefined
 }
 
 const dramaSchema = z.object({
-  platformDramaId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
+  platformDramaId: z.string().regex(PLATFORM_DRAMA_ID),
   title: z.string().min(1),
   titleCn: z.string().nullable(),
   exact: z.boolean(),
