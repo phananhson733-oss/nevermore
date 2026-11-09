@@ -7,6 +7,7 @@ import { completePayloadV2, questionSetV2, V2_CANDIDATE_ID, V2_KB_ID } from "../
 import { geoV2Digest } from "../../lib/geo-tools/kb-v2-digest.ts";
 import { buildGeoKnowledgePackV2 } from "../../lib/geo-tools/kb-knowledge-pack-v2-contract.ts";
 import { geoItemKey } from "../../lib/geo-tools/kb-item-key.ts";
+import { geoPartialLimitation } from "../../lib/geo-tools/kb-knowledge-limitation.ts";
 import { parseGeoKbEditorViewV2, parseGeoKbFrozenKnowledgeWire, parseGeoKbFrozenV2Wire, parseGeoKnowledgePackWire } from "./geo-kb-v2-wire.ts";
 
 const SNAPSHOT_ID = "33333333-3333-4333-8333-333333333333";
@@ -67,6 +68,25 @@ describe("customer knowledge frozen wire", () => {
   it("retains the pack through the complete editor DTO", () => {
     const { editor } = fixture();
     expect(parseGeoKbEditorViewV2(editor)?.frozen).toEqual(editor.frozen);
+  });
+
+  // The v2 frozen read (`kb-v2-runtime.ts`) runs this same parser on the
+  // server. Before the wire learned `limitationKeys`, every v1 pack published
+  // after 2026-09-10 with a partial module read as unavailable there, and the
+  // editor load that needs it answered 503.
+  it("keeps a published v1 pack whose partial module carries limitation keys, through the frozen read and the editor DTO", () => {
+    const { frozen, editor } = fixture();
+    const { contentHash: _hash, ...body } = frozen.knowledgePack;
+    const entity = body.entity;
+    if (entity.status === "unavailable") throw new Error("fixture requires entity");
+    const knowledgePack = buildGeoKnowledgePackV1({ ...body,
+      entity: { status: "partial", ...geoPartialLimitation([{ key: "entity_links_not_observed" }]), value: entity.value } });
+    expect(knowledgePack.entity).toMatchObject({ status: "partial", limitationKeys: [{ key: "entity_links_not_observed" }] });
+    const published = { ...frozen, knowledgePack };
+
+    expect(parseGeoKnowledgePackWire(knowledgePack)).toEqual(knowledgePack);
+    expect(parseGeoKbFrozenKnowledgeWire(published)).toEqual(published);
+    expect(parseGeoKbEditorViewV2({ ...editor, frozen: published })?.frozen).toEqual(published);
   });
 
   it("accepts server-valid astral text through both frozen and complete-editor wire boundaries", () => {

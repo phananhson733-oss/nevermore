@@ -1,6 +1,6 @@
 // @input -- private JSON wire data for complete v2 knowledge and generation UI
-// @output -- strict renderable DTOs, never cryptographic or ownership authority
-// @pos -- browser-safe boundary; no hashing, stores, provider calls or secret fields
+// @output -- strict renderable DTOs that accept every shape the server contracts store (v1 pack modules included), never cryptographic or ownership authority
+// @pos -- browser-safe boundary, also re-run server-side by the v2 editor load and frozen read; no hashing, stores, provider calls or secret fields
 import { z } from "zod";
 import type { AnyGeoPreparedCandidate, GeoPreparedCandidateV1, GeoPreparedCandidateV2 } from "../../lib/geo-tools/kb-prepared-contract.ts";
 import type { GeoRoleProposal } from "../../lib/geo-tools/kb-role-proposal.ts";
@@ -10,7 +10,7 @@ import type { GeoKnowledgePackV1 } from "../../lib/geo-tools/kb-knowledge-pack-c
 import type { GeoKnowledgePackV2 } from "../../lib/geo-tools/kb-knowledge-pack-v2-contract.ts";
 import {
   GEO_EVIDENCE_GROUPS, GEO_KNOWLEDGE_LIMITS, geoComparisonRowContentShape, geoCoverageItemShape, geoEntityValueShape,
-  geoEvidenceCheckSchema, geoEvidenceItemShape, geoFactContentShape, geoItemOriginSchema, geoList, geoMachineValueShape,
+  geoEvidenceCheckSchema, geoEvidenceItemShape, geoFactContentShape, geoItemOriginSchema, geoLimitationKeysSchema, geoList, geoMachineValueShape,
   geoModuleSchema, geoQaContentShape, geoRefList, geoShortText, geoSourceCatalogueItemSchema, geoSourceCompetitorSchema,
   geoStatementContentShape, geoTimestamp, geoUnique, refineGeoComparisonRow, refineGeoMachine,
 } from "../../lib/geo-tools/kb-knowledge-shape.ts";
@@ -85,9 +85,22 @@ const sourceCatalogueSchema = z.array(knowledgeSourceSchema).min(1).max(32).refi
 const knowledgeSynthesisInputSchema = z.object({ schemaVersion: z.literal("marketing-geo-knowledge-synthesis-input.v1"), officialName: text(200), aliases: z.array(text(200)).max(12), categoryTerms: z.array(text(200)).max(12), market: text(32), language: text(32), targetUrl: publicUrl,
   confirmedCompetitors: z.array(competitorIdentitySchema).max(5), evidenceContentHash: hash, sourceCatalogueHash: hash, sourceCatalogue: sourceCatalogueSchema, contentHash: hash }).strict();
 const unavailableModule = z.object({ status: z.literal("unavailable"), reason: z.enum(knowledgeReasons) }).strict();
+/**
+ * The v1 pack's module tri-state. It has to accept everything `moduleSchema` in
+ * `kb-knowledge-pack-contract.ts` accepts, because this copy is strict and the
+ * server runs it too: the v2 editor load re-parses its own view through
+ * `parseGeoKbEditorViewV2`, and the v2 frozen read goes through
+ * `parseGeoKbFrozenKnowledgeWire`. A key the server writes and this copy lacks
+ * is a 503 for every owner whose pack carries it, not a rendering detail.
+ *
+ * `limitationKeys` is that case. The server contract gained it on 2026-09-10
+ * (#346) and the producers started writing it the same day (#347); this copy
+ * was missed, so from then on any prepared or published v2 pack with a
+ * `partial` module failed to load.
+ */
 const knowledgeModule = <T extends z.ZodTypeAny>(value: T) => z.union([
   z.object({ status: z.literal("available"), value }).strict(),
-  z.object({ status: z.literal("partial"), limitation: text(2_400), value }).strict(),
+  z.object({ status: z.literal("partial"), limitation: text(2_400), limitationKeys: geoLimitationKeysSchema.optional(), value }).strict(),
   unavailableModule,
 ]);
 const sourceIds = z.array(text(128)).min(1).max(16).refine(values => new Set(values).size === values.length);
