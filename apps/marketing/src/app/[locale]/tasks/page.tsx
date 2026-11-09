@@ -1,5 +1,5 @@
-// @input  -- locale param; q, platform, language, audience, genre, tag, type, sort and page query; the task database; the session; R2 for stills and covers
-// @output -- the promoter tabs, the filters (search, 语言, 频道, 题材, 标签 from the tags of published dramas, 素材类型, 平台 when there is more than one, 排序), each named by a label above it as MoboReels lays them out, then every ready clip of a published drama as a paged 素材广场 grid, with what each listed drama's dialog shows (details with its platform and promoter count, clips, the visitor's link and the drama page it opens)
+// @input  -- locale param; q, language, genre, tag and page query (no others: a filter the bar does not show is not applied); the task database; the session; R2 for stills and covers
+// @output -- the promoter tabs, the four filters MoboReels' bar has (search, 语言, 题材, 标签 from the tags of published dramas), each named by a label above it, then every ready clip of a published drama, newest first, as a paged 素材广场 grid, with what each listed drama's dialog shows (details with its platform and promoter count, clips, the visitor's link and the drama page it opens)
 // @pos    -- /tasks, the task center's entry page
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -12,21 +12,13 @@ import { TaskTabs } from "@/components/task-center/task-tabs";
 import { siteConfig } from "@/config/site";
 import { getServerAuthenticatedUser } from "@/lib/auth/server-auth-user";
 import { listMyClaims } from "@/lib/task-center/claims-store";
-import {
-  CLIP_TYPES,
-  DRAMA_AUDIENCES,
-  PAGE_SIZE,
-  SLUG_PATTERN,
-  type ClipType,
-  type DramaAudience,
-} from "@/lib/task-center/contracts";
-import { formatBytes, genreLabel, languageName, platformLabel, promoLink, taskCopy } from "@/lib/task-center/copy";
+import { PAGE_SIZE, SLUG_PATTERN } from "@/lib/task-center/contracts";
+import { formatBytes, genreLabel, languageName, promoLink, taskCopy } from "@/lib/task-center/copy";
 import { getTaskDb } from "@/lib/task-center/db";
 import {
   listPlazaDramaDetails,
   listPublishedAssets,
   listPublishedFacets,
-  type DramaSort,
   type PlazaDramaDetail,
 } from "@/lib/task-center/dramas-store";
 import { coverImageUrl, readR2Config } from "@/lib/task-center/r2";
@@ -62,10 +54,6 @@ function one(value: string | string[] | undefined): string | null {
   return trimmed ? trimmed.slice(0, 100) : null;
 }
 
-function member<T extends string>(list: readonly T[], value: string | null): T | null {
-  return value !== null && (list as readonly string[]).includes(value) ? (value as T) : null;
-}
-
 export default async function TasksPage({
   params,
   searchParams,
@@ -76,17 +64,15 @@ export default async function TasksPage({
   const { locale } = await params;
   const query = await searchParams;
   const copy = taskCopy(locale);
-  const platform = one(query.platform);
+  // Only what the bar shows. An old link's platform, audience, type or sort is
+  // dropped rather than applied where nobody could see or clear it.
   const language = one(query.language);
-  const audience = member<DramaAudience>(DRAMA_AUDIENCES, one(query.audience));
   const genreParam = one(query.genre);
   const genre = genreParam !== null && SLUG_PATTERN.test(genreParam) ? genreParam : null;
   // Free text matched exactly against a drama's tags, so any value is safe;
   // one no drama has just finds nothing.
   const tag = one(query.tag);
-  const clipType = member<ClipType>(CLIP_TYPES, one(query.type));
   const search = one(query.q);
-  const sort: DramaSort = one(query.sort) === "promoters" ? "promoters" : "newest";
   const page = Math.max(1, Math.min(1000, Number.parseInt(one(query.page) ?? "1", 10) || 1));
 
   const db = getTaskDb();
@@ -96,14 +82,11 @@ export default async function TasksPage({
     try {
       [result, facets] = await Promise.all([
         listPublishedAssets(db, {
-          platform,
           language,
-          audience,
           genre,
           tag,
-          clipType,
           search,
-          sort,
+          sort: "newest",
           page,
           pageSize: PAGE_SIZE,
         }),
@@ -180,7 +163,7 @@ export default async function TasksPage({
     };
   }
 
-  const filtered = Boolean(platform || language || audience || genre || tag || clipType || search);
+  const filtered = Boolean(language || genre || tag || search);
   // A tag in the link that no published drama has any more stays a choice,
   // so the select shows the filter that is on instead of 全部.
   const tagOptions = tag !== null && !facets.tags.includes(tag) ? [tag, ...facets.tags] : facets.tags;
@@ -188,13 +171,9 @@ export default async function TasksPage({
   const queryString = (target: number) => {
     const next = new URLSearchParams();
     if (search) next.set("q", search);
-    if (platform) next.set("platform", platform);
     if (language) next.set("language", language);
-    if (audience) next.set("audience", audience);
     if (genre) next.set("genre", genre);
     if (tag) next.set("tag", tag);
-    if (clipType) next.set("type", clipType);
-    if (sort !== "newest") next.set("sort", sort);
     if (target > 1) next.set("page", String(target));
     const qs = next.toString();
     return qs ? `?${qs}` : "";
@@ -211,15 +190,15 @@ export default async function TasksPage({
           {copy.tasksSubtitle}
         </p>
 
-        {/* Every filter under its own label, as MoboReels lays its filters out,
-            so a select can say just 全部. One row from lg up; a two- or
-            three-column grid below it. */}
+        {/* MoboReels' four filters, each under its own label so a select can
+            say just 全部: one row of equal fields from md up; on a phone the
+            search on its own row, then two to a row with the button last. */}
         <form
           method="get"
           action={here}
-          className="mt-8 grid grid-cols-2 items-end gap-x-3 gap-y-4 sm:grid-cols-3 lg:flex"
+          className="mt-8 grid grid-cols-2 items-end gap-x-3 gap-y-4 md:flex"
         >
-          <Field label={copy.searchLabel} className="col-span-2 sm:col-span-3 lg:flex-[2]">
+          <Field label={copy.searchLabel} className="col-span-2">
             <input
               type="search"
               name="q"
@@ -239,16 +218,6 @@ export default async function TasksPage({
               ))}
             </select>
           </Field>
-          <Field label={copy.audienceLabel}>
-            <select name="audience" defaultValue={audience ?? ""} className={FIELD}>
-              <option value="">{copy.allOption}</option>
-              {DRAMA_AUDIENCES.map((value) => (
-                <option key={value} value={value}>
-                  {copy.audience[value]}
-                </option>
-              ))}
-            </select>
-          </Field>
           <Field label={copy.genreField}>
             <select name="genre" defaultValue={genre ?? ""} className={FIELD}>
               <option value="">{copy.allOption}</option>
@@ -259,7 +228,7 @@ export default async function TasksPage({
               ))}
             </select>
           </Field>
-          {/* Shown even with no tags yet, like 语言 and 题材: the row keeps one shape. */}
+          {/* Shown even with no tags yet, like 语言 and 题材: the bar keeps one shape. */}
           <Field label={copy.tagField}>
             <select name="tag" defaultValue={tag ?? ""} className={FIELD}>
               <option value="">{copy.allOption}</option>
@@ -270,37 +239,9 @@ export default async function TasksPage({
               ))}
             </select>
           </Field>
-          <Field label={copy.clipTypeField}>
-            <select name="type" defaultValue={clipType ?? ""} className={FIELD}>
-              <option value="">{copy.allOption}</option>
-              {CLIP_TYPES.map((value) => (
-                <option key={value} value={value}>
-                  {copy.clipType[value]}
-                </option>
-              ))}
-            </select>
-          </Field>
-          {facets.platforms.length > 1 && (
-            <Field label={copy.platform}>
-              <select name="platform" defaultValue={platform ?? ""} className={FIELD}>
-                <option value="">{copy.allOption}</option>
-                {facets.platforms.map((value) => (
-                  <option key={value} value={value}>
-                    {platformLabel(value)}
-                  </option>
-                ))}
-              </select>
-            </Field>
-          )}
-          <Field label={copy.sortField}>
-            <select name="sort" defaultValue={sort} className={FIELD}>
-              <option value="newest">{copy.sortNewest}</option>
-              <option value="promoters">{copy.sortPromoters}</option>
-            </select>
-          </Field>
           <button
             type="submit"
-            className="col-span-2 h-10 w-full rounded-[10px] bg-primary px-6 text-[14px] font-medium text-primary-foreground hover:bg-primary/90 sm:col-span-1 lg:w-auto lg:shrink-0"
+            className="h-10 w-full rounded-[10px] bg-primary px-6 text-[14px] font-medium text-primary-foreground hover:bg-primary/90 md:w-auto md:shrink-0"
           >
             {copy.apply}
           </button>
@@ -346,7 +287,7 @@ export default async function TasksPage({
 /** One filter: its name above the control, the label wrapping it so the name is the control's name too. */
 function Field({ label, className = "", children }: { label: string; className?: string | undefined; children: ReactNode }) {
   return (
-    <label className={`flex min-w-0 flex-col gap-1.5 lg:flex-1 ${className}`}>
+    <label className={`flex min-w-0 flex-col gap-1.5 md:flex-1 ${className}`}>
       <span className="text-[13px] font-medium text-text-dark-secondary">{label}</span>
       {children}
     </label>
