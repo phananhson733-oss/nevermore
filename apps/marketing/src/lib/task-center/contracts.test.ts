@@ -1,5 +1,5 @@
 // @input  -- the zod inputs in contracts.ts
-// @output -- proof that 题材 refuses audience words, that 查剧 takes only platforms and languages 选剧台 knows, and that a clip update needs a field and leaves the other alone
+// @output -- proof that 题材 refuses audience words, that the platform link is optional and only a full https URL is taken, that 查剧 takes only platforms and languages 选剧台 knows, and that a clip update needs a field and leaves the other alone
 // @pos    -- unit tests for the admin request contract; no database
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -61,6 +61,22 @@ describe("dramaInputSchema tags", () => {
     expect(dramaInputSchema.parse(drama).tags).toBeUndefined();
     expect(dramaInputSchema.parse({ ...drama, tags: [" CEO "] }).tags).toEqual(["CEO"]);
     expect(dramaInputSchema.safeParse({ ...drama, tags: Array.from({ length: 21 }, (_, n) => `t${n}`) }).success).toBe(false);
+  });
+});
+
+describe("dramaInputSchema promoTargetUrl", () => {
+  it("is optional, clears when empty, and takes only https", () => {
+    expect(dramaInputSchema.parse(drama).promoTargetUrl).toBeNull();
+    expect(dramaInputSchema.parse({ ...drama, promoTargetUrl: " " }).promoTargetUrl).toBeNull();
+    expect(dramaInputSchema.parse({ ...drama, promoTargetUrl: " https://reelslink.com/cps/4REYqy " }).promoTargetUrl).toBe(
+      "https://reelslink.com/cps/4REYqy",
+    );
+    expect(dramaInputSchema.safeParse({ ...drama, promoTargetUrl: "http://reelslink.com/cps/4REYqy" }).success).toBe(false);
+    expect(dramaInputSchema.safeParse({ ...drama, promoTargetUrl: "reelslink.com/cps/4REYqy" }).success).toBe(false);
+    // URL parses these, but the database CHECK wants a literal lowercase "https://".
+    for (const url of ["HTTPS://reelslink.com/cps/4REYqy", "https:reelslink.com/cps", "https:\\\\reelslink.com/cps"]) {
+      expect(dramaInputSchema.safeParse({ ...drama, promoTargetUrl: url }).success).toBe(false);
+    }
   });
 });
 

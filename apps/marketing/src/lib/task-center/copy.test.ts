@@ -1,11 +1,11 @@
 // @input  -- integer minor-unit amounts and counts as the database sums them, in decimal strings
-// @output -- proof that the earnings page shows them exactly, past the range a float holds
+// @output -- proof that the earnings page shows them exactly, past the range a float holds, and that a drama's free-episode line follows its first paid episode
 // @pos    -- unit test for copy.ts formatting
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import { describe, expect, it } from "vitest";
 
-import { formatCount, formatMoney } from "./copy.ts";
+import { episodeLine, formatCount, formatMoney, taskCopy } from "./copy.ts";
 
 describe("formatMoney", () => {
   it("places the decimal point on the string, so no cent is rounded", () => {
@@ -33,5 +33,23 @@ describe("formatCount", () => {
     expect(formatCount("18014398509481982", "en")).toBe("18,014,398,509,481,982");
     expect(formatCount(12, "zh")).toBe("12");
     expect(formatCount(null, "zh")).toBe("—");
+  });
+});
+
+describe("episodeLine", () => {
+  const zh = taskCopy("zh");
+  const en = taskCopy("en");
+
+  it("counts the free episodes before the first paid one", () => {
+    expect(episodeLine(60, 10, zh)).toBe("共 60 集 · 前 9 集免费");
+    expect(episodeLine(60, 10, en)).toBe("60 episodes · first 9 free");
+    expect(episodeLine(60, 1, zh)).toBe("共 60 集 · 第 1 集起付费");
+    expect(episodeLine(60, 61, zh)).toBe("共 60 集 · 全部免费");
+  });
+
+  it("leaves out what nobody knows", () => {
+    expect(episodeLine(60, null, zh)).toBe("共 60 集");
+    expect(episodeLine(null, 10, zh)).toBe("前 9 集免费");
+    expect(episodeLine(null, null, zh)).toBeNull();
   });
 });

@@ -1,12 +1,12 @@
 // @input  -- locale param; the verified session; this person's claims with click counts and their submitted accounts
-// @output -- every promo link they hold (drama, link and code with copy buttons, clicks, date) and the account whitelisting panel
+// @output -- every drama they took a link for, with its 短剧推广链接 (which opens the drama's page on our site) and a copy button, its clicks and date; and the account whitelisting panel at #accounts
 // @pos    -- /promotions (我的推广), private to the signed-in promoter and kept out of search
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import Link from "next/link";
 
 import { AccountsPanel } from "@/components/task-center/accounts-panel";
-import { CopyRow } from "@/components/task-center/copy-row";
+import { LinkBlock } from "@/components/task-center/link-block";
 import { TaskTabs } from "@/components/task-center/task-tabs";
 import { siteConfig } from "@/config/site";
 import { getServerAuthenticatedUser } from "@/lib/auth/server-auth-user";
@@ -68,7 +68,7 @@ export default async function PromotionsPage({ params }: { params: Promise<{ loc
       ) : (
         <div className="space-y-12">
           <Links locale={locale} claims={data.claims} />
-          <div>
+          <div id="accounts" className="scroll-mt-24">
             <h2 className={H2}>{copy.accountsTitle}</h2>
             <p className="mt-2 max-w-2xl text-[14px] leading-[1.6] text-text-dark-secondary">{copy.accountsBody}</p>
             <div className="mt-5">
@@ -121,9 +121,14 @@ function Links({ locale, claims }: { locale: string; claims: readonly ClaimWithS
                   {copy.claimedOn} {formatDay(claim.claimedAt, locale)}
                 </p>
               </div>
-              <div className="mt-3 space-y-2 rounded-[10px] bg-brand-bg p-3 text-[13.5px]">
-                <CopyRow label={copy.yourLink} value={promoLink(siteConfig.url, claim.code)} locale={locale} />
-                <CopyRow label={copy.code} value={claim.code} locale={locale} />
+              <div className="mt-3 max-w-2xl">
+                <LinkBlock
+                  title={copy.dramaLink}
+                  body={copy.dramaLinkBody}
+                  value={promoLink(siteConfig.url, claim.code)}
+                  locale={locale}
+                  level={3}
+                />
               </div>
             </li>
           ))}

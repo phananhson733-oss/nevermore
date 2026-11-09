@@ -282,10 +282,17 @@ export function isVideoType(contentType: string): boolean {
   return contentType.startsWith("video/");
 }
 
+/**
+ * A link the database will take as written: the CHECKs on dramas want a
+ * literal lowercase "https://" and no whitespace, while URL also parses
+ * "HTTPS://x" and "https:x". Either form would pass here and then fail the
+ * insert as a 503, so the raw string must match too.
+ */
 export function isHttpsUrl(value: string): boolean {
+  if (!/^https:\/\/\S+$/.test(value)) return false;
   try {
     const url = new URL(value);
-    return url.protocol === "https:" && url.hostname !== "" && !/\s/.test(value);
+    return url.protocol === "https:" && url.hostname !== "";
   } catch {
     return false;
   }

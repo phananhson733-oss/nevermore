@@ -1,5 +1,5 @@
 // @input  -- a disposable Postgres rebuilt by db/tasks/migrate.sh
-// @output -- proof that the task center's SQL does what the stores promise: the clip grid and its 本周爆款 rule, imports from 查剧 (频道 and genre from the theater's page, one drama whichever 北斗 id found it, 完结 left unknown for a 剧库 row, GoodShort's base64 ids) and tags, promoter accounts included
+// @output -- proof that the task center's SQL does what the stores promise: the clip grid and its 本周爆款 rule, each listed drama's dialog details, imports from 查剧 (频道 and genre from the theater's page, one drama whichever 北斗 id found it, 完结 left unknown for a 剧库 row, GoodShort's base64 ids) and tags, publishing without a platform link, the reader's drama page (trailer pick, taken-down dramas kept, drafts not), promo clicks that open it, and 去看全集 carrying only a code claimed for that drama, promoter accounts included
 // @pos    -- the only test that executes task center SQL
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -13,6 +13,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   claimTask,
   followPromoCode,
+  getPlatformLink,
   listClaimsForDrama,
   listMyClaims,
   promoRedirectUrl,
@@ -31,10 +32,12 @@ import {
   createPendingAsset,
   deleteAsset,
   getDramaForAdmin,
+  getLandingDrama,
   getPublicAsset,
   getPublishedDrama,
   importDrama,
   listedBySource,
+  listPlazaDramaDetails,
   listPublishedAssets,
   listPublishedFacets,
   markAssetReady,
@@ -176,18 +179,94 @@ describe("dramas", () => {
     expect(await getPublishedDrama(db, id)).toBeNull();
   });
 
-  it("will not publish a drama with nowhere to send visitors", async () => {
+  it("publishes a drama without a platform link, and still takes only https for one", async () => {
     const id = await createDrama(db, drama({ promoTargetUrl: null }), ADMIN);
-    expect(await setDramaStatus(db, id, "published")).toEqual({
-      ok: false,
-      code: "published_needs_target",
-    });
-    await setDramaStatus(db, (await publishedDrama()), "published");
+    expect(await setDramaStatus(db, id, "published")).toEqual({ ok: true });
     const live = await publishedDrama({ title: "Live" });
-    expect(await updateDrama(db, live, drama({ promoTargetUrl: null }))).toEqual({
-      ok: false,
-      code: "published_needs_target",
+    expect(await updateDrama(db, live, drama({ promoTargetUrl: null }))).toEqual({ ok: true });
+    expect((await getPublishedDrama(db, live))?.drama.promoTargetUrl).toBeNull();
+    await expect(
+      db.query("update task_center.dramas set promo_target_url = 'http://example.com/d/1' where id = $1", [live]),
+    ).rejects.toMatchObject({ constraint: "dramas_promo_target_url_check" });
+  });
+
+  it("gives a listed drama's reader page: a trailer-tagged video first, else the first video, never the platform URL", async () => {
+    const live = await publishedDrama({ synopsis: "A long-lost heiress.", tags: ["CEO"] });
+    await readyClip(live, { clipType: "highlight" });
+    const trailer = await readyClip(live, { clipType: "trailer" });
+    const still = `dramas/${live}/posters/${trailer}.jpg`;
+    await markAssetReady(db, trailer, still);
+    await readyClip(live, { clipType: "trailer", contentType: "image/png" });
+    const page = await getLandingDrama(db, live);
+    expect(page).toEqual({
+      id: live,
+      title: "The Heiress Returns",
+      titleCn: "千金归来",
+      platform: "reelshort",
+      language: "en",
+      episodes: 80,
+      genre: null,
+      tags: ["CEO"],
+      synopsis: "A long-lost heiress.",
+      coverKey: null,
+      hasPlatformLink: true,
+      trailer: { objectKey: `dramas/${live}/assets/${trailer}.mp4`, posterKey: still },
     });
+    expect(JSON.stringify(page)).not.toContain("example.com");
+
+    const plain = await publishedDrama({ title: "Plain", promoTargetUrl: null });
+    await readyClip(plain, { contentType: "image/png" });
+    const first = await readyClip(plain);
+    // Tagged, but not as a trailer: no better than an untagged clip.
+    await readyClip(plain, { clipType: "highlight" });
+    await readyClip(plain);
+    expect(await getLandingDrama(db, plain)).toMatchObject({
+      hasPlatformLink: false,
+      trailer: { objectKey: `dramas/${plain}/assets/${first}.mp4`, posterKey: null },
+    });
+    const bare = await publishedDrama({ title: "Bare" });
+    expect(await getLandingDrama(db, bare)).toMatchObject({ trailer: null, tags: [] });
+
+    // Taken down, its posted links still open the page; never listed, there is none.
+    await setDramaStatus(db, live, "archived");
+    expect(await getLandingDrama(db, live)).toMatchObject({ id: live });
+    const draft = await createDrama(db, drama({ title: "Draft" }), ADMIN);
+    await readyClip(draft);
+    expect(await getLandingDrama(db, draft)).toBeNull();
+    expect(await getLandingDrama(db, "00000000-0000-4000-8000-000000000000")).toBeNull();
+  });
+
+  it("gives each listed drama's synopsis and ready clips in order, and nothing for a draft", async () => {
+    const live = await publishedDrama({ synopsis: "A long-lost heiress." });
+    const plain = await publishedDrama({ title: "Plain" });
+    const draft = await createDrama(db, drama({ title: "Draft" }), ADMIN);
+    await readyClip(draft);
+    const first = await readyClip(live, { title: "One" });
+    const second = await readyClip(live, { title: "Two" });
+    // Still uploading: not a clip anyone can download yet.
+    assetSeq += 1;
+    const pending = `cccccccc-cccc-4ccc-8ccc-${String(assetSeq).padStart(12, "0")}`;
+    await createPendingAsset(db, {
+      id: pending,
+      dramaId: live,
+      title: "Pending",
+      objectKey: `dramas/${live}/assets/${pending}.mp4`,
+      contentType: "video/mp4",
+      byteSize: 1_000,
+      clipType: null,
+      createdBy: ADMIN,
+    });
+    const details = await listPlazaDramaDetails(db, [live, plain, live, draft]);
+    expect(Object.keys(details).sort()).toEqual([live, plain].sort());
+    expect(details[live]).toMatchObject({
+      synopsis: "A long-lost heiress.",
+      clips: [
+        { id: first, title: "One" },
+        { id: second, title: "Two" },
+      ],
+    });
+    expect(details[plain]).toEqual({ synopsis: null, clips: [] });
+    expect(await listPlazaDramaDetails(db, [])).toEqual({});
   });
 
   it("keeps the first listing time when a drama is republished", async () => {
@@ -544,27 +623,59 @@ describe("claims and promo links", () => {
     expect(next.ok && next.claim.code).toBe("bbbb3333");
   });
 
-  it("counts each followed link and forwards with the code when the platform takes one", async () => {
+  it("counts each followed code and opens its drama's page, even once the drama is taken down", async () => {
     const id = await publishedDrama({ promoCodeParam: "sub_id" });
     const claim = await claimTask(db, { userId: USER_A, dramaId: id, channel: "facebook" });
     if (!claim.ok) throw new Error("claim failed");
     const code = claim.claim.code;
 
-    const target = await followPromoCode(db, code);
+    expect(await followPromoCode(db, code)).toEqual({ dramaId: id });
     await followPromoCode(db, code);
-    expect(target).toEqual({ targetUrl: "https://example.com/d/1?src=gg", codeParam: "sub_id" });
-    expect(promoRedirectUrl(target!, code)).toBe(`https://example.com/d/1?src=gg&sub_id=${code}`);
+    expect(await followPromoCode(db, "zzzz9999")).toBeNull();
+
+    // Taken down and its platform link cleared: a posted link still opens the page.
+    await setDramaStatus(db, id, "archived");
+    await updateDrama(db, id, drama({ promoTargetUrl: null }));
+    expect(await followPromoCode(db, code)).toEqual({ dramaId: id });
+
+    const mine = await listMyClaims(db, USER_A);
+    expect(mine).toMatchObject([{ code, clicks: 3, dramaTitle: "The Heiress Returns", channel: "facebook" }]);
+  });
+
+  it("sends 去看全集 to the platform link, with the code only when it was claimed for that drama", async () => {
+    const id = await publishedDrama({ promoCodeParam: "sub_id" });
+    const other = await publishedDrama({ title: "Other" });
+    const claim = await claimTask(db, { userId: USER_A, dramaId: id, channel: "all" });
+    const elsewhere = await claimTask(db, { userId: USER_B, dramaId: other, channel: "all" });
+    if (!claim.ok || !elsewhere.ok) throw new Error("claim failed");
+    const code = claim.claim.code;
+
+    const link = await getPlatformLink(db, id, code);
+    expect(link).toEqual({ target: { targetUrl: "https://example.com/d/1?src=gg", codeParam: "sub_id" }, code });
+    expect(promoRedirectUrl(link!.target, link!.code)).toBe(`https://example.com/d/1?src=gg&sub_id=${code}`);
+    // A code claimed for another drama, an unknown one, or none: the link, no code.
+    expect(await getPlatformLink(db, id, elsewhere.claim.code)).toMatchObject({ code: null });
+    expect(await getPlatformLink(db, id, "zzzz9999")).toMatchObject({ code: null });
+    expect(await getPlatformLink(db, id, null)).toMatchObject({ code: null });
+    expect(promoRedirectUrl(link!.target, null)).toBe("https://example.com/d/1?src=gg");
+    // A sub-channel value pasted into the stored link is replaced, or dropped without a code.
+    const pasted = { targetUrl: "https://example.com/d/1?src=gg&sub_id=stale1&sub_id=stale2", codeParam: "sub_id" };
+    expect(promoRedirectUrl(pasted, code)).toBe(`https://example.com/d/1?src=gg&sub_id=${code}`);
+    expect(promoRedirectUrl(pasted, null)).toBe("https://example.com/d/1?src=gg");
     // A Location header must be ASCII, with or without a code parameter.
     expect(promoRedirectUrl({ targetUrl: "https://example.com/剧/1", codeParam: null }, code)).toBe(
       "https://example.com/%E5%89%A7/1",
     );
-    expect(await followPromoCode(db, "zzzz9999")).toBeNull();
+    // The hop to the platform records no promo click: /t/<code> already did.
+    expect((await listMyClaims(db, USER_A))[0]?.clicks).toBe(0);
 
+    // Taken down, the button still goes; without a platform link, or never listed, it has nowhere to go.
     await setDramaStatus(db, id, "archived");
-    expect(await followPromoCode(db, code)).not.toBeNull();
-
-    const mine = await listMyClaims(db, USER_A);
-    expect(mine).toMatchObject([{ code, clicks: 3, dramaTitle: "The Heiress Returns", channel: "facebook" }]);
+    expect(await getPlatformLink(db, id, code)).toMatchObject({ code });
+    await updateDrama(db, id, drama({ promoTargetUrl: null }));
+    expect(await getPlatformLink(db, id, code)).toBeNull();
+    const draft = await createDrama(db, drama({ title: "Draft" }), ADMIN);
+    expect(await getPlatformLink(db, draft, null)).toBeNull();
   });
 });
 

@@ -1,5 +1,5 @@
 // @input  -- PUT a drama's full set of fields from /admin/tasks/<id>, by an admin
-// @output -- 200 when saved; 409 when a published drama would lose its promo target
+// @output -- 200 when saved (the platform link is optional, published or not); 404 for an unknown drama
 // @pos    -- admin edit endpoint for task_center.dramas
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -27,9 +27,7 @@ export async function PUT(
   try {
     const result = await updateDrama(mutation.value.db, dramaId, parsed.data);
     if (result.ok) return privateJson({ data: { id: dramaId } });
-    return result.code === "not_found"
-      ? privateError("not_found", 404)
-      : privateError(result.code, 409);
+    return privateError(result.code, 404);
   } catch (error) {
     console.error("[admin tasks] update failed", error);
     return privateError("tasks_unavailable", 503);
