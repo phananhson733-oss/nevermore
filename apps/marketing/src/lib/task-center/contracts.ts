@@ -1,5 +1,5 @@
 // @input  -- zod
-// @output -- claim channels, account platforms and statuses, drama audiences, clip types, suggested genres, the 选剧台 lookup's platforms and languages, upload limits, and the parsers admin and promoter requests go through
+// @output -- claim channels, account platforms and statuses, drama audiences, clip types, suggested genres, the 选剧台 lookup's platforms and languages (and which platforms 查剧 also reads from their own site), upload limits, and the parsers admin and promoter requests go through
 // @pos    -- the task center's request contract; the SQL checks in db/tasks repeat these limits
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -60,6 +60,9 @@ export const LOOKUP_PLATFORMS = [
   "netshort", "goodshort", "flareflow", "stardusttv", "yourchannel",
 ] as const;
 export type LookupPlatform = (typeof LOOKUP_PLATFORMS)[number];
+
+/** The lookup platforms 查剧 also reads from their own site (theater-details.ts); the others keep 北斗's details. */
+export const THEATER_PLATFORMS: ReadonlySet<string> = new Set<LookupPlatform>(["reelshort"]);
 
 /** 北斗's languages, as the lookup names them. */
 export const LOOKUP_LANGUAGES = [

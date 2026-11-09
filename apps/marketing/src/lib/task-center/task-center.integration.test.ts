@@ -1,5 +1,5 @@
 // @input  -- a disposable Postgres rebuilt by db/tasks/migrate.sh
-// @output -- proof that the task center's SQL does what the stores promise: the clip grid and its 本周爆款 rule, imports from 查剧 and tags, promoter accounts included
+// @output -- proof that the task center's SQL does what the stores promise: the clip grid and its 本周爆款 rule, imports from 查剧 (频道 and genre from the theater's page, one drama whichever 北斗 id found it) and tags, promoter accounts included
 // @pos    -- the only test that executes task center SQL
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -25,6 +25,7 @@ import {
   withdrawAccount,
 } from "./accounts-store.ts";
 import { MAX_ACCOUNTS_PER_USER, type ClipType, type DramaInput } from "./contracts.ts";
+import { toImportedDrama, type LookupDrama } from "./drama-lookup.ts";
 import {
   createDrama,
   createPendingAsset,
@@ -43,6 +44,7 @@ import {
   updateDrama,
 } from "./dramas-store.ts";
 import { getMyEarnings, importEarnings, listEarningImports } from "./earnings-store.ts";
+import type { TheaterDetails } from "./theater-details.ts";
 import {
   connectFreshTaskSchema,
   migrateScript,
@@ -296,9 +298,11 @@ describe("imports from 查剧", () => {
     payStart: 8,
     synopsis: "He came back.",
     tags: ["Revenge", "Sports"],
+    audience: "male",
+    genre: "sports",
     finished: true,
     sourceDramaId: "68a1b2c3d4",
-  };
+  } as const;
 
   it("lists a platform drama once: a second import gets the first one's id", async () => {
     const first = await importDrama(db, beidou, ADMIN);
@@ -316,6 +320,8 @@ describe("imports from 查剧", () => {
       source: "beidou",
       sourceDramaId: "68a1b2c3d4",
       tags: ["Revenge", "Sports"],
+      audience: "male",
+      genre: "sports",
       finished: true,
       episodes: 70,
       payStart: 8,
@@ -324,6 +330,52 @@ describe("imports from 查剧", () => {
     expect(await listedBySource(db, "dramabox", ["68a1b2c3d4"])).toEqual(new Map());
     // The same platform id on another platform is another drama.
     expect((await importDrama(db, { ...beidou, platform: "dramabox" }, ADMIN)).ok).toBe(true);
+  });
+
+  it("lists a ReelShort drama once whichever of 北斗's ids found it", async () => {
+    // 2026-11-08: 北斗 had two ids for this drama; ReelShort's page for either is the same drama.
+    const row = (platformDramaId: string): LookupDrama => ({
+      platformDramaId,
+      title: "Lazos rotos de los hermanos fae",
+      titleCn: null,
+      exact: true,
+      language: "es",
+      listedOn: null,
+      episodeCount: 54,
+      payStart: 10,
+      finished: true,
+      description: null,
+      tags: [],
+      coverUrl: null,
+    });
+    const page: TheaterDetails = {
+      platform: "reelshort",
+      dramaId: "6ad88d9e996727b60c007958",
+      title: "Lazos rotos de los hermanos fae",
+      language: "es",
+      episodes: 54,
+      paid: true,
+      payStart: 10,
+      synopsis: "Traicionada por los príncipes fae.",
+      tags: ["Inmortal", "Romance"],
+      audience: "female",
+      genre: "romance",
+      coverUrl: null,
+    };
+    const query = { platform: "reelshort", language: null };
+    const first = await importDrama(db, toImportedDrama(row("6ad88d9e996727b60c007958"), query, page)!, ADMIN);
+    expect(first.ok).toBe(true);
+    expect(await importDrama(db, toImportedDrama(row("6ad192a1f3d20df996045012"), query, page)!, ADMIN)).toEqual({
+      ok: false,
+      code: "already_listed",
+      id: first.id,
+    });
+    expect((await getDramaForAdmin(db, first.id))?.drama).toMatchObject({
+      sourceDramaId: "6ad88d9e996727b60c007958",
+      tags: ["Inmortal", "Romance"],
+      audience: "female",
+      genre: "romance",
+    });
   });
 
   it("keeps tags through an edit that leaves them out and replaces them when sent", async () => {

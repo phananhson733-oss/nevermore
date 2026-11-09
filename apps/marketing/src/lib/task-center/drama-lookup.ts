@@ -1,5 +1,5 @@
-// @input  -- PICK_LOOKUP_URL and PICK_LOOKUP_TOKEN; a platform, a title and maybe a language from the admin
-// @output -- the 北斗 dramas the 选剧台 lookup found (its signed cover URL kept server-side), one of them fitted to the dramas table, and a cover image fetched from one
+// @input  -- PICK_LOOKUP_URL and PICK_LOOKUP_TOKEN; a platform, a title and maybe a language from the admin; what the theater's own page shows, when theater-details.ts could read it
+// @output -- the 北斗 dramas the 选剧台 lookup found (its signed cover URL kept server-side), one of them fitted to the dramas table with the theater's page taking over field by field, and a cover image fetched from a URL either gave
 // @pos    -- the only code that talks to pick-workbench's /api/pick/lookup/drama/ (contract: its deploy/lookup-api.md)
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 //
@@ -10,8 +10,9 @@
 
 import { z } from "zod";
 
-import { IMAGE_TYPES, MAX_IMAGE_BYTES, MAX_TAGS } from "./contracts.ts";
+import { IMAGE_TYPES, LOOKUP_LANGUAGES, MAX_IMAGE_BYTES, MAX_TAGS } from "./contracts.ts";
 import type { ImportedDrama } from "./dramas-store.ts";
+import type { TheaterDetails } from "./theater-details.ts";
 
 export interface LookupConfig {
   readonly url: string;
@@ -116,21 +117,31 @@ function clean(value: string, max: number): string {
  * One lookup row as a dramas row, inside 0001 and 0004's limits: an episode
  * count or pay start out of range becomes unknown rather than refused, text is
  * cut to length, tags are deduplicated. Null when no language is known, from
- * the operator or from 北斗: the operator then fills the form by hand.
+ * the operator, from 北斗 or from the theater's page: the operator then fills
+ * the form by hand.
+ *
+ * With the theater's own page, what it shows wins field by field and 北斗
+ * fills only what it left out: 北斗 often has no tags, and has no 频道 or
+ * genre at all. 中文名 and 完结 are 北斗's alone. The page's id is kept, so
+ * the two ids 北斗 sometimes has for one drama list it once.
  */
 export function toImportedDrama(
   drama: LookupDrama,
   query: { readonly platform: string; readonly language: string | null },
+  details: TheaterDetails | null = null,
 ): ImportedDrama | null {
-  const language = query.language ?? drama.language;
+  const theater = details?.platform === query.platform ? details : null;
+  const pageLanguage = LOOKUP_LANGUAGES.find((known) => known === theater?.language) ?? null;
+  const language = query.language ?? drama.language ?? pageLanguage;
   if (language === null || !LANGUAGE_PATTERN.test(language)) return null;
-  const episodes =
-    drama.episodeCount !== null && drama.episodeCount >= 1 && drama.episodeCount <= 2000 ? drama.episodeCount : null;
-  const payStart =
-    drama.payStart !== null && drama.payStart >= 1 && drama.payStart <= (episodes ?? 2000) ? drama.payStart : null;
+  const episodeCount = theater?.episodes ?? drama.episodeCount;
+  const episodes = episodeCount !== null && episodeCount >= 1 && episodeCount <= 2000 ? episodeCount : null;
+  const firstPaid =
+    theater?.paid === false ? null : theater?.paid === true && theater.payStart !== null ? theater.payStart : drama.payStart;
+  const payStart = firstPaid !== null && firstPaid >= 1 && firstPaid <= (episodes ?? 2000) ? firstPaid : null;
   const seen = new Set<string>();
   const tags: string[] = [];
-  for (const raw of drama.tags) {
+  for (const raw of theater !== null && theater.tags.length > 0 ? theater.tags : drama.tags) {
     const tag = clean(raw, 40).replace(/\s+/g, " ");
     if (tag === "" || seen.has(tag.toLowerCase())) continue;
     seen.add(tag.toLowerCase());
@@ -138,9 +149,11 @@ export function toImportedDrama(
     if (tags.length === MAX_TAGS) break;
   }
   const titleCn = (drama.titleCn === null ? "" : clean(drama.titleCn, 200)) || null;
-  const synopsis = (drama.description === null ? "" : clean(drama.description, 4000)) || null;
+  const description = theater?.synopsis ?? drama.description;
+  const synopsis = (description === null ? "" : clean(description, 4000)) || null;
+  const sourceDramaId = theater?.dramaId ?? drama.platformDramaId;
   return {
-    title: clean(drama.title, 200) || drama.platformDramaId,
+    title: clean(theater?.title ?? "", 200) || clean(drama.title, 200) || sourceDramaId,
     titleCn,
     platform: query.platform,
     language,
@@ -148,13 +161,15 @@ export function toImportedDrama(
     payStart,
     synopsis,
     tags,
+    audience: theater?.audience ?? null,
+    genre: theater?.genre ?? null,
     finished: drama.finished,
-    sourceDramaId: drama.platformDramaId,
+    sourceDramaId,
   };
 }
 
 /**
- * The cover host is 北斗's CDN. Refuse an address that could only be inside
+ * The cover host is 北斗's or the theater's CDN. Refuse an address that could only be inside
  * this machine's networks: an IP literal or a name without a dot.
  */
 function isPublicHttpsUrl(value: string): boolean {
@@ -186,9 +201,9 @@ export interface FetchedImage {
 const COVER_TIMEOUT_MS = 30_000;
 
 /**
- * Fetches a cover from the signed URL 北斗 gave. Null for anything that is not
- * a reasonable image over https: the drama is still listed and the operator
- * uploads a cover by hand.
+ * Fetches a cover from the URL the theater's page or 北斗 (signed) gave. Null
+ * for anything that is not a reasonable image over https: the drama is still
+ * listed and the operator uploads a cover by hand.
  */
 export async function fetchCover(
   url: string,

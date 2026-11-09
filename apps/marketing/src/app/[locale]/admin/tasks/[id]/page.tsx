@@ -1,10 +1,11 @@
-// @input  -- locale and drama id params, ?new=<cover outcome> after 查剧; the admin check; the drama and all its assets; R2 for the cover
-// @output -- the admin drama page: cover, title, episodes, pay start, tags and synopsis up top; promo link; publish switch with a note on what a draft hides; clip upload, rename, retag and delete; the full details form folded away
+// @input  -- locale and drama id params, ?new=<cover outcome>&details=<official|beidou> after 查剧; the admin check; the drama and all its assets; R2 for the cover
+// @output -- the admin drama page: cover, title, episodes, pay start, tags, synopsis and where the details came from (a ReelShort drama links to its page there) up top, with a note after 查剧 on whether the theater's own page was read; promo link; publish switch with a note on what a draft hides; clip upload, rename, retag and delete; the full details form folded away
 // @pos    -- /admin/tasks/<id> (Chinese only); 404 for anyone not on TASK_ADMIN_EMAILS
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import type { ReactNode } from "react";
 
 import {
   AssetTitle,
@@ -16,11 +17,12 @@ import {
 import { DramaForm, PromoLinkForm, type DramaFormValues } from "@/components/task-center/admin/drama-form";
 import { TagList } from "@/components/task-center/admin/drama-quick-create";
 import { checkTaskAdmin } from "@/lib/task-center/admin";
-import { isUuid } from "@/lib/task-center/contracts";
+import { isUuid, THEATER_PLATFORMS } from "@/lib/task-center/contracts";
 import { DRAMA_STATUS_LABELS, languageName, platformLabel } from "@/lib/task-center/copy";
 import { getTaskDb } from "@/lib/task-center/db";
 import { getDramaForAdmin } from "@/lib/task-center/dramas-store";
 import { coverImageUrl, readR2Config } from "@/lib/task-center/r2";
+import { theaterPageUrl } from "@/lib/task-center/theater-details";
 import { localePath } from "@/lib/locale-path";
 
 export const dynamic = "force-dynamic";
@@ -30,22 +32,35 @@ function formatBytes(bytes: number): string {
   return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
 }
 
-const NEW_DRAMA_NOTES: Readonly<Record<string, string>> = {
-  saved: "已从选剧台建好草稿，封面也拷过来了。核对一下信息，上传素材、填推广目标地址后就能上架。",
-  missing: "已从选剧台建好草稿，但北斗没有这部剧的封面，请在左边上传一张。",
-  failed: "已从选剧台建好草稿，但封面没拷成功，请在左边上传一张。",
+const NEW_COVER_NOTES: Readonly<Record<string, string>> = {
+  saved: "封面也拷过来了。核对一下信息，上传素材、填推广目标地址后就能上架。",
+  missing: "没找到这部剧的封面，请在左边上传一张。",
+  failed: "封面没拷成功，请在左边上传一张。",
 };
+
+/** What 查剧 says after listing a drama: where its details came from, then how the cover went. */
+function newDramaNote(cover: string | string[] | undefined, details: string | string[] | undefined, platform: string): string | null {
+  const coverNote = typeof cover === "string" ? NEW_COVER_NOTES[cover] : undefined;
+  if (coverNote === undefined) return null;
+  const name = platformLabel(platform);
+  const from =
+    details === "official"
+      ? `已按 ${name} 官网的资料建好草稿。`
+      : THEATER_PLATFORMS.has(platform)
+        ? `${name} 官网这次没读到，先按选剧台的资料建好了草稿，标签、频道和题材可能不全，请核对。`
+        : "已按选剧台的资料建好草稿。";
+  return `${from}${coverNote}`;
+}
 
 export default async function AdminDramaPage({
   params,
   searchParams,
 }: {
   params: Promise<{ locale: string; id: string }>;
-  searchParams: Promise<{ new?: string | string[] }>;
+  searchParams: Promise<{ new?: string | string[]; details?: string | string[] }>;
 }) {
   const { locale, id } = await params;
-  const fresh = (await searchParams).new;
-  const newNote = typeof fresh === "string" ? (NEW_DRAMA_NOTES[fresh] ?? null) : null;
+  const fresh = await searchParams;
   const admin = await checkTaskAdmin();
   if (admin.status !== "admin" || !isUuid(id)) notFound();
   const base = localePath(locale, "/admin/tasks");
@@ -56,6 +71,8 @@ export default async function AdminDramaPage({
   const found = await getDramaForAdmin(db, id);
   if (found === null) notFound();
   const { drama, assets } = found;
+  const newNote = newDramaNote(fresh.new, fresh.details, drama.platform);
+  const sourcePage = drama.source === "beidou" ? theaterPageUrl(drama.platform, drama.sourceDramaId) : null;
   const r2 = readR2Config();
   const values: DramaFormValues = {
     title: drama.title,
@@ -128,7 +145,20 @@ export default async function AdminDramaPage({
             <Fact label="集数" value={drama.episodes === null ? "未知" : `${drama.episodes} 集`} />
             <Fact label="收费起始" value={drama.payStart === null ? "未知" : `第 ${drama.payStart} 集`} />
             <Fact label="完结" value={drama.finished === null ? "未知" : drama.finished ? "已完结" : "连载中"} />
-            <Fact label="来源" value={drama.source === "beidou" ? `选剧台（${drama.sourceDramaId}）` : "手填"} />
+            <Fact
+              label="来源"
+              value={
+                drama.source !== "beidou" ? (
+                  "手填"
+                ) : sourcePage !== null ? (
+                  <a href={sourcePage} target="_blank" rel="noopener noreferrer" className="text-brand-accent-text hover:underline">
+                    {platformLabel(drama.platform)} 官网 ↗
+                  </a>
+                ) : (
+                  `选剧台（${drama.sourceDramaId}）`
+                )
+              }
+            />
           </dl>
           {drama.titleCn !== null && drama.titleCn !== drama.title && (
             <p className="text-[13.5px] text-text-dark-secondary">原名：{drama.title}</p>
@@ -193,7 +223,7 @@ export default async function AdminDramaPage({
   );
 }
 
-function Fact({ label, value }: { label: string; value: string }) {
+function Fact({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="min-w-0">
       <dt className="text-[12px] text-text-dark-secondary">{label}</dt>
