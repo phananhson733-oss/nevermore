@@ -1,5 +1,5 @@
 // @input  -- one request a theater reader wants to make (a page or an API on that theater's own hosts) and the fetch and deadline 查剧 gives it
-// @output -- the shape every theater reader returns, the body of that one response as text (null for anything off the theater's hosts, not the expected type, over 2 MB, late or failed), and the small readers every parser shares: a field, a text, a positive count, a language code the task center uses, a genre slug
+// @output -- the shape every theater reader returns, the body of that one response as text (null for anything off the theater's hosts, not the expected type, over 2 MB, late or failed), and the small readers every parser shares: a data script found in one pass, a field, a text, a positive count, the per-page tag cap, a language code the task center uses, a genre slug
 // @pos    -- the one network door for theater-details.ts and its per-site readers (theater-*.ts); they parse, this fetches
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 //
@@ -147,11 +147,27 @@ export function parseJson(body: string | null): unknown {
   }
 }
 
-const NEXT_DATA = /<script[^>]*\bid="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/;
+/** At most this many tags or labels are looked at on one page; real pages have under 30. */
+export const MAX_TAGS_READ = 60;
+
+/**
+ * The JSON inside the <script> tag whose id is `id`. Plain index searches,
+ * each moving forward once, so a hostile 2 MB page cannot make it slow (a
+ * regex over the whole page can be made quadratic).
+ */
+export function scriptJson(html: string, id: string): unknown {
+  const marker = html.indexOf(`id="${id}"`);
+  if (marker < 0) return undefined;
+  const tag = html.lastIndexOf("<script", marker);
+  const bodyStart = html.indexOf(">", marker) + 1;
+  if (tag < 0 || bodyStart === 0 || html.indexOf(">", tag) < marker) return undefined;
+  const bodyEnd = html.indexOf("</script>", bodyStart);
+  return bodyEnd < 0 ? undefined : parseJson(html.slice(bodyStart, bodyEnd));
+}
 
 /** The `__NEXT_DATA__` JSON of a Next.js pages-router page. */
 export function nextData(html: string): unknown {
-  return parseJson(NEXT_DATA.exec(html)?.[1] ?? null);
+  return scriptJson(html, "__NEXT_DATA__");
 }
 
 export function field(value: unknown, key: string): unknown {
@@ -193,7 +209,7 @@ export function httpsUrl(value: unknown): string | null {
  */
 export function languageCode(value: unknown): string | null {
   const raw = text(value);
-  if (raw === null) return null;
+  if (raw === null || raw.length > 16) return null;
   const parts = raw.toLowerCase().split(/[-_]/);
   const main = parts[0] ?? "";
   if (!/^[a-z]{2,3}$/.test(main)) return null;
@@ -204,7 +220,7 @@ export function languageCode(value: unknown): string | null {
 /** A site's genre name as a slug the dramas table takes: lowercase ASCII words joined by dashes, at most 32. */
 export function genreSlug(value: unknown): string | null {
   const raw = text(value);
-  if (raw === null) return null;
+  if (raw === null || raw.length > 64) return null;
   const slug = raw
     .toLowerCase()
     .replace(/&/g, " and ")

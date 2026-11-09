@@ -70,9 +70,12 @@ export async function fetchTheaterDetails(
 ): Promise<TheaterDetails | null> {
   const reader = readerFor(platform);
   if (reader?.read === undefined || !reader.id.test(dramaId)) return null;
+  const budget = Math.min(timeoutMs, SITE_TIMEOUT_MS);
+  const deadline = Date.now() + budget;
   try {
-    const details = await reader.read(dramaId, theaterGet(fetchImpl, Math.min(timeoutMs, SITE_TIMEOUT_MS)));
-    return details?.platform === platform ? details : null;
+    const details = await reader.read(dramaId, theaterGet(fetchImpl, budget));
+    // The fetch is cut off at the deadline; reading the page is not, so a late answer is dropped here.
+    return details?.platform === platform && Date.now() <= deadline ? details : null;
   } catch (error) {
     console.error("[drama lookup] theater reader failed", platform, error instanceof Error ? error.name : error);
     return null;

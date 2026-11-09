@@ -24,6 +24,7 @@ import {
   httpsUrl,
   languageCode,
   list,
+  MAX_TAGS_READ,
   nextData,
   text,
   type TheaterDetails,
@@ -36,19 +37,19 @@ export const REELSHORT_ID = /^[0-9a-f]{24}$/;
 const AUDIENCE_CATEGORY = "1000";
 const GENRE_CATEGORY = "1010";
 const CAST_CATEGORIES: ReadonlySet<string> = new Set(["1001", "1005"]);
-const AUDIENCE_TAGS: Readonly<Record<string, DramaAudience>> = {
-  "676d21074582b53a14081663": "female",
-  "676d21074582b53a14081664": "male",
-};
+const AUDIENCE_TAGS: ReadonlyMap<string, DramaAudience> = new Map([
+  ["676d21074582b53a14081663", "female"],
+  ["676d21074582b53a14081664", "male"],
+]);
 /** Every category-1010 tag seen on 130 English pages on 2026-11-08. */
-const GENRE_TAGS: Readonly<Record<string, string>> = {
-  "676d210c4582b53a140819bb": "comedy",
-  "676d210c4582b53a140819bf": "fantasy",
-  "676d210c4582b53a140819c0": "sports",
-  "676d210c4582b53a140819c1": "romance",
-  "676d210c4582b53a140819c2": "drama",
-  "676d210c4582b53a140819c4": "animation",
-};
+const GENRE_TAGS: ReadonlyMap<string, string> = new Map([
+  ["676d210c4582b53a140819bb", "comedy"],
+  ["676d210c4582b53a140819bf", "fantasy"],
+  ["676d210c4582b53a140819c0", "sports"],
+  ["676d210c4582b53a140819c1", "romance"],
+  ["676d210c4582b53a140819c2", "drama"],
+  ["676d210c4582b53a140819c4", "animation"],
+]);
 
 export function reelShortPageUrl(id: string): string {
   return `https://${HOST}/movie/x-${id}`;
@@ -72,24 +73,24 @@ export function parseReelShortPage(html: string): TheaterDetails | null {
   let audience: DramaAudience | null = null;
   let genre: string | null = null;
   const tags: string[] = [];
-  for (const tag of list(field(data, "tag_list"))) {
+  for (const tag of list(field(data, "tag_list")).slice(0, MAX_TAGS_READ)) {
     const id = text(field(tag, "id"));
     const category = text(field(tag, "category_id"));
     const name = text(field(tag, "text"));
     if (id === null || category === null || name === null) continue;
     if (category === AUDIENCE_CATEGORY) {
-      audience ??= AUDIENCE_TAGS[id] ?? null;
+      audience ??= AUDIENCE_TAGS.get(id) ?? null;
       continue;
     }
     if (CAST_CATEGORIES.has(category)) continue;
     if (category === GENRE_CATEGORY) {
-      const known = GENRE_TAGS[id];
+      const known = GENRE_TAGS.get(id);
       if (known === undefined) console.error("[drama lookup] ReelShort genre tag not mapped yet", id);
       genre ??= known ?? null;
     }
     tags.push(name);
   }
-  for (const theme of list(field(data, "tag"))) {
+  for (const theme of list(field(data, "tag")).slice(0, MAX_TAGS_READ)) {
     const name = text(theme);
     if (name !== null) tags.push(name);
   }

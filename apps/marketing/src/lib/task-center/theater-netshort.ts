@@ -19,6 +19,7 @@ import {
   httpsUrl,
   languageCode,
   list,
+  MAX_TAGS_READ,
   parseJson,
   text,
   type TheaterDetails,
@@ -38,16 +39,14 @@ export async function readNetShort(id: string, get: TheaterGet): Promise<Theater
   return html === null ? null : parseNetShortPage(html, id);
 }
 
-const FLIGHT = /self\.__next_f\.push\(\[1,("(?:[^"\\]|\\.)*")\]\)/g;
+const PUSH = 'self.__next_f.push([1,"';
 const DETAIL_KEY = '"shortPlayDetailVo":';
-const CATEGORIES = /Movies in ([^"<>]{1,1000}?)\. Free to start/;
+const CATEGORIES_START = "Movies in ";
+const CATEGORIES_END = ". Free to start";
+const MAX_CATEGORIES_LENGTH = 400;
 
 export function parseNetShortPage(html: string, id: string): TheaterDetails | null {
-  let flight = "";
-  for (const match of html.matchAll(FLIGHT)) {
-    const chunk = parseJson(match[1] ?? null);
-    if (typeof chunk === "string") flight += chunk;
-  }
+  const flight = flightText(html);
   const at = flight.indexOf(DETAIL_KEY);
   const detail = at < 0 ? undefined : parseJson(jsonObjectAt(flight, at + DETAIL_KEY.length));
   if (text(field(detail, "shortPlayId")) !== id) return null;
@@ -55,13 +54,14 @@ export function parseNetShortPage(html: string, id: string): TheaterDetails | nu
   const title = text(field(detail, "shortPlayName"));
   const labelLinks = field(detail, "shortPlayLabels");
   const labels = typeof labelLinks === "object" && labelLinks !== null && !Array.isArray(labelLinks) ? Object.keys(labelLinks) : [];
-  const shown = unescapeHtml(CATEGORIES.exec(html)?.[1] ?? "").split(",");
-  const tags: string[] = [];
-  for (const raw of [...shown, ...labels]) {
+  const shown = unescapeHtml(categoriesShown(html)).split(",");
+  const lowerTitle = title?.toLowerCase() ?? null;
+  const tags = new Set<string>();
+  for (const raw of [...shown.slice(0, MAX_TAGS_READ), ...labels.slice(0, MAX_TAGS_READ)]) {
     const tag = raw.trim();
-    const isTitle = title !== null && tag.toLowerCase().includes(title.toLowerCase());
-    if (tag === "" || tag.length > MAX_TAG_LENGTH || isTitle || tags.includes(tag)) continue;
-    tags.push(tag);
+    if (tag === "" || tag.length > MAX_TAG_LENGTH) continue;
+    if (lowerTitle !== null && tag.toLowerCase().includes(lowerTitle)) continue;
+    tags.add(tag);
   }
 
   let episodes: number | null = null;
@@ -82,11 +82,48 @@ export function parseNetShortPage(html: string, id: string): TheaterDetails | nu
     paid: payStart === null ? null : true,
     payStart,
     synopsis: text(field(detail, "shotIntroduce")),
-    tags,
+    tags: [...tags],
     audience: null,
     genre: null,
     coverUrl: httpsUrl(field(detail, "shortPlayCover")),
   };
+}
+
+/** Every string pushed to the app-router stream, joined. Each search moves forward, so the page is read once. */
+function flightText(html: string): string {
+  let flight = "";
+  let from = 0;
+  for (;;) {
+    const at = html.indexOf(PUSH, from);
+    if (at < 0) return flight;
+    const quote = at + PUSH.length - 1;
+    const end = stringEnd(html, quote);
+    if (end < 0) return flight;
+    const chunk = parseJson(html.slice(quote, end + 1));
+    if (typeof chunk === "string") flight += chunk;
+    from = end + 1;
+  }
+}
+
+/** The index of the quote closing the string literal that opens at `quote`, or -1. */
+function stringEnd(source: string, quote: number): number {
+  for (let at = quote + 1; at < source.length; at += 1) {
+    const char = source[at];
+    if (char === "\\") at += 1;
+    else if (char === '"') return at;
+  }
+  return -1;
+}
+
+/** "A,B,C" from the page's first "Movies in A,B,C. Free to start", or "" when it has none. */
+function categoriesShown(html: string): string {
+  const at = html.indexOf(CATEGORIES_START);
+  if (at < 0) return "";
+  const start = at + CATEGORIES_START.length;
+  const end = html.indexOf(CATEGORIES_END, start);
+  if (end < 0 || end - start > MAX_CATEGORIES_LENGTH) return "";
+  const shown = html.slice(start, end);
+  return /["<>]/.test(shown) ? "" : shown;
 }
 
 /** The few entities a category name could carry in an attribute. */

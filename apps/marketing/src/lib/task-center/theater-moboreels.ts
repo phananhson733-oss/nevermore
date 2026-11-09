@@ -17,6 +17,7 @@ import {
   field,
   httpsUrl,
   list,
+  MAX_TAGS_READ,
   parseJson,
   text,
   type TheaterDetails,
@@ -56,7 +57,7 @@ export function parseMoboReelsSeries(answer: unknown, id: string): TheaterDetail
   if (typeof seriesId !== "number" || String(seriesId) !== id) return null;
 
   const tags: string[] = [];
-  for (const type of list(field(series, "typeItemVOList"))) {
+  for (const type of list(field(series, "typeItemVOList")).slice(0, MAX_TAGS_READ)) {
     const name = text(field(type, "typeName"));
     if (name !== null) tags.push(name);
   }

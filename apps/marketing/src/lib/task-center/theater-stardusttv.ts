@@ -21,7 +21,8 @@ import {
   httpsUrl,
   languageCode,
   list,
-  parseJson,
+  MAX_TAGS_READ,
+  scriptJson,
   text,
   type TheaterDetails,
   type TheaterGet,
@@ -29,7 +30,10 @@ import {
 
 const HOST = "www.stardusttv.net";
 export const STARDUSTTV_ID = /^[0-9]{1,12}$/;
-const AUDIENCES: Readonly<Record<string, DramaAudience>> = { 男频: "male", 女频: "female" };
+const AUDIENCES: ReadonlyMap<string, DramaAudience> = new Map([
+  ["男频", "male"],
+  ["女频", "female"],
+]);
 const WRAPPERS: ReadonlySet<string> = new Set(["ShallowReactive", "Reactive", "ShallowRef", "Ref"]);
 
 export function stardustTvPageUrl(id: string): string {
@@ -41,12 +45,10 @@ export async function readStardustTv(id: string, get: TheaterGet): Promise<Theat
   return html === null ? null : parseStardustTvPage(html, id);
 }
 
-const NUXT_DATA = /<script[^>]*\bid="__NUXT_DATA__"[^>]*>([\s\S]*?)<\/script>/;
-
 /** The page for one id, read field by field; null when the page has no such drama. */
 export function parseStardustTvPage(html: string, id: string): TheaterDetails | null {
   if (!STARDUSTTV_ID.test(id)) return null;
-  const raw = parseJson(NUXT_DATA.exec(html)?.[1] ?? null);
+  const raw = scriptJson(html, "__NUXT_DATA__");
   if (!Array.isArray(raw)) return null;
   const nuxt = new Devalue(raw);
   const key = `episodes-data-${id}`;
@@ -60,11 +62,11 @@ export function parseStardustTvPage(html: string, id: string): TheaterDetails | 
   let audience: DramaAudience | null = null;
   let genre: string | null = null;
   const tags: string[] = [];
-  for (const label of nuxt.items(nuxt.get(info, "labels"))) {
+  for (const label of nuxt.items(nuxt.get(info, "labels"), MAX_TAGS_READ)) {
     const level = nuxt.get(label, "level");
     const name = text(nuxt.get(label, "english_name"));
     if (level === 1) {
-      audience ??= AUDIENCES[text(nuxt.get(label, "name")) ?? ""] ?? null;
+      audience ??= AUDIENCES.get(text(nuxt.get(label, "name")) ?? "") ?? null;
       continue;
     }
     if (name === null || typeof level !== "number" || level < 2) continue;
@@ -121,7 +123,9 @@ class Devalue {
     return index === undefined ? undefined : this.at(index);
   }
 
-  items(array: unknown): readonly unknown[] {
-    return list(array).map((index) => this.at(index));
+  items(array: unknown, max: number): readonly unknown[] {
+    return list(array)
+      .slice(0, max)
+      .map((index) => this.at(index));
   }
 }

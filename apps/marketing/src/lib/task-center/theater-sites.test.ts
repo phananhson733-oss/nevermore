@@ -1,5 +1,5 @@
 // @input  -- theater-details.ts and the StardustTV, MoboReels, NetShort and YourChannel readers (and DramaBox's, switched off) with a fake fetch; data trimmed from what each site served on 2026-11-08
-// @output -- proof that each site is read as it shows the drama (tags, 频道 and genre only where the site marks them, pay start only where it says), that each reader asks only its own host, and that each site's "no such drama" answer gives null
+// @output -- proof that each site is read as it shows the drama (tags, 频道 and genre only where the site marks them, pay start only where it says), that each reader asks only its own host, that each site's "no such drama" answer gives null, and that a hostile page stays fast and gives nothing wrong
 // @pos    -- unit tests for 查剧's second step beyond ReelShort; no network, no database
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -11,6 +11,7 @@ import { genreSlug, languageCode, theaterGet } from "./theater-http.ts";
 import { parseMoboReelsSeries } from "./theater-moboreels.ts";
 import { parseNetShortPage } from "./theater-netshort.ts";
 import { parseStardustTvPage } from "./theater-stardusttv.ts";
+import { parseReelShortPage } from "./theater-reelshort.ts";
 import { parseYourChannelPlaylet } from "./theater-yourchannel.ts";
 
 interface Seen {
@@ -428,5 +429,74 @@ describe("the shared readers", () => {
     expect(["Rags to Riches", "bitter-love", "Love & Revenge", "Female", "爱情", "x".repeat(40)].map(genreSlug)).toEqual([
       "rags-to-riches", "bitter-love", "love-and-revenge", null, null, null,
     ]);
+  });
+});
+
+/** Runs `read` and fails if it takes longer than a page read ever should. */
+function quickly<T>(read: () => T): T {
+  const started = performance.now();
+  const result = read();
+  expect(performance.now() - started).toBeLessThan(1_000);
+  return result;
+}
+
+describe("a hostile or broken page", () => {
+  const nuxt = (entries: unknown[]) => `<script id="__NUXT_DATA__" type="application/json">${JSON.stringify(entries)}</script>`;
+
+  it("is searched for its data script in one pass, however many unclosed tags it has", () => {
+    const tags = "<script ".repeat(200_000);
+    expect(quickly(() => parseStardustTvPage(tags, "1"))).toBeNull();
+    expect(quickly(() => parseReelShortPage(tags))).toBeNull();
+    expect(quickly(() => parseNetShortPage('self.__next_f.push([1,"'.repeat(70_000), "1234567890"))).toBeNull();
+    expect(quickly(() => parseNetShortPage("Movies in ".repeat(150_000), "1234567890"))).toBeNull();
+  });
+
+  it("does not repeat work for a devalue payload that points at one huge label many times", () => {
+    const raw = [
+      { data: 1 },
+      { "episodes-data-1": 2 },
+      { video_info: 3 },
+      { id: 4, labels: 5 },
+      1,
+      Array(100_000).fill(6),
+      { level: 2, english_name: 7 },
+      "a".repeat(1_000_000),
+    ];
+    expect(quickly(() => parseStardustTvPage(nuxt(raw), "1"))).toMatchObject({ genre: null });
+  });
+
+  it("does not compare every NetShort label against a huge title", () => {
+    const shortPlayLabels = Object.fromEntries(Array.from({ length: 30_000 }, (_, n) => [`tag${n}`, 0]));
+    const flight = JSON.stringify({ shortPlayDetailVo: { shortPlayId: "1234567890", shortPlayName: "X".repeat(1_000_000), shortPlayLabels } });
+    const page = `<script>self.__next_f.push([1,${JSON.stringify(flight)}])</script>`;
+    expect(quickly(() => parseNetShortPage(page, "1234567890"))?.tags).toHaveLength(60);
+  });
+
+  it("never takes 频道 or genre from an object's built-in keys", () => {
+    for (const name of ["__proto__", "constructor", "toString"]) {
+      const raw = [{ data: 1 }, { "episodes-data-1": 2 }, { video_info: 3 }, { id: 4, labels: 5 }, 1, [6], { level: 1, name: 7 }, name];
+      expect(parseStardustTvPage(nuxt(raw), "1")?.audience).toBeNull();
+      const data = {
+        book_id: "6ad88d9e996727b60c007958",
+        tag_list: [
+          { id: name, category_id: "1000", text: "x" },
+          { id: name, category_id: "1010", text: "y" },
+        ],
+      };
+      const page = `<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({ props: { pageProps: { data } } })}</script>`;
+      expect(parseReelShortPage(page)).toMatchObject({ audience: null, genre: null });
+    }
+  });
+
+  it("drops an answer that only arrives after the deadline", async () => {
+    // A fetch that ignores the abort signal: the reader still answers, too late.
+    const late = (async () => {
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      return new Response(JSON.stringify({ success: true, code: 200, result: { playlet: { id: "376265469448953856" } } }), {
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch;
+    expect(await fetchTheaterDetails("yourchannel", "376265469448953856", late, 20)).toBeNull();
+    expect(await fetchTheaterDetails("yourchannel", "376265469448953856", late, 5_000)).toMatchObject({ dramaId: "376265469448953856" });
   });
 });

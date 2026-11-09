@@ -23,6 +23,7 @@ import {
   httpsUrl,
   languageCode,
   list,
+  MAX_TAGS_READ,
   nextData,
   text,
   type TheaterDetails,
@@ -63,7 +64,7 @@ export function parseDramaBoxPage(html: string): TheaterDetails | null {
   const tags: string[] = [];
   let genre: string | null = null;
   const audiences = new Set<DramaAudience>();
-  for (const type of list(field(book, "typeTwoList"))) {
+  for (const type of list(field(book, "typeTwoList")).slice(0, MAX_TAGS_READ)) {
     const name = text(field(type, "name"));
     if (name === null) continue;
     tags.push(name);
@@ -72,7 +73,7 @@ export function parseDramaBoxPage(html: string): TheaterDetails | null {
     const audience = typeof id === "number" ? ENGLISH_AUDIENCE.get(id) : undefined;
     if (audience !== undefined) audiences.add(audience);
   }
-  for (const tag of list(field(book, "tags"))) {
+  for (const tag of list(field(book, "tags")).slice(0, MAX_TAGS_READ)) {
     const name = text(tag);
     if (name !== null) tags.push(name);
   }

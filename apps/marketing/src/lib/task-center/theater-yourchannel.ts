@@ -16,6 +16,7 @@ import {
   field,
   httpsUrl,
   languageCode,
+  MAX_TAGS_READ,
   parseJson,
   text,
   type TheaterDetails,
@@ -43,7 +44,8 @@ export function parseYourChannelPlaylet(answer: unknown, id: string): TheaterDet
   const tags = (text(field(playlet, "tags")) ?? "")
     .split(",")
     .map((tag) => tag.trim())
-    .filter((tag) => tag !== "");
+    .filter((tag) => tag !== "")
+    .slice(0, MAX_TAGS_READ);
   const begin = field(playlet, "beginFeeNo");
   const payStart = count(begin);
   return {
