@@ -1,5 +1,5 @@
 // @input  -- the page locale ("en" or "zh")
-// @output -- every visitor-facing string of /tasks (the clip grid and its drama dialog), /tasks/<id>, /promotions, /earnings and the reader's drama page /watch/<id>, audience, genre, clip-type and platform labels, the Chinese labels the admin pages share, and the promo link's URL
+// @output -- every visitor-facing string of /tasks (the clip grid and its drama dialog), /tasks/<id>, /promotions, /earnings and the reader's drama page /watch/<id>, audience, genre, clip-type and platform labels, the 收费起始 value, a clip's title with machine names (UUIDs, hashes) left out, the Chinese labels the admin pages share, and the promo link's URL
 // @pos    -- task center copy, kept beside the code like the waitlist page's; the admin pages are Chinese only
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -39,6 +39,11 @@ const en = {
   platform: "Platform",
   language: "Language",
   listedOn: "Listed",
+  episodesLabel: "Episodes",
+  payStartLabel: "Paid from",
+  fromEpisode: (n: number) => `Episode ${n}`,
+  allFreeShort: "All free",
+  promotersLabel: "Promoters",
   synopsis: "Synopsis",
   contents: "Episodes",
   contentsUnknown: "The episode count has not been provided.",
@@ -46,11 +51,13 @@ const en = {
   clips: "Free clips to download",
   clipsBody: "Click a number to download that clip.",
   allClips: "All clips of this drama",
-  clipLabel: (n: number, title: string, size: string) => `Download clip ${n}: ${title}, ${size}`,
+  clipLabel: (n: number, title: string | null, size: string) =>
+    title === null ? `Download clip ${n}, ${size}` : `Download clip ${n}: ${title}, ${size}`,
   previewClips: "Preview the clips",
   noClips: "No clips have been uploaded for this drama yet.",
   signInForClips: "Sign in to preview and download the clips.",
   download: "Download",
+  downloadThis: "Download this clip",
   promote: "Promo links",
   promoteBody:
     "Your own link for this drama, the same on TikTok, Facebook or anywhere else. Every click counts under your name, and when the platform settles, orders are matched back to your link.",
@@ -173,6 +180,11 @@ const zh: TaskCopy = {
   platform: "平台",
   language: "语言",
   listedOn: "上架时间",
+  episodesLabel: "集数",
+  payStartLabel: "收费起始",
+  fromEpisode: (n: number) => `第 ${n} 集`,
+  allFreeShort: "全部免费",
+  promotersLabel: "推广人数",
   synopsis: "简介",
   contents: "目录",
   contentsUnknown: "还没有提供集数。",
@@ -180,11 +192,13 @@ const zh: TaskCopy = {
   clips: "免费素材下载",
   clipsBody: "点数字下载对应的素材。",
   allClips: "这部剧的全部素材",
-  clipLabel: (n: number, title: string, size: string) => `下载素材 ${n}：${title}，${size}`,
+  clipLabel: (n: number, title: string | null, size: string) =>
+    title === null ? `下载素材 ${n}，${size}` : `下载素材 ${n}：${title}，${size}`,
   previewClips: "预览素材",
   noClips: "这部剧还没有上传素材。",
   signInForClips: "登录后可以预览和下载素材。",
   download: "下载",
+  downloadThis: "下载这条素材",
   promote: "推广链接",
   promoteBody: "这部剧给你的专属链接，TikTok、Facebook 都用这一条。每次点击都记在你名下，平台结算时按你的链接把订单对回到你。",
   signInToPromote: "用 Google 登录后领取推广链接。",
@@ -383,6 +397,26 @@ export function episodeLine(episodes: number | null, payStart: number | null, co
     else parts.push(copy.freeEpisodes(payStart - 1));
   }
   return parts.length === 0 ? null : parts.join(" · ");
+}
+
+/** 收费起始 as a value: the first paid episode, or 全部免费 when it lies past the last one; null when unknown. */
+export function paidFrom(episodes: number | null, payStart: number | null, copy: TaskCopy): string | null {
+  if (payStart === null) return null;
+  if (episodes !== null && payStart > episodes) return copy.allFreeShort;
+  return copy.fromEpisode(Math.max(1, payStart));
+}
+
+/**
+ * A clip's title as promoters should see it, or null when it is only a machine
+ * name. Titles default to the uploaded file's name, and files saved from a
+ * platform are often named by a UUID or a hash, which tells a promoter nothing.
+ */
+export function clipTitle(title: string): string | null {
+  const name = title.trim();
+  if (name === "" || name.toLowerCase() === "clip") return null;
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(name)) return null;
+  if (/^[0-9a-f]{16,}$/i.test(name)) return null;
+  return name;
 }
 
 export function formatBytes(bytes: number): string {
