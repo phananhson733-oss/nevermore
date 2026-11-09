@@ -1,5 +1,5 @@
 // @input  -- a disposable Postgres rebuilt by db/tasks/migrate.sh
-// @output -- proof that the task center's SQL does what the stores promise: the clip grid and its 本周爆款 rule, imports from 查剧 (频道 and genre from the theater's page, one drama whichever 北斗 id found it, GoodShort's base64 ids) and tags, promoter accounts included
+// @output -- proof that the task center's SQL does what the stores promise: the clip grid and its 本周爆款 rule, imports from 查剧 (频道 and genre from the theater's page, one drama whichever 北斗 id found it, 完结 left unknown for a 剧库 row, GoodShort's base64 ids) and tags, promoter accounts included
 // @pos    -- the only test that executes task center SQL
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -327,6 +327,11 @@ describe("imports from 查剧", () => {
       payStart: 8,
     });
     expect(await listedBySource(db, "reelshort", ["68a1b2c3d4", "nope"])).toEqual(new Map([["68a1b2c3d4", id]]));
+
+    // A 剧库 row from 选剧台 does not say whether the drama is finished.
+    const fromCatalog = await importDrama(db, { ...beidou, sourceDramaId: "6ae450d91cd653e9b90dcf54", finished: null }, ADMIN);
+    expect(fromCatalog.ok).toBe(true);
+    expect((await getDramaForAdmin(db, fromCatalog.ok ? fromCatalog.id : ""))?.drama.finished).toBeNull();
     expect(await listedBySource(db, "dramabox", ["68a1b2c3d4"])).toEqual(new Map());
     // The same platform id on another platform is another drama.
     expect((await importDrama(db, { ...beidou, platform: "dramabox" }, ADMIN)).ok).toBe(true);

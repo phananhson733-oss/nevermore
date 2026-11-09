@@ -417,7 +417,7 @@ export interface ImportedDrama {
   readonly tags: readonly string[];
   readonly audience: DramaAudience | null;
   readonly genre: string | null;
-  readonly finished: boolean;
+  readonly finished: boolean | null;
   readonly sourceDramaId: string;
 }
 
