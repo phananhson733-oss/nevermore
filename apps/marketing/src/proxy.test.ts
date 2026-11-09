@@ -159,7 +159,7 @@ describe("proxy referral landing", () => {
     },
   );
 
-  it.each(["/t/k7m2xq9p", "/t"])(
+  it.each(["/t/k7m2xq9p", "/t/k7m2xq9p/go", "/t"])(
     "hands the promo link %s to its route handler untouched",
     (path) => {
       const response = proxy(request(path));

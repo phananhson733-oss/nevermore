@@ -1,22 +1,16 @@
-// @input  -- the page locale and a published drama's public facts (never its platform URLs), its ready clips, the /promotions href
-// @output -- the pieces of a drama's details: language (optional), 频道, genre and tag chips; the 上架时间 · 共 N 集 · 前 M 集免费 line; the labelled facts grid (平台, 语言, 集数, 收费起始, 上架时间, 推广人数); numbered free clip downloads; the 账号报白 banner; the compact how-to
+// @input  -- the page locale and a published drama's public facts (never its platform URLs), its ready clips
+// @output -- the pieces of a drama's details: language, 频道, genre and tag chips; the 上架时间 · 共 N 集 · 前 M 集免费 line; numbered free clip downloads; the compact how-to
 // @pos    -- shared by the clip dialog on /tasks (client) and /tasks/<id> (server); no state, so either side can render it
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
-
-import { ShieldCheck } from "lucide-react";
-import Link from "next/link";
 
 import type { DramaAudience } from "../../lib/task-center/contracts.ts";
 import {
   clipTitle,
   episodeLine,
   formatBytes,
-  formatCount,
   formatDay,
   genreLabel,
   languageName,
-  paidFrom,
-  platformLabel,
   taskCopy,
 } from "../../lib/task-center/copy.ts";
 
@@ -27,7 +21,6 @@ export function DramaChips({
   genre,
   tags,
   max = 8,
-  showLanguage = true,
 }: {
   locale: string;
   language: string;
@@ -35,12 +28,10 @@ export function DramaChips({
   genre: string | null;
   tags: readonly string[];
   max?: number;
-  /** False where a facts grid beside the chips already names the language. */
-  showLanguage?: boolean | undefined;
 }) {
   const copy = taskCopy(locale);
   const facts = [
-    showLanguage ? languageName(language, locale) : null,
+    languageName(language, locale),
     audience === null ? null : copy.audience[audience],
     genre === null ? null : genreLabel(genre),
   ].filter((chip): chip is string => chip !== null);
@@ -84,48 +75,6 @@ export function DramaFacts({
   return <p className="text-[13px] text-text-dark-secondary">{parts.join(" · ")}</p>;
 }
 
-/**
- * The drama's facts as labelled cells, the way MoboBoost lays them out:
- * 平台, 语言, 集数, 收费起始, 上架时间, 推广人数. A cell nobody knows is left out.
- */
-export function DramaFactGrid({
-  locale,
-  platform,
-  language,
-  episodes,
-  payStart,
-  listedAt,
-  promoterCount,
-}: {
-  locale: string;
-  platform: string;
-  language: string;
-  episodes: number | null;
-  payStart: number | null;
-  listedAt: string | null;
-  promoterCount: number;
-}) {
-  const copy = taskCopy(locale);
-  const cells = [
-    { label: copy.platform, value: platformLabel(platform) },
-    { label: copy.language, value: languageName(language, locale) },
-    { label: copy.episodesLabel, value: episodes === null ? null : formatCount(episodes, locale) },
-    { label: copy.payStartLabel, value: paidFrom(episodes, payStart, copy) },
-    { label: copy.listedOn, value: listedAt === null ? null : formatDay(listedAt, locale) },
-    { label: copy.promotersLabel, value: formatCount(promoterCount, locale) },
-  ].filter((cell): cell is { label: string; value: string } => cell.value !== null);
-  return (
-    <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3">
-      {cells.map((cell) => (
-        <div key={cell.label} className="min-w-0">
-          <dt className="text-[12px] text-text-dark-secondary">{cell.label}</dt>
-          <dd className="mt-0.5 truncate text-[14px] font-medium text-text-dark-primary">{cell.value}</dd>
-        </div>
-      ))}
-    </dl>
-  );
-}
-
 export interface DownloadClip {
   readonly id: string;
   readonly title: string;
@@ -167,26 +116,6 @@ export function ClipDownloads({
         );
       })}
     </ol>
-  );
-}
-
-export function WhitelistBanner({ locale, href }: { locale: string; href: string }) {
-  const copy = taskCopy(locale);
-  return (
-    // On a phone the action takes its own line under the text, lined up with it.
-    <div className="flex flex-wrap items-start gap-x-3 gap-y-2 rounded-[10px] border border-brand-accent/25 bg-brand-accent-soft px-4 py-3">
-      <ShieldCheck aria-hidden className="mt-0.5 size-4 shrink-0 text-brand-accent-text" />
-      <div className="min-w-0 flex-1">
-        <p className="text-[13.5px] leading-[1.5] font-semibold text-text-dark-primary">{copy.whitelistTitle}</p>
-        <p className="mt-0.5 text-[13px] leading-[1.55] text-text-dark-secondary">{copy.whitelistBody}</p>
-      </div>
-      <Link
-        href={href}
-        className="ml-7 basis-full text-[13px] font-medium text-brand-accent-text hover:underline sm:ml-0 sm:shrink-0 sm:basis-auto sm:self-center"
-      >
-        {copy.whitelistAction} →
-      </Link>
-    </div>
   );
 }
 

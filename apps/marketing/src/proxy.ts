@@ -103,8 +103,9 @@ export function proxy(request: NextRequest): NextResponse {
     localeGoPath.test(pathname) ||
     pathname === "/r" ||
     pathname.startsWith("/r/") ||
-    // /t/{code} is a promo link: one click recorded and a redirect to the
-    // drama's page, /watch/<id>, which is an ordinary localized page.
+    // /t/{code} and /t/{code}/go are promo links: one click recorded and a
+    // redirect to the drama's page, /watch/<id>, which is an ordinary
+    // localized page, or straight to the drama on its platform.
     pathname === "/t" ||
     pathname.startsWith("/t/")
   ) {

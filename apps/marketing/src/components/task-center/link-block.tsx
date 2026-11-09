@@ -1,5 +1,5 @@
-// @input  -- a link's title and what it is for, an optional ref to its copy button (so a parent can move focus there), its heading level (h4 under a section's h3, h3 straight under a page's h2), the URL (or null before it is claimed), the page locale (a locale, not the copy object: server pages render this and functions cannot cross to the client)
-// @output -- the promo link laid out the way RS Boost lays out its links: title, what it is for, the URL in a selectable box and a copy button that says "Copied" for two seconds; before the link exists, a dashed box saying where it will show
+// @input  -- a link's title and what it is for, an optional ref to its copy button (so a parent can move focus there), its heading level (h4 under a section's h3, h3 straight under a page's h2), the URL (or null before it exists) and what to say in its place, the page locale (a locale, not the copy object: server pages render this and functions cannot cross to the client)
+// @output -- one promo link laid out the way RS Boost lays out its links: title, where a click lands, the URL in a selectable box and a copy button that says "Copied" for two seconds; before the link exists, a dashed box with the given note (it is being made, or it shows once signed in)
 // @pos    -- shared by the claim panel (the clip dialog on /tasks and /tasks/<id>) and the link list on /promotions
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
@@ -16,10 +16,13 @@ export function LinkBlock({
   locale,
   level = 4,
   copyRef,
+  placeholder,
 }: {
   title: string;
   body: string;
   value: string | null;
+  /** Said in the link's place while there is none; "shows once you sign in" when left out. */
+  placeholder?: string;
   locale: string;
   level?: 3 | 4;
   copyRef?: Ref<HTMLButtonElement>;
@@ -43,8 +46,11 @@ export function LinkBlock({
       <Heading className="text-[14px] font-semibold text-text-dark-primary">{title}</Heading>
       <p className="mt-1 text-[12.5px] leading-[1.55] text-text-dark-secondary">{body}</p>
       {value === null ? (
-        <p className="mt-3 rounded-[8px] border border-dashed border-brand-border-strong px-3 py-2 text-[12.5px] text-text-dark-secondary">
-          {copy.linkAfterClaim}
+        <p
+          role="status"
+          className="mt-3 rounded-[8px] border border-dashed border-brand-border-strong px-3 py-2 text-[12.5px] text-text-dark-secondary"
+        >
+          {placeholder ?? copy.linkAfterSignIn}
         </p>
       ) : (
         <div className="mt-3 flex items-center gap-2">

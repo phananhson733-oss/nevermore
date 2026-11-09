@@ -1,17 +1,17 @@
-// @input  -- the page locale, one page of clip cards (signed poster and cover URLs made on the server), each listed drama's public details (no platform URLs), the visitor's links per drama, the /promotions href
-// @output -- the clip grid with type and 本周爆款 badges (a clip named only by a UUID or hash shows no title); a card opens a wide two-column dialog: on the right the clip playing (first on a phone), with its own download and numbered buttons for the drama's other clips under it; on the left the drama's title and chips, a labelled facts grid (平台, 语言, 集数, 收费起始, 上架时间, 推广人数), the promo link box (no 口令) with a link to the drama page it opens, the synopsis, the 账号报白 banner, the how-to folded away and a link to the drama's page
+// @input  -- the page locale, one page of clip cards (signed poster and cover URLs made on the server), each listed drama's public details (no platform URLs), the visitor's links per drama
+// @output -- the clip grid with type and 本周爆款 badges (a clip named only by a UUID or hash shows no title); a card opens a wide two-column dialog: on the right the clip playing (first on a phone) with its own download under it; on the left, in MoboReels' order, the drama's title, its chips (language first, then 频道, genre and tags), 上架时间 · 共 N 集 · 前 M 集免费, the full synopsis, the 推广链接 and 资源推广链接 (made for a signed-in visitor as the dialog opens, no 口令), 系列资源 (numbered downloads of all its clips), the how-to as an open box and a link to the drama's page
 // @pos    -- the body of /tasks, the task center's 素材广场
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
 
-import { ChevronDown, Download, Flame, Play, X } from "lucide-react";
+import { Download, Flame, Play, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import type { ClipType, DramaAudience } from "../../lib/task-center/contracts.ts";
 import { clipTitle, genreLabel, languageName, taskCopy } from "../../lib/task-center/copy.ts";
 import { ClaimPanel, type LinkView } from "./claim-panel.tsx";
-import { ClipDownloads, DramaChips, DramaFactGrid, HowTo, WhitelistBanner, type DownloadClip } from "./drama-info.tsx";
+import { ClipDownloads, DramaChips, DramaFacts, HowTo, type DownloadClip } from "./drama-info.tsx";
 
 export interface ClipCard {
   readonly id: string;
@@ -36,9 +36,6 @@ export interface ClipCard {
 
 /** What a drama's dialog shows beyond the card; built on the server, never with the platform's own URLs. */
 export interface PlazaDrama {
-  /** The platform's slug, shown by its label; never a URL. */
-  readonly platform: string;
-  readonly promoterCount: number;
   readonly synopsis: string | null;
   readonly listedAt: string | null;
   readonly episodes: number | null;
@@ -52,7 +49,6 @@ export function ClipPlaza({
   dramas,
   signedIn,
   signInHref,
-  promotionsHref,
   links,
 }: {
   locale: string;
@@ -60,7 +56,6 @@ export function ClipPlaza({
   dramas: Readonly<Record<string, PlazaDrama>>;
   signedIn: boolean;
   signInHref: string;
-  promotionsHref: string;
   links: Readonly<Record<string, LinkView>>;
 }) {
   const copy = taskCopy(locale);
@@ -71,7 +66,6 @@ export function ClipPlaza({
   const [held, setHeld] = useState<Readonly<Record<string, LinkView>>>({});
   const detail = open === null ? undefined : dramas[open.dramaId];
   const openName = open === null ? null : clipTitle(open.title);
-  const moreClips = detail !== undefined && detail.clips.length > 1;
 
   useEffect(() => {
     if (open !== null && dialog.current?.open === false) dialog.current.showModal();
@@ -172,7 +166,8 @@ export function ClipPlaza({
                 columns scroll on their own and the dialog does not; on a phone
                 the player comes first. */}
             <div className="grid md:grid-cols-[minmax(0,1fr)_320px] lg:grid-cols-[minmax(0,1fr)_380px]">
-              {/* The drama, then the one thing a promoter comes for: the link. */}
+              {/* MoboReels' order: what the drama is, then the links, then
+                  every clip to download, then how it all works. */}
               <div className="space-y-5 p-6 md:max-h-[calc(100dvh-34px)] md:overflow-y-auto lg:p-8">
                 <div className="space-y-2.5">
                   <h2 className="text-[20px] leading-[1.3] font-semibold">{open.dramaTitle}</h2>
@@ -182,69 +177,63 @@ export function ClipPlaza({
                     audience={open.audience}
                     genre={open.genre}
                     tags={open.tags}
-                    showLanguage={detail === undefined}
                   />
-                </div>
-
-                {detail !== undefined && (
-                  <DramaFactGrid
-                    locale={locale}
-                    platform={detail.platform}
-                    language={open.language}
-                    episodes={detail.episodes}
-                    payStart={detail.payStart}
-                    listedAt={detail.listedAt}
-                    promoterCount={detail.promoterCount}
-                  />
-                )}
-
-                <section className="rounded-[12px] border border-brand-border-card bg-brand-panel-raised p-4">
-                  <h3 className={H3}>{copy.promote}</h3>
-                  <p className="mt-1 text-[13px] leading-[1.55] text-text-dark-secondary">{copy.promoteBody}</p>
-                  <div className="mt-3">
-                    <ClaimPanel
-                      key={open.dramaId}
-                      dramaId={open.dramaId}
-                      watchHref={open.watchHref}
+                  {detail !== undefined && (
+                    <DramaFacts
                       locale={locale}
-                      signedIn={signedIn}
-                      signInHref={signInHref}
-                      initialLink={held[open.dramaId] ?? links[open.dramaId] ?? null}
-                      onClaimed={(view) => {
-                        const dramaId = open.dramaId;
-                        setHeld((previous) => ({ ...previous, [dramaId]: view }));
-                      }}
+                      listedAt={detail.listedAt}
+                      episodes={detail.episodes}
+                      payStart={detail.payStart}
                     />
-                  </div>
-                </section>
+                  )}
+                </div>
 
                 {detail?.synopsis && (
                   <section>
-                    <h3 className={H3}>{copy.synopsis}</h3>
-                    <p className="mt-1.5 line-clamp-6 text-[13.5px] leading-[1.65] whitespace-pre-line text-text-dark-secondary">
+                    <h3 className="sr-only">{copy.synopsis}</h3>
+                    <p className="text-[13.5px] leading-[1.65] whitespace-pre-line text-text-dark-secondary">
                       {detail.synopsis}
                     </p>
                   </section>
                 )}
 
-                <WhitelistBanner locale={locale} href={promotionsHref} />
+                <ClaimPanel
+                  key={open.dramaId}
+                  dramaId={open.dramaId}
+                  watchHref={open.watchHref}
+                  locale={locale}
+                  signedIn={signedIn}
+                  signInHref={signInHref}
+                  initialLink={held[open.dramaId] ?? links[open.dramaId] ?? null}
+                  onClaimed={(view) => {
+                    const dramaId = open.dramaId;
+                    setHeld((previous) => ({ ...previous, [dramaId]: view }));
+                  }}
+                  linkLevel={3}
+                />
 
-                <details className="group rounded-[10px] border border-brand-border-card px-4 py-3">
-                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 [&::-webkit-details-marker]:hidden">
-                    <h3 className={H3}>{copy.howTo}</h3>
-                    <ChevronDown aria-hidden className="size-4 text-text-dark-secondary transition-transform group-open:rotate-180" />
-                  </summary>
+                {/* Downloads need sign-in, so the page sends the list only then. */}
+                {detail !== undefined && detail.clips.length > 0 && (
+                  <section>
+                    <h3 className={H3}>{copy.seriesClips}</h3>
+                    <p className="mt-1 mb-3 text-[13px] text-text-dark-secondary">{copy.clipsBody}</p>
+                    <ClipDownloads locale={locale} clips={detail.clips} current={open.id} />
+                  </section>
+                )}
+
+                <section className="rounded-[10px] border border-brand-border-card bg-brand-panel-raised px-4 py-3.5">
+                  <h3 className={H3}>{copy.howTo}</h3>
                   <div className="mt-3">
                     <HowTo locale={locale} />
                   </div>
-                </details>
+                </section>
 
                 <Link href={open.dramaHref} className="inline-block text-[13.5px] text-brand-accent-text hover:underline">
                   {copy.viewDrama} →
                 </Link>
               </div>
 
-              {/* The clip and what to do with it: watch it, download it, or pick another of the drama's clips. */}
+              {/* The clip and what to do with it: watch it and download it. */}
               <div className="order-first flex flex-col bg-media md:order-none md:max-h-[calc(100dvh-34px)] md:overflow-y-auto">
                 <div className="flex min-h-0 flex-1 items-center justify-center">
                   {!signedIn ? (
@@ -268,14 +257,14 @@ export function ClipPlaza({
                       preload="metadata"
                       poster={open.posterUrl ?? open.coverUrl ?? undefined}
                       src={`/api/tasks/assets/${open.id}`}
-                      // Room left under the player for the download panel, taller when it lists the other clips.
-                      className={`aspect-[9/16] max-h-[70vh] w-full ${moreClips ? "md:max-h-[calc(100dvh-250px)]" : "md:max-h-[calc(100dvh-150px)]"}`}
+                      // Room left under the player for the download panel.
+                      className="aspect-[9/16] max-h-[70vh] w-full md:max-h-[calc(100dvh-150px)]"
                     />
                   ) : (
                     <img
                       src={`/api/tasks/assets/${open.id}`}
                       alt=""
-                      className={`max-h-[70vh] w-full object-contain ${moreClips ? "md:max-h-[calc(100dvh-250px)]" : "md:max-h-[calc(100dvh-150px)]"}`}
+                      className="max-h-[70vh] w-full object-contain md:max-h-[calc(100dvh-150px)]"
                     />
                   )}
                 </div>
@@ -298,14 +287,6 @@ export function ClipPlaza({
                       <Download aria-hidden className="size-4" />
                       {copy.downloadThis} · {open.size}
                     </a>
-                    {moreClips && (
-                      <div>
-                        <p className="mb-2 text-[12.5px] text-text-dark-secondary">
-                          {copy.allClips} · {copy.clipsBody}
-                        </p>
-                        <ClipDownloads locale={locale} clips={detail.clips} current={open.id} />
-                      </div>
-                    )}
                   </div>
                 )}
               </div>

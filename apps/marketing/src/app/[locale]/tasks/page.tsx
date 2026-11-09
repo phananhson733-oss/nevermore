@@ -1,5 +1,5 @@
 // @input  -- locale param; q, language, genre, tag and page query (no others: a filter the bar does not show is not applied); the task database; the session; R2 for stills and covers
-// @output -- the promoter tabs, the four filters MoboReels' bar has (search, 语言, 题材, 标签 from the tags of published dramas), each named by a label above it, then every ready clip of a published drama, newest first, as a paged 素材广场 grid, with what each listed drama's dialog shows (details with its platform and promoter count, clips, the visitor's link and the drama page it opens)
+// @output -- the promoter tabs, the four filters MoboReels' bar has (search, 语言, 题材, 标签 from the tags of published dramas), each named by a label above it, then every ready clip of a published drama, newest first, as a paged 素材广场 grid, with what each listed drama's dialog shows (上架时间, episodes, synopsis, its clips for a signed-in visitor, and the visitor's two links when they already hold them)
 // @pos    -- /tasks, the task center's entry page
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -13,7 +13,7 @@ import { siteConfig } from "@/config/site";
 import { getServerAuthenticatedUser } from "@/lib/auth/server-auth-user";
 import { listMyClaims } from "@/lib/task-center/claims-store";
 import { PAGE_SIZE, SLUG_PATTERN } from "@/lib/task-center/contracts";
-import { formatBytes, genreLabel, languageName, promoLink, taskCopy } from "@/lib/task-center/copy";
+import { formatBytes, genreLabel, languageName, promoLink, resourceLink, taskCopy } from "@/lib/task-center/copy";
 import { getTaskDb } from "@/lib/task-center/db";
 import {
   listPlazaDramaDetails,
@@ -112,14 +112,17 @@ export default async function TasksPage({
 
   const user = await getServerAuthenticatedUser().catch(() => ({ status: "unavailable" as const }));
   const signedIn = user.status === "authenticated";
-  // The one "all" link per drama this person already holds, so a card's
-  // dialog shows it instead of the button.
+  // The "all" links per drama this person already holds, so a card's dialog
+  // shows them at once instead of making them.
   const links: Record<string, LinkView> = {};
   if (db !== null && user.status === "authenticated") {
     const claims = await listMyClaims(db, user.userId).catch(() => []);
     for (const claim of claims) {
       if (claim.channel === "all") {
-        links[claim.dramaId] = { link: promoLink(siteConfig.url, claim.code) };
+        links[claim.dramaId] = {
+          link: promoLink(siteConfig.url, claim.code),
+          resourceLink: resourceLink(siteConfig.url, claim.code),
+        };
       }
     }
   }
@@ -152,8 +155,6 @@ export default async function TasksPage({
   for (const { drama } of result?.items ?? []) {
     const detail = details[drama.id];
     dramas[drama.id] = {
-      platform: drama.platform,
-      promoterCount: drama.promoterCount,
       synopsis: detail?.synopsis ?? null,
       listedAt: drama.listedAt,
       episodes: drama.episodes,
@@ -259,7 +260,6 @@ export default async function TasksPage({
               dramas={dramas}
               signedIn={signedIn}
               signInHref={signInHref}
-              promotionsHref={`${localePath(locale, "/promotions")}#accounts`}
               links={links}
             />
             {pages > 1 && (
