@@ -28,10 +28,24 @@
     "contact": "联系我们",
     "glossary": "术语表",
     "pricing": "定价",
-    "tasks": "任务中心",
-    "earnings": "我的收益",
+    "ggboost": "GGBoost",
     "agents": "Agents",
     "resources": "资源",
+    "ggboostMenu": {
+      "group": "短剧推广",
+      "tasks": {
+        "label": "任务中心",
+        "description": "挑短剧、下载运营剪好的素材，领取专属推广链接。"
+      },
+      "promotions": {
+        "label": "我的推广",
+        "description": "你领过的推广链接、每条被点开的次数，以及发布用的账号。"
+      },
+      "earnings": {
+        "label": "我的收益",
+        "description": "按运营导入的平台结算，记到你名下的订单和收入。"
+      }
+    },
     "agentsMenu": {
       "group": "网站审查",
       "viewAll": "查看全部 Agents",

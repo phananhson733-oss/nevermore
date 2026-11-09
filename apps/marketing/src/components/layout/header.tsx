@@ -78,10 +78,11 @@ export function Header() {
           GenGrowth
         </Link>
 
-        {/* Desktop Nav. From xl up: with Task Center and My Earnings the seven
-            links and the right-hand buttons no longer fit side by side at lg
-            (measured 2026-11-05 at 1024px), so below xl the menu button
-            carries them. */}
+        {/* Desktop Nav. From xl up: with Task Center and My Earnings as two
+            links, the seven links and the right-hand buttons no longer fit
+            side by side at lg (measured 2026-11-05 at 1024px), so below xl the
+            menu button carries them. Those pages now share one GGBoost menu,
+            leaving six; lg has not been re-measured. */}
         <nav
           aria-label="Main navigation"
           className="hidden items-center gap-7.5 xl:flex"
@@ -94,7 +95,7 @@ export function Header() {
                 groups={item.menu}
                 locale={locale}
                 triggerLabel={t(item.labelKey)}
-                viewAllLabelKey={item.menuViewAllLabelKey ?? item.labelKey}
+                viewAllLabelKey={item.menuViewAllLabelKey}
               />
             ) : (
               <Link
@@ -152,9 +153,7 @@ export function Header() {
                       groups={item.menu}
                       locale={locale}
                       triggerLabel={t(item.labelKey)}
-                      viewAllLabelKey={
-                        item.menuViewAllLabelKey ?? item.labelKey
-                      }
+                      viewAllLabelKey={item.menuViewAllLabelKey}
                       onNavigate={() => setMobileOpen(false)}
                     />
                   ) : (

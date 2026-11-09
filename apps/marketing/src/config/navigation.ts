@@ -1,5 +1,5 @@
 // @input  — @/types 中的 NavItem / FooterLink 类型
-// @output — 顶部主导航（含任务中心、我的收益）、网站审查 / Resources 子菜单及 footer 链接数据
+// @output — 顶部主导航、GGBoost（任务中心 / 我的推广 / 我的收益）/ 网站审查 / Resources 子菜单及 footer 链接数据
 // @pos    — 静态配置，供 Header 和 Footer 组件消费
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 import type { NavItem, FooterLink, NavMenuGroup, NavMenuItem } from "@/types";
@@ -32,6 +32,40 @@ export const agentsMenuGroups: NavMenuGroup[] = [
         labelKey: "nav.agentsMenu.geo.label",
         descriptionKey: "nav.agentsMenu.geo.description",
         icon: "Radar",
+      },
+    ],
+  },
+];
+
+/**
+ * The three promoter pages, grouped under one header entry. Each has its own
+ * top-level route (they share a tab row rather than a parent path), so every
+ * item carries an explicit href.
+ */
+export const ggboostMenuGroups: NavMenuGroup[] = [
+  {
+    labelKey: "nav.ggboostMenu.group",
+    items: [
+      {
+        slug: "tasks",
+        href: "/tasks",
+        labelKey: "nav.ggboostMenu.tasks.label",
+        descriptionKey: "nav.ggboostMenu.tasks.description",
+        icon: "ClipboardList",
+      },
+      {
+        slug: "promotions",
+        href: "/promotions",
+        labelKey: "nav.ggboostMenu.promotions.label",
+        descriptionKey: "nav.ggboostMenu.promotions.description",
+        icon: "Link2",
+      },
+      {
+        slug: "earnings",
+        href: "/earnings",
+        labelKey: "nav.ggboostMenu.earnings.label",
+        descriptionKey: "nav.ggboostMenu.earnings.description",
+        icon: "Wallet",
       },
     ],
   },
@@ -75,8 +109,13 @@ export const resourcesMenuGroups: NavMenuGroup[] = [
 
 export const headerNavItems: NavItem[] = [
   { labelKey: "common.home", href: "/" },
-  { labelKey: "nav.tasks", href: "/tasks" },
-  { labelKey: "nav.earnings", href: "/earnings" },
+  {
+    labelKey: "nav.ggboost",
+    // The landing page for the mobile heading link. No directory link at the
+    // foot of the desktop panel: its first entry already is the Task Center.
+    href: "/tasks",
+    menu: ggboostMenuGroups,
+  },
   {
     labelKey: "nav.agents",
     href: "/agents",

@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   agentsMenuGroups,
   footerResourceLinks,
+  ggboostMenuGroups,
   headerNavItems,
   menuItemPath,
   resourcesMenuGroups,
@@ -102,8 +103,7 @@ describe("Website audits submenu", () => {
       headerNavItems.map(({ labelKey, href }) => ({ labelKey, href })),
     ).toEqual([
       { labelKey: "common.home", href: "/" },
-      { labelKey: "nav.tasks", href: "/tasks" },
-      { labelKey: "nav.earnings", href: "/earnings" },
+      { labelKey: "nav.ggboost", href: "/tasks" },
       { labelKey: "nav.agents", href: "/agents" },
       { labelKey: "nav.blog", href: "/blog" },
       { labelKey: "nav.resources", href: "/resources" },
@@ -116,16 +116,51 @@ describe("Website audits submenu", () => {
   });
 });
 
+describe("GGBoost submenu", () => {
+  it("is the first primary submenu and lands on the Task Center", () => {
+    const withMenu = headerNavItems.filter((item) => item.menu);
+    const ggboost = withMenu[0];
+
+    expect(ggboost?.labelKey).toBe("nav.ggboost");
+    expect(ggboost?.href).toBe("/tasks");
+    expect(ggboost?.menu).toBe(ggboostMenuGroups);
+    expect(ggboost?.menuViewAllLabelKey).toBeUndefined();
+  });
+
+  it("holds the three promoter pages, in the order of their tab row", () => {
+    expect(
+      ggboostMenuGroups.flatMap((group) =>
+        group.items.map((item) => menuItemPath("/tasks", item)),
+      ),
+    ).toEqual(["/tasks", "/promotions", "/earnings"]);
+  });
+
+  it("points every promoter page at a concrete route", () => {
+    for (const item of ggboostMenuGroups.flatMap((group) => group.items)) {
+      const href = menuItemPath("/tasks", item);
+      expect(existsSync(routePage(href)), href).toBe(true);
+    }
+  });
+
+  it("is the only header entry for the promoter pages", () => {
+    const flat = headerNavItems.filter((item) => !item.menu);
+    for (const href of ["/tasks", "/promotions", "/earnings"]) {
+      expect(flat.some((item) => item.href === href), href).toBe(false);
+    }
+  });
+});
+
 describe("Resources submenu", () => {
-  it("is the second primary submenu and links the Resources directory", () => {
+  it("is the third primary submenu and links the Resources directory", () => {
     const withMenu = headerNavItems.filter((item) => item.menu);
 
     expect(withMenu.map((item) => item.href)).toEqual([
+      "/tasks",
       "/agents",
       "/resources",
     ]);
-    expect(withMenu[1]?.menu).toBe(resourcesMenuGroups);
-    expect(withMenu[1]?.menuViewAllLabelKey).toBe("nav.resourcesMenu.viewAll");
+    expect(withMenu[2]?.menu).toBe(resourcesMenuGroups);
+    expect(withMenu[2]?.menuViewAllLabelKey).toBe("nav.resourcesMenu.viewAll");
   });
 
   it("keeps Prompts, Tools, Skills, and Docs at their exact destinations", () => {
@@ -176,6 +211,10 @@ describe("Navigation copy", () => {
     const messages = readMessages(locale);
     const keys = [
       ...headerNavItems.map((item) => item.labelKey),
+      ...ggboostMenuGroups.map((group) => group.labelKey),
+      ...ggboostMenuGroups.flatMap((group) =>
+        group.items.flatMap((item) => [item.labelKey, item.descriptionKey]),
+      ),
       ...agentsMenuGroups.map((group) => group.labelKey),
       ...agentsMenuGroups.flatMap((group) =>
         group.items.flatMap((item) => [item.labelKey, item.descriptionKey]),

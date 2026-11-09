@@ -1,6 +1,6 @@
 // @input  -- the page locale and which of the three promoter pages is showing
 // @output -- the 任务中心 / 我的推广 / 我的收益 tab row, the current one marked with aria-current
-// @pos    -- top of /tasks, /promotions and /earnings; the site header keeps its own two links, so the tabs are what links all three
+// @pos    -- top of /tasks, /promotions and /earnings; the site header reaches the same three through its GGBoost menu, the tabs move between them in place
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import Link from "next/link";

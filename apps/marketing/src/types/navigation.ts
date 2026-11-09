@@ -7,7 +7,8 @@ export interface NavItem {
   href: string;
   /** Present when the item opens a submenu instead of navigating on its own. */
   menu?: NavMenuGroup[];
-  /** Translation key for the directory link at the foot of a submenu. */
+  /** Translation key for the directory link at the foot of a submenu. Without
+   *  one the submenu has no such link. */
   menuViewAllLabelKey?: string;
 }
 
