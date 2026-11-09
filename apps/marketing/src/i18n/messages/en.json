@@ -28,10 +28,24 @@
     "contact": "Contact",
     "glossary": "Glossary",
     "pricing": "Pricing",
-    "tasks": "Task Center",
-    "earnings": "My Earnings",
+    "ggboost": "GGBoost",
     "agents": "Agents",
     "resources": "Resources",
+    "ggboostMenu": {
+      "group": "Short drama promotion",
+      "tasks": {
+        "label": "Task Center",
+        "description": "Pick a drama, download the clips our team cut, and get your own promo link."
+      },
+      "promotions": {
+        "label": "My Promotions",
+        "description": "The links you took, how often each was followed, and the accounts you post from."
+      },
+      "earnings": {
+        "label": "My Earnings",
+        "description": "Orders and income credited to you, from the settlement reports our team imports."
+      }
+    },
     "agentsMenu": {
       "group": "Website audits",
       "viewAll": "View all Agents",

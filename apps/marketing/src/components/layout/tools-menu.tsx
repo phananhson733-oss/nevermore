@@ -7,10 +7,13 @@
 import {
   BookOpen,
   ChevronDown,
+  ClipboardList,
   Compass,
+  Link2,
   MessageSquareText,
   ScanSearch,
   Sparkles,
+  Wallet,
   Wrench,
   type LucideIcon,
 } from "lucide-react";
@@ -28,10 +31,13 @@ import { localePath } from "@/lib/locale-path";
  */
 const ICONS: Record<string, LucideIcon> = {
   BookOpen,
+  ClipboardList,
   Compass,
+  Link2,
   MessageSquareText,
   ScanSearch,
   Sparkles,
+  Wallet,
   Wrench,
 };
 
@@ -40,7 +46,10 @@ interface NavSubmenuProps {
   readonly groups: NavMenuGroup[];
   readonly locale: string;
   readonly triggerLabel: string;
-  readonly viewAllLabelKey: string;
+  /** The directory link at the foot of the panel. Left out when the menu's
+   *  first entry already is that directory, so the panel does not end on a
+   *  second link to it. */
+  readonly viewAllLabelKey?: string | undefined;
 }
 
 function MenuLink({
@@ -93,6 +102,9 @@ function MenuLink({
  * announces itself as an expandable button. The trigger does not navigate — the
  * directory link lives at the foot of the panel, so pointer and keyboard users
  * can still reach the parent route.
+ *
+ * Even-sized groups sit two to a row. An odd one would leave a hole in the
+ * grid, so it is listed in a single, narrower column instead.
  */
 export function NavSubmenu({
   basePath,
@@ -102,6 +114,7 @@ export function NavSubmenu({
   viewAllLabelKey,
 }: NavSubmenuProps) {
   const t = useTranslations();
+  const twoColumns = groups.every((group) => group.items.length % 2 === 0);
 
   return (
     <NavigationMenu.Root delayDuration={100} className="relative">
@@ -118,14 +131,20 @@ export function NavSubmenu({
           {/* A raised panel, not the page surface: this floats above the header
               and needs to read as a layer. Signal Console allows a shadow here
               (Design Spec 05) — it is the panel shadow, not a glow. */}
-          <NavigationMenu.Content className="absolute top-full left-1/2 z-50 mt-3 w-[560px] -translate-x-1/2 rounded-card border border-brand-border-card bg-brand-panel-raised p-3 shadow-panel">
+          <NavigationMenu.Content
+            className={`absolute top-full left-1/2 z-50 mt-3 -translate-x-1/2 rounded-card border border-brand-border-card bg-brand-panel-raised p-3 shadow-panel ${
+              twoColumns ? "w-[560px]" : "w-[340px]"
+            }`}
+          >
             {groups.map((group) => (
               <div key={group.labelKey} className="mb-1 last:mb-0">
                 {/* mono + uppercase: the eyebrow/label role, per Design Spec 02 */}
                 <p className="px-3 pt-2 pb-1.5 font-mono text-[10.5px] tracking-[0.14em] text-text-dark-secondary uppercase">
                   {t(group.labelKey)}
                 </p>
-                <ul className="grid list-none grid-cols-2 gap-1">
+                <ul
+                  className={`grid list-none gap-1 ${twoColumns ? "grid-cols-2" : "grid-cols-1"}`}
+                >
                   {group.items.map((item) => (
                     <li key={item.slug}>
                       <NavigationMenu.Link asChild>
@@ -145,22 +164,24 @@ export function NavSubmenu({
               </div>
             ))}
 
-            <div className="mt-2 border-t border-brand-border pt-2">
-              <NavigationMenu.Link asChild>
-                <Link
-                  href={localePath(locale, basePath)}
-                  className="group flex items-center justify-between rounded-row px-3 py-2.5 font-mono text-[10.5px] tracking-[0.06em] text-brand-accent-text uppercase transition-colors hover:bg-brand-panel focus-visible:bg-brand-panel focus-visible:ring-2 focus-visible:ring-brand-accent/60 focus-visible:outline-none"
-                >
-                  {t(viewAllLabelKey)}
-                  <span
-                    aria-hidden="true"
-                    className="transition-transform duration-200 group-hover:translate-x-0.5"
+            {viewAllLabelKey === undefined ? null : (
+              <div className="mt-2 border-t border-brand-border pt-2">
+                <NavigationMenu.Link asChild>
+                  <Link
+                    href={localePath(locale, basePath)}
+                    className="group flex items-center justify-between rounded-row px-3 py-2.5 font-mono text-[10.5px] tracking-[0.06em] text-brand-accent-text uppercase transition-colors hover:bg-brand-panel focus-visible:bg-brand-panel focus-visible:ring-2 focus-visible:ring-brand-accent/60 focus-visible:outline-none"
                   >
-                    &rarr;
-                  </span>
-                </Link>
-              </NavigationMenu.Link>
-            </div>
+                    {t(viewAllLabelKey)}
+                    <span
+                      aria-hidden="true"
+                      className="transition-transform duration-200 group-hover:translate-x-0.5"
+                    >
+                      &rarr;
+                    </span>
+                  </Link>
+                </NavigationMenu.Link>
+              </div>
+            )}
           </NavigationMenu.Content>
         </NavigationMenu.Item>
       </NavigationMenu.List>
