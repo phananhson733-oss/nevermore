@@ -1,5 +1,5 @@
 // @input  -- a disposable Postgres rebuilt by db/tasks/migrate.sh
-// @output -- proof that the task center's SQL does what the stores promise: the clip grid and its 本周爆款 rule, each listed drama's dialog details, imports from 查剧 (频道 and genre from the theater's page, one drama whichever 北斗 id found it, 完结 left unknown for a 剧库 row, GoodShort's base64 ids) and tags, publishing without a platform link, the reader's drama page (trailer pick, taken-down dramas kept, drafts not), promo clicks that open it, and 去看全集 carrying only a code claimed for that drama, promoter accounts included
+// @output -- proof that the task center's SQL does what the stores promise: the clip grid (its filters, the 标签 one included, and their choices) and its 本周爆款 rule, each listed drama's dialog details, imports from 查剧 (频道 and genre from the theater's page, one drama whichever 北斗 id found it, 完结 left unknown for a 剧库 row, GoodShort's base64 ids) and tags, publishing without a platform link, the reader's drama page (trailer pick, taken-down dramas kept, drafts not), promo clicks that open it, and 去看全集 carrying only a code claimed for that drama, promoter accounts included
 // @pos    -- the only test that executes task center SQL
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -279,13 +279,23 @@ describe("dramas", () => {
   });
 
   it("filters clips, searches literally, sorts by promoters and pages", async () => {
+    // a has no tags: the facets must still count it.
     const a = await publishedDrama({ title: "100% Revenge", platform: "reelshort", audience: "female", genre: "revenge" });
-    const b = await publishedDrama({ title: "Moon_Light", titleCn: "月光", platform: "dramabox", language: "es", genre: "werewolf" });
-    const c = await publishedDrama({ title: "Plain", platform: "dramabox", audience: "male" });
+    const b = await publishedDrama({
+      title: "Moon_Light",
+      titleCn: "月光",
+      platform: "dramabox",
+      language: "es",
+      genre: "werewolf",
+      tags: ["Werewolf", "Alpha"],
+    });
+    const c = await publishedDrama({ title: "Plain", platform: "dramabox", audience: "male", tags: ["Alpha"] });
+    const draft = await createDrama(db, drama({ title: "Draft", tags: ["Alpha", "Hidden"] }), ADMIN);
     const clipA = await readyClip(a, { clipType: "recap" });
     const clipB = await readyClip(b, { title: "Full moon hook", clipType: "highlight" });
     const clipC1 = await readyClip(c, { clipType: "recap" });
     const clipC2 = await readyClip(c, { contentType: "image/png" });
+    await readyClip(draft);
     await claimTask(db, { userId: USER_A, dramaId: c, channel: "all" });
     await claimTask(db, { userId: USER_B, dramaId: c, channel: "all" });
     await claimTask(db, { userId: USER_A, dramaId: b, channel: "all" });
@@ -300,6 +310,13 @@ describe("dramas", () => {
     expect(await ids({ genre: "werewolf" })).toEqual([clipB]);
     expect(await ids({ clipType: "recap" })).toEqual([clipC1, clipA]);
     expect(await ids({ language: "es" })).toEqual([clipB]);
+
+    // 标签: one tag, spelled as stored, on a published drama.
+    expect(await ids({ tag: "Alpha" })).toEqual([clipC2, clipC1, clipB]);
+    expect(await ids({ tag: "Werewolf" })).toEqual([clipB]);
+    expect(await ids({ tag: "werewolf" })).toEqual([]);
+    expect(await ids({ tag: "Hidden" })).toEqual([]);
+    expect(await ids({ tag: "Alpha", clipType: "highlight" })).toEqual([clipB]);
 
     expect(await ids({ search: "%" })).toEqual([clipA]);
     // "_" as a wildcard would match "Moon"; as a letter it matches nothing.
@@ -321,10 +338,12 @@ describe("dramas", () => {
     const page2 = await listPublishedAssets(db, { sort: "newest", page: 2, pageSize: 3 });
     expect(page2).toMatchObject({ total: 4, items: [{ id: clipA }] });
 
+    // Each tag once, and none that only a draft has.
     expect(await listPublishedFacets(db)).toEqual({
       platforms: ["dramabox", "reelshort"],
       languages: ["en", "es"],
       genres: ["revenge", "werewolf"],
+      tags: ["Alpha", "Werewolf"],
     });
   });
 

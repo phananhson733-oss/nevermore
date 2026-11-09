@@ -1,5 +1,5 @@
 // @input  -- a TaskDb and admin or visitor requests already parsed by contracts.ts
-// @output -- dramas (with their optional platform link) and their clip assets: the public clip grid (with this week's hot dramas and each listed drama's details and clips), the drama list and detail, the reader's drama page (/watch/<id>: cover, synopsis, trailer, whether there is a platform link, never the link itself), and the admin reads and writes, including a drama imported from 查剧 (北斗 through the 选剧台 lookup, filled in from the theater's own page)
+// @output -- dramas (with their optional platform link) and their clip assets: the public clip grid (filtered by any one tag, with this week's hot dramas and each listed drama's details and clips) and its filter choices (tags included), the drama list and detail, the reader's drama page (/watch/<id>: cover, synopsis, trailer, whether there is a platform link, never the link itself), and the admin reads and writes, including a drama imported from 查剧 (北斗 through the 选剧台 lookup, filled in from the theater's own page)
 // @pos    -- every SQL statement on task_center.dramas and task_center.drama_assets
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -17,7 +17,7 @@ export interface DramaSummary {
   readonly coverKey: string | null;
   readonly audience: DramaAudience | null;
   readonly genre: string | null;
-  /** As 北斗 gave them, or as typed; shown, never filtered on. */
+  /** As 北斗 or the theater gave them, or as typed; shown, and the /tasks 标签 filter matches one exactly. */
   readonly tags: readonly string[];
   readonly listedAt: string | null;
   /** People who claimed at least one channel, counted from task_claims. */
@@ -199,6 +199,8 @@ export interface PlazaQuery {
   readonly language?: string | null;
   readonly audience?: DramaAudience | null;
   readonly genre?: string | null;
+  /** One of the drama's tags, spelled exactly as stored: the choices come from listPublishedFacets. */
+  readonly tag?: string | null;
   readonly clipType?: ClipType | null;
   readonly search?: string | null;
   readonly sort: DramaSort;
@@ -223,6 +225,10 @@ export async function listPublishedAssets(
   equal("d.audience", query.audience);
   equal("d.genre", query.genre);
   equal("a.clip_type", query.clipType);
+  if (query.tag) {
+    values.push(query.tag);
+    where.push(`$${values.length} = any(d.tags)`);
+  }
   const search = query.search?.trim();
   if (search) {
     values.push(likePattern(search));
@@ -330,28 +336,36 @@ export async function listPlazaDramaDetails(
   return details;
 }
 
-/** The platforms, languages and genres that currently have something published. */
+/** The platforms, languages, genres and tags that currently have something published. */
 export async function listPublishedFacets(
   db: TaskDb,
 ): Promise<{
   readonly platforms: readonly string[];
   readonly languages: readonly string[];
   readonly genres: readonly string[];
+  readonly tags: readonly string[];
 }> {
+  // Tags in a subquery of their own: unnesting them in the main FROM would
+  // drop every published drama without tags from the other three lists.
   const { rows } = await db.query<{
     platforms: string[] | null;
     languages: string[] | null;
     genres: string[] | null;
+    tags: string[] | null;
   }>(
     `select array_agg(distinct platform order by platform) as platforms,
             array_agg(distinct language order by language) as languages,
-            array_agg(distinct genre order by genre) filter (where genre is not null) as genres
+            array_agg(distinct genre order by genre) filter (where genre is not null) as genres,
+            (select array_agg(distinct t order by t)
+               from task_center.dramas x cross join unnest(x.tags) t
+              where x.status = 'published') as tags
        from task_center.dramas where status = 'published'`,
   );
   return {
     platforms: rows[0]?.platforms ?? [],
     languages: rows[0]?.languages ?? [],
     genres: rows[0]?.genres ?? [],
+    tags: rows[0]?.tags ?? [],
   };
 }
 
