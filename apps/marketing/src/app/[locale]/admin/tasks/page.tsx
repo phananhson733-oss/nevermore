@@ -60,7 +60,7 @@ export default async function AdminTasksPage({
       <div className={PANEL}>
         <h2 className={H2}>新建短剧</h2>
         <p className="mt-1 text-[13.5px] text-text-dark-secondary">
-          填剧名和平台，选剧台找到这部剧后，集数、收费集、简介、标签和封面自动带出：ReelShort 的按它官网的原样（标签照官网语言，频道和题材也一并带出），其他平台先用选剧台的资料。建好是草稿，上传剪好的素材、填好推广目标地址再上架。
+          填剧名和平台，选剧台找到这部剧后，集数、收费集、简介、标签和封面自动带出：ReelShort、StardustTV、MoboReels、NetShort、YourChannel 按各自官网的原样（标签照官网语言；ReelShort 和 StardustTV 的频道和题材也一并带出），其他平台用选剧台的资料。建好是草稿，上传剪好的素材、填好推广目标地址再上架。
         </p>
         <div className="mt-5">
           <DramaQuickCreate adminBase={base} />

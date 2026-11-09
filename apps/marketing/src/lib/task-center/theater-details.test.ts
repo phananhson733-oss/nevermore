@@ -1,11 +1,13 @@
-// @input  -- theater-details.ts with a fake fetch in place of www.reelshort.com; a page trimmed from the real one for a Spanish drama
-// @output -- proof that a ReelShort page is read field by field (tags as shown, 女频/男频 and genre by tag id), that only ReelShort's own host is followed, that anything odd gives null rather than a guess, and that only a ReelShort id gets a link
+// @input  -- theater-details.ts and theater-reelshort.ts with a fake fetch in place of www.reelshort.com; a page trimmed from the real one for a Spanish drama
+// @output -- proof that a ReelShort page is read field by field (tags as shown, 女频/男频 and genre by tag id), that only a theater's own host is followed, that anything odd gives null rather than a guess, that only a platform's own ids are sent or linked, and that the reader list matches THEATER_PLATFORMS
 // @pos    -- unit tests for 查剧's second step; no network, no database
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import { describe, expect, it } from "vitest";
 
-import { fetchTheaterDetails, parseReelShortPage, theaterPageUrl } from "./theater-details.ts";
+import { LOOKUP_PLATFORMS, THEATER_PLATFORMS } from "./contracts.ts";
+import { fetchTheaterDetails, theaterPageUrl } from "./theater-details.ts";
+import { parseReelShortPage } from "./theater-reelshort.ts";
 
 const BOOK_ID = "6ad88d9e996727b60c007958";
 const ALIAS_ID = "6ad192a1f3d20df996045012";
@@ -143,13 +145,40 @@ describe("parseReelShortPage", () => {
 });
 
 describe("fetchTheaterDetails", () => {
-  it("only knows ReelShort, and only its own ids", async () => {
+  it("asks only a platform with a reader, and only with that platform's own ids", async () => {
     const never = (async () => {
       throw new Error("no request expected");
     }) as typeof fetch;
     expect(await fetchTheaterDetails("dramabox", BOOK_ID, never)).toBeNull();
+    expect(await fetchTheaterDetails("goodshort", "157KwomEt0CA6EFVXKKgcQ==", never)).toBeNull();
+    expect(await fetchTheaterDetails("kalostv", "14254", never)).toBeNull();
+    expect(await fetchTheaterDetails("toString", "1", never)).toBeNull();
     expect(await fetchTheaterDetails("reelshort", "../../etc", never)).toBeNull();
     expect(await fetchTheaterDetails("reelshort", "68a1b2c3d4", never)).toBeNull();
+    expect(await fetchTheaterDetails("netshort", "1/../../x", never)).toBeNull();
+  });
+
+  it("asks the site of exactly the platforms THEATER_PLATFORMS names", async () => {
+    const sampleIds: Readonly<Record<string, string>> = {
+      reelshort: BOOK_ID,
+      dramabox: "41000102839",
+      stardusttv: "23560",
+      moboreels: "107617322",
+      netshort: "2112388670085812226",
+      yourchannel: "376265469448953856",
+    };
+    const asked = new Set<string>();
+    for (const platform of LOOKUP_PLATFORMS) {
+      const fetchImpl = (async () => {
+        asked.add(platform);
+        return html("gone", 404);
+      }) as typeof fetch;
+      expect(await fetchTheaterDetails(platform, sampleIds[platform] ?? "1234567890123", fetchImpl)).toBeNull();
+    }
+    expect(asked).toEqual(THEATER_PLATFORMS);
+    // DramaBox is linked though not read.
+    expect(asked.has("dramabox")).toBe(false);
+    expect(theaterPageUrl("dramabox", "41000102839")).not.toBeNull();
   });
 
   it("follows ReelShort's own redirect to the drama the id now points at", async () => {
@@ -204,10 +233,19 @@ describe("fetchTheaterDetails", () => {
 });
 
 describe("theaterPageUrl", () => {
-  it("links a ReelShort id to its page and nothing else", () => {
+  it("links each platform's own id to its page there and nothing else", () => {
     expect(theaterPageUrl("reelshort", BOOK_ID)).toBe(`https://www.reelshort.com/movie/x-${BOOK_ID}`);
+    expect(theaterPageUrl("dramabox", "41000102839")).toBe("https://www.dramabox.com/drama/41000102839/x");
+    expect(theaterPageUrl("stardusttv", "23560")).toBe("https://www.stardusttv.net/episodes/01-x-23560");
+    expect(theaterPageUrl("moboreels", "107617322")).toBe("https://www.moboreels.com/drama/x-107617322");
+    expect(theaterPageUrl("netshort", "2112388670085812226")).toBe("https://netshort.com/episode/x-2112388670085812226");
+    expect(theaterPageUrl("yourchannel", "376265469448953856")).toBe(
+      "https://yourchannel.ai/pagesSub/player?id=376265469448953856&type=shotDrama",
+    );
     expect(theaterPageUrl("reelshort", "68a1b2c3d4")).toBeNull();
     expect(theaterPageUrl("reelshort", null)).toBeNull();
     expect(theaterPageUrl("dramabox", BOOK_ID)).toBeNull();
+    expect(theaterPageUrl("goodshort", "31000991502")).toBeNull();
+    expect(theaterPageUrl("constructor", "1")).toBeNull();
   });
 });
