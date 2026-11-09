@@ -1,5 +1,5 @@
 // @input  -- locale and drama id params, ?new=<cover outcome>&details=<official|beidou> after 查剧; the admin check; the drama and all its assets; R2 for the cover
-// @output -- the admin drama page: cover, title, episodes, pay start, tags, synopsis and where the details came from (a ReelShort drama links to its page there) up top, with a note after 查剧 on whether the theater's own page was read; promo link; publish switch with a note on what a draft hides; clip upload, rename, retag and delete; the full details form folded away
+// @output -- the admin drama page: cover, title, episodes, pay start, tags, synopsis and where the details came from (a drama from 查剧 links to its page on the theater's site where there is a link to make: ReelShort, DramaBox, StardustTV, MoboReels, NetShort, YourChannel) up top, with a note after 查剧 on whether the theater's own page was read; promo link; publish switch with a note on what a draft hides; clip upload, rename, retag and delete; the full details form folded away
 // @pos    -- /admin/tasks/<id> (Chinese only); 404 for anyone not on TASK_ADMIN_EMAILS
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -151,9 +151,12 @@ export default async function AdminDramaPage({
                 drama.source !== "beidou" ? (
                   "手填"
                 ) : sourcePage !== null ? (
-                  <a href={sourcePage} target="_blank" rel="noopener noreferrer" className="text-brand-accent-text hover:underline">
-                    {platformLabel(drama.platform)} 官网 ↗
-                  </a>
+                  <>
+                    查剧 ·{" "}
+                    <a href={sourcePage} target="_blank" rel="noopener noreferrer" className="text-brand-accent-text hover:underline">
+                      {platformLabel(drama.platform)} 官网页面 ↗
+                    </a>
+                  </>
                 ) : (
                   `选剧台（${drama.sourceDramaId}）`
                 )
