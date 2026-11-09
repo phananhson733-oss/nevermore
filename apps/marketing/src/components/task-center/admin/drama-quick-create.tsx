@@ -1,5 +1,5 @@
 // @input  -- a title, a platform and maybe a language typed on /admin/tasks; POST /api/admin/tasks/dramas/lookup and /import
-// @output -- 查剧: one exact match is listed straight away, several are offered to pick from, none (or a platform 选剧台 does not know) opens the full form
+// @output -- 查剧: one exact match is listed straight away, several are offered to pick from, none (or a platform 选剧台 does not know) opens the full form; a listed drama opens with ?new=<cover outcome>&details=<official|beidou>
 // @pos    -- the new-drama panel on /admin/tasks; the full DramaForm stays as the manual way
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
@@ -8,7 +8,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
-import { LOOKUP_LANGUAGES, LOOKUP_PLATFORMS } from "../../../lib/task-center/contracts.ts";
+import { LOOKUP_LANGUAGES, LOOKUP_PLATFORMS, THEATER_PLATFORMS } from "../../../lib/task-center/contracts.ts";
 import { languageName, PLATFORM_LABELS, platformLabel } from "../../../lib/task-center/copy.ts";
 import { adminFetch, describeError } from "./admin-fetch.ts";
 import { DramaForm } from "./drama-form.tsx";
@@ -39,7 +39,7 @@ interface Query {
 type Step =
   | { readonly kind: "idle" }
   | { readonly kind: "searching" }
-  | { readonly kind: "importing"; readonly title: string }
+  | { readonly kind: "importing"; readonly title: string; readonly platform: string }
   | { readonly kind: "pick"; readonly query: Query; readonly candidates: readonly Candidate[] }
   | { readonly kind: "manual"; readonly query: Query; readonly why: string | null };
 
@@ -109,14 +109,15 @@ export function DramaQuickCreate({ adminBase }: { adminBase: string }) {
 
   async function importOne(query: Query, candidate: Candidate): Promise<void> {
     setError(null);
-    setStep({ kind: "importing", title: candidate.title });
+    setStep({ kind: "importing", title: candidate.title, platform: query.platform });
     const answer = await adminFetch("/api/admin/tasks/dramas/import", "POST", {
       ...query,
       platformDramaId: candidate.platformDramaId,
     });
     if (answer.ok && typeof answer.data?.id === "string") {
       const cover = typeof answer.data.cover === "string" ? answer.data.cover : "missing";
-      router.push(`${adminBase}/${answer.data.id}?new=${encodeURIComponent(cover)}`);
+      const details = typeof answer.data.details === "string" ? answer.data.details : "beidou";
+      router.push(`${adminBase}/${answer.data.id}?new=${encodeURIComponent(cover)}&details=${encodeURIComponent(details)}`);
       return;
     }
     if (answer.status === 409 && typeof answer.error?.id === "string") {
@@ -178,7 +179,8 @@ export function DramaQuickCreate({ adminBase }: { adminBase: string }) {
       )}
       {step.kind === "importing" && (
         <p role="status" className="text-[13.5px] text-text-dark-secondary">
-          找到「{step.title}」，正在建草稿、拷封面…
+          找到「{step.title}」，正在
+          {THEATER_PLATFORMS.has(step.platform) ? `读 ${platformLabel(step.platform)} 官网、` : ""}建草稿、拷封面…
         </p>
       )}
       {error !== null && (

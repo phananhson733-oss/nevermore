@@ -1,5 +1,5 @@
 // @input  -- a TaskDb and admin or visitor requests already parsed by contracts.ts
-// @output -- dramas and their clip assets: the public clip grid (with this week's hot dramas), the drama list and detail, and the admin reads and writes, including a drama imported from the 选剧台 lookup
+// @output -- dramas and their clip assets: the public clip grid (with this week's hot dramas), the drama list and detail, and the admin reads and writes, including a drama imported from 查剧 (北斗 through the 选剧台 lookup, filled in from the theater's own page)
 // @pos    -- every SQL statement on task_center.dramas and task_center.drama_assets
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -405,7 +405,7 @@ export async function createDrama(
   return rows[0]!.id;
 }
 
-/** What the 选剧台 lookup told us about a drama, already checked against 0001 and 0004's limits. */
+/** What 查剧 found about a drama (北斗 through 选剧台, then the theater's own page), already checked against 0001 and 0004's limits. */
 export interface ImportedDrama {
   readonly title: string;
   readonly titleCn: string | null;
@@ -415,6 +415,8 @@ export interface ImportedDrama {
   readonly payStart: number | null;
   readonly synopsis: string | null;
   readonly tags: readonly string[];
+  readonly audience: DramaAudience | null;
+  readonly genre: string | null;
   readonly finished: boolean;
   readonly sourceDramaId: string;
 }
@@ -430,9 +432,9 @@ export type ImportResult =
 export async function importDrama(db: TaskDb, drama: ImportedDrama, adminEmail: string): Promise<ImportResult> {
   const { rows } = await db.query<{ id: string }>(
     `insert into task_center.dramas
-       (title, title_cn, platform, language, episodes, pay_start, synopsis, tags, finished,
-        source, source_drama_id, created_by)
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'beidou', $10, $11)
+       (title, title_cn, platform, language, episodes, pay_start, synopsis, tags, audience, genre,
+        finished, source, source_drama_id, created_by)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'beidou', $12, $13)
      on conflict (platform, source_drama_id) where source_drama_id is not null do nothing
      returning id`,
     [
@@ -444,6 +446,8 @@ export async function importDrama(db: TaskDb, drama: ImportedDrama, adminEmail: 
       drama.payStart,
       drama.synopsis,
       drama.tags,
+      drama.audience,
+      drama.genre,
       drama.finished,
       drama.sourceDramaId,
       adminEmail,

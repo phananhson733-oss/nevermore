@@ -1,5 +1,5 @@
 // @input  -- drama-lookup.ts with a fake fetch in place of 选剧台 and the cover CDN
-// @output -- proof that the lookup client reads only well-formed answers, maps errors, fits a 北斗 row to the dramas table, and fetches only a sane cover
+// @output -- proof that the lookup client reads only well-formed answers, maps errors, fits a 北斗 row to the dramas table with the theater's own page taking over field by field, and fetches only a sane cover
 // @pos    -- unit tests for the task center's side of pick-workbench's lookup contract; no network, no database
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 
 import { MAX_IMAGE_BYTES } from "./contracts.ts";
 import { fetchCover, lookupDramas, readLookupConfig, toImportedDrama, type LookupDrama } from "./drama-lookup.ts";
+import type { TheaterDetails } from "./theater-details.ts";
 
 const CONFIG = { url: "http://drama-platform-web-1:8088", token: "t0ken" };
 const QUERY = { platform: "reelshort", title: "Surf God", language: null };
@@ -87,6 +88,8 @@ describe("toImportedDrama", () => {
       payStart: 8,
       synopsis: "He came back.",
       tags: ["Revenge", "Sports"],
+      audience: null,
+      genre: null,
       finished: true,
       sourceDramaId: "68a1b2c3d4",
     });
@@ -121,6 +124,80 @@ describe("toImportedDrama", () => {
 
   it("gives up when nobody knows the language", () => {
     expect(toImportedDrama({ ...ROW, language: null }, QUERY)).toBeNull();
+  });
+});
+
+describe("toImportedDrama with the theater's own page", () => {
+  const PAGE: TheaterDetails = {
+    platform: "reelshort",
+    dramaId: "6ad88d9e996727b60c007958",
+    title: "Lazos rotos de los hermanos fae",
+    language: "es",
+    episodes: 54,
+    paid: true,
+    payStart: 10,
+    synopsis: "Traicionada por los príncipes fae.",
+    tags: ["Inmortal", "Romance", "romance", "Haciéndose el Tonto"],
+    audience: "female",
+    genre: "romance",
+    coverUrl: "https://v-img.example.com/c.jpg",
+  };
+
+  it("takes what the page shows over 北斗, keeping 北斗's 中文名 and 完结", () => {
+    expect(toImportedDrama(ROW, QUERY, PAGE)).toEqual({
+      title: "Lazos rotos de los hermanos fae",
+      titleCn: "冲浪之神的复仇",
+      platform: "reelshort",
+      language: "en",
+      episodes: 54,
+      payStart: 10,
+      synopsis: "Traicionada por los príncipes fae.",
+      tags: ["Inmortal", "Romance", "Haciéndose el Tonto"],
+      audience: "female",
+      genre: "romance",
+      finished: true,
+      // The id the page settled on, so both of 北斗's ids for one drama list it once.
+      sourceDramaId: "6ad88d9e996727b60c007958",
+    });
+  });
+
+  it("falls back to 北斗 field by field where the page said nothing", () => {
+    const sparse: TheaterDetails = {
+      ...PAGE,
+      title: null,
+      episodes: null,
+      paid: null,
+      payStart: null,
+      synopsis: null,
+      tags: [],
+      audience: null,
+      genre: null,
+    };
+    expect(toImportedDrama(ROW, QUERY, sparse)).toMatchObject({
+      title: "Surf God's Revenge",
+      episodes: 70,
+      payStart: 8,
+      synopsis: "He came back.",
+      tags: ["Revenge", "Sports"],
+      audience: null,
+      genre: null,
+    });
+  });
+
+  it("believes the page when it says every episode is free", () => {
+    expect(toImportedDrama(ROW, QUERY, { ...PAGE, paid: false, payStart: null })).toMatchObject({ payStart: null });
+    expect(toImportedDrama(ROW, QUERY, { ...PAGE, paid: true, payStart: null })).toMatchObject({ payStart: 8 });
+  });
+
+  it("uses the page's language only when nobody else knows it and the task center does", () => {
+    const unknown = { ...ROW, language: null };
+    expect(toImportedDrama(unknown, QUERY, PAGE)).toMatchObject({ language: "es" });
+    expect(toImportedDrama(unknown, QUERY, { ...PAGE, language: "zh_tw" })).toBeNull();
+    expect(toImportedDrama(unknown, { platform: "reelshort", language: "pt" }, PAGE)).toMatchObject({ language: "pt" });
+  });
+
+  it("has no 频道 or genre without the page", () => {
+    expect(toImportedDrama(ROW, QUERY)).toMatchObject({ audience: null, genre: null, sourceDramaId: "68a1b2c3d4" });
   });
 });
 
