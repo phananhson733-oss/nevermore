@@ -1,5 +1,5 @@
 // @input  -- locale param; the verified session; this person's claims with click counts and their submitted accounts
-// @output -- every drama they took a link for, with its 短剧推广链接 (which opens the drama's page on our site) and a copy button, its clicks and date; and the account whitelisting panel at #accounts
+// @output -- every drama they have links for, with its 推广链接 (which opens the drama's page on our site) and 资源推广链接 (straight to the drama on its platform), each with a copy button, the clicks on both and the date; and the account whitelisting panel at #accounts
 // @pos    -- /promotions (我的推广), private to the signed-in promoter and kept out of search
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -12,7 +12,7 @@ import { siteConfig } from "@/config/site";
 import { getServerAuthenticatedUser } from "@/lib/auth/server-auth-user";
 import { listMyAccounts, type PromoterAccount } from "@/lib/task-center/accounts-store";
 import { listMyClaims, type ClaimWithStats } from "@/lib/task-center/claims-store";
-import { channelLabel, formatCount, formatDay, promoLink, taskCopy } from "@/lib/task-center/copy";
+import { channelLabel, formatCount, formatDay, promoLink, resourceLink, taskCopy } from "@/lib/task-center/copy";
 import { getTaskDb } from "@/lib/task-center/db";
 import { localePath } from "@/lib/locale-path";
 import { generatePageMetadata } from "@/lib/seo";
@@ -121,11 +121,18 @@ function Links({ locale, claims }: { locale: string; claims: readonly ClaimWithS
                   {copy.claimedOn} {formatDay(claim.claimedAt, locale)}
                 </p>
               </div>
-              <div className="mt-3 max-w-2xl">
+              <div className="mt-3 max-w-2xl space-y-3">
                 <LinkBlock
                   title={copy.dramaLink}
                   body={copy.dramaLinkBody}
                   value={promoLink(siteConfig.url, claim.code)}
+                  locale={locale}
+                  level={3}
+                />
+                <LinkBlock
+                  title={copy.resourceLink}
+                  body={copy.resourceLinkBody}
+                  value={resourceLink(siteConfig.url, claim.code)}
                   locale={locale}
                   level={3}
                 />

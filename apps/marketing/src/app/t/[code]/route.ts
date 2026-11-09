@@ -1,6 +1,6 @@
 // @input  -- GET /t/<code> from anyone who followed a promoter's link
 // @output -- one recorded click and a 302 to the drama's page on our site, /watch/<drama id>?ref=<code>; 404 for an unclaimed code, 503 when the task database is unavailable
-// @pos    -- the public end of every promo link the task center hands out
+// @pos    -- the public end of the 推广链接, the first of the two links a promoter gets for each drama (the 资源推广链接 is ./go)
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import { followPromoCode } from "../../../lib/task-center/claims-store.ts";

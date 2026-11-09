@@ -1,11 +1,11 @@
 // @input  -- integer minor-unit amounts and counts as the database sums them, in decimal strings
-// @output -- proof that the earnings page shows them exactly, past the range a float holds, that a drama's free-episode line and 收费起始 follow its first paid episode, and that a clip named by a UUID or hash shows no title
+// @output -- proof that the earnings page shows them exactly, past the range a float holds, that a drama's free-episode line follows its first paid episode, and that a clip named by a UUID or hash shows no title
 // @pos    -- unit test for copy.ts formatting
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import { describe, expect, it } from "vitest";
 
-import { clipTitle, episodeLine, formatCount, formatMoney, paidFrom, taskCopy } from "./copy.ts";
+import { clipTitle, episodeLine, formatCount, formatMoney, taskCopy } from "./copy.ts";
 
 describe("formatMoney", () => {
   it("places the decimal point on the string, so no cent is rounded", () => {
@@ -51,23 +51,6 @@ describe("episodeLine", () => {
     expect(episodeLine(60, null, zh)).toBe("共 60 集");
     expect(episodeLine(null, 10, zh)).toBe("前 9 集免费");
     expect(episodeLine(null, null, zh)).toBeNull();
-  });
-});
-
-describe("paidFrom", () => {
-  const zh = taskCopy("zh");
-  const en = taskCopy("en");
-
-  it("names the first paid episode, or says all are free when it lies past the last", () => {
-    expect(paidFrom(60, 10, zh)).toBe("第 10 集");
-    expect(paidFrom(60, 10, en)).toBe("Episode 10");
-    expect(paidFrom(60, 1, zh)).toBe("第 1 集");
-    expect(paidFrom(60, 61, zh)).toBe("全部免费");
-    expect(paidFrom(null, 10, zh)).toBe("第 10 集");
-  });
-
-  it("is null when nobody knows", () => {
-    expect(paidFrom(60, null, zh)).toBeNull();
   });
 });
 

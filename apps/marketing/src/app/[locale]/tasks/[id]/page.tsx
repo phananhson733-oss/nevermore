@@ -1,6 +1,6 @@
 // @input  -- locale and drama id params; the task database; the verified session; R2 for the cover
-// @output -- one published drama laid out like RS Boost's resource page: cover, title, chips, 上架时间 · 共 N 集 · 前 M 集免费, synopsis; numbered free clip downloads with previews; the promo link (短剧推广链接, no 口令) and a link to the drama page it opens, with the 账号报白 banner; how it works; the episode list with paid locks
-// @pos    -- /tasks/<id>, where a promoter takes their link and downloads clips
+// @output -- one published drama laid out like RS Boost's resource page: cover, title, chips, 上架时间 · 共 N 集 · 前 M 集免费, synopsis; numbered free clip downloads with previews; the 推广链接 and 资源推广链接 (made for a signed-in visitor as the page opens, no 口令) and a link to the drama page the first opens; how it works; the episode list with paid locks
+// @pos    -- /tasks/<id>, where a promoter copies their links and downloads clips
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import { Lock } from "lucide-react";
@@ -8,12 +8,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { ClaimPanel } from "@/components/task-center/claim-panel";
-import { ClipDownloads, DramaChips, DramaFacts, HowTo, WhitelistBanner } from "@/components/task-center/drama-info";
+import { ClipDownloads, DramaChips, DramaFacts, HowTo } from "@/components/task-center/drama-info";
 import { siteConfig } from "@/config/site";
 import { getServerAuthenticatedUser } from "@/lib/auth/server-auth-user";
 import { listClaimsForDrama } from "@/lib/task-center/claims-store";
 import { isUuid, MAX_TAGS } from "@/lib/task-center/contracts";
-import { formatBytes, platformLabel, promoLink, taskCopy } from "@/lib/task-center/copy";
+import { formatBytes, platformLabel, promoLink, resourceLink, taskCopy } from "@/lib/task-center/copy";
 import { getTaskDb } from "@/lib/task-center/db";
 import { getPublishedDrama } from "@/lib/task-center/dramas-store";
 import { coverImageUrl, readR2Config } from "@/lib/task-center/r2";
@@ -67,8 +67,8 @@ export default async function TaskDetailPage({ params }: { params: Params }) {
 
   const user = await getServerAuthenticatedUser().catch(() => ({ status: "unavailable" as const }));
   const signedIn = user.status === "authenticated";
-  // Only the "all" claim is this drama's one link; per-channel codes from
-  // before stay listed on /promotions.
+  // Only the "all" claim is this drama's one pair of links; per-channel codes
+  // from before stay listed on /promotions.
   let code: string | null = null;
   if (user.status === "authenticated") {
     const claims = await listClaimsForDrama(loaded.db, user.userId, drama.id).catch(() => []);
@@ -81,7 +81,10 @@ export default async function TaskDetailPage({ params }: { params: Params }) {
   const title = locale === "zh" && drama.titleCn ? drama.titleCn : drama.title;
   const subtitle = locale === "zh" ? (drama.titleCn ? drama.title : null) : drama.titleCn;
 
-  const initialLink = code === null ? null : { link: promoLink(siteConfig.url, code) };
+  const initialLink =
+    code === null
+      ? null
+      : { link: promoLink(siteConfig.url, code), resourceLink: resourceLink(siteConfig.url, code) };
   const promotionsHref = localePath(locale, "/promotions");
 
   return (
@@ -184,9 +187,6 @@ export default async function TaskDetailPage({ params }: { params: Params }) {
               initialLink={initialLink}
               linkLevel={3}
             />
-          </div>
-          <div className="mt-5 max-w-2xl">
-            <WhitelistBanner locale={locale} href={`${promotionsHref}#accounts`} />
           </div>
         </div>
 

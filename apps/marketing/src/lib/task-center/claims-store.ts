@@ -1,5 +1,5 @@
-// @input  -- a TaskDb, a verified Supabase user id, a promo code from /t/<code> or from a drama page's ?ref=
-// @output -- claims (one per person, drama and channel; new ones are channel "all"), which drama page a followed code opens (one click recorded), the drama's platform link for 去看全集 with the code only when it was claimed for that drama (a sub-channel value stored in the link is replaced or dropped, never passed on), click counts
+// @input  -- a TaskDb, a verified Supabase user id, a promo code from /t/<code>, /t/<code>/go or a drama page's ?ref=
+// @output -- claims (one per person, drama and channel; new ones are channel "all"), which drama a followed code is for (one click recorded), the drama's platform link for 去看全集 and /t/<code>/go with the code only when it was claimed for that drama (a sub-channel value stored in the link is replaced or dropped, never passed on), click counts
 // @pos    -- every SQL statement on task_center.task_claims and task_center.promo_clicks
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -172,9 +172,9 @@ export interface PromoTarget {
 }
 
 /**
- * Where 去看全集 on a drama's page goes: the platform link of a drama that has
- * been listed (published now or taken down since, like the page itself), or
- * null when it has none. The code rides along only when it was claimed for
+ * Where 去看全集 on a drama's page and the 资源推广链接 /t/<code>/go lead:
+ * the platform link of a drama that has been listed (published now or taken
+ * down since, like the page itself), or null when it has none. The code rides along only when it was claimed for
  * this drama, so a ref copied onto another drama's page earns nobody anything.
  */
 export async function getPlatformLink(

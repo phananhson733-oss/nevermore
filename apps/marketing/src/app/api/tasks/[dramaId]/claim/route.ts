@@ -1,12 +1,12 @@
-// @input  -- POST {} from a signed-in browser on /tasks/<id>
-// @output -- this person's one claim for that drama (channel "all"), created once and returned after: its code and its link /t/<code>, which opens the drama's page on our site
+// @input  -- POST {} from a signed-in browser, sent as soon as a drama is opened (the clip dialog on /tasks, or /tasks/<id>)
+// @output -- this person's one claim for that drama (channel "all"), created once and returned after: its code, its 推广链接 /t/<code> (the drama's page on our site) and its 资源推广链接 /t/<code>/go (straight to the drama on its platform)
 // @pos    -- the only writer of task_center.task_claims
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import { siteConfig } from "../../../../../config/site.ts";
 import { claimTask } from "../../../../../lib/task-center/claims-store.ts";
 import { claimInputSchema, isUuid } from "../../../../../lib/task-center/contracts.ts";
-import { promoLink } from "../../../../../lib/task-center/copy.ts";
+import { promoLink, resourceLink } from "../../../../../lib/task-center/copy.ts";
 import {
   authenticateAccountRequest,
   privateError,
@@ -45,6 +45,7 @@ export async function POST(
             channel: result.claim.channel,
             code: result.claim.code,
             link: promoLink(siteConfig.url, result.claim.code),
+            resourceLink: resourceLink(siteConfig.url, result.claim.code),
             claimedAt: result.claim.claimedAt,
           },
         },

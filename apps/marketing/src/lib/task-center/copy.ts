@@ -1,5 +1,5 @@
 // @input  -- the page locale ("en" or "zh")
-// @output -- every visitor-facing string of /tasks (the clip grid and its drama dialog), /tasks/<id>, /promotions, /earnings and the reader's drama page /watch/<id>, audience, genre, clip-type and platform labels, the 收费起始 value, a clip's title with machine names (UUIDs, hashes) left out, the Chinese labels the admin pages share, and the promo link's URL
+// @output -- every visitor-facing string of /tasks (the clip grid and its drama dialog), /tasks/<id>, /promotions, /earnings and the reader's drama page /watch/<id>, audience, genre, clip-type and platform labels, a clip's title with machine names (UUIDs, hashes) left out, the Chinese labels the admin pages share, and the two promo links' URLs (/t/<code> and /t/<code>/go)
 // @pos    -- task center copy, kept beside the code like the waitlist page's; the admin pages are Chinese only
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -16,7 +16,7 @@ import {
 const en = {
   tasksTitle: "Task Center",
   tasksSubtitle:
-    "Browse the clips our team cut, get your own promo link in one click, and post them to TikTok or Facebook.",
+    "Browse the clips our team cut, open a drama to get your own promo links, and post them to TikTok or Facebook.",
   allOption: "All",
   searchPlaceholder: "Search by title",
   apply: "Apply",
@@ -36,18 +36,13 @@ const en = {
   platform: "Platform",
   language: "Language",
   listedOn: "Listed",
-  episodesLabel: "Episodes",
-  payStartLabel: "Paid from",
-  fromEpisode: (n: number) => `Episode ${n}`,
-  allFreeShort: "All free",
-  promotersLabel: "Promoters",
   synopsis: "Synopsis",
   contents: "Episodes",
   contentsUnknown: "The episode count has not been provided.",
   lockedNote: "Episodes with a lock are paid on the platform.",
   clips: "Free clips to download",
   clipsBody: "Click a number to download that clip.",
-  allClips: "All clips of this drama",
+  seriesClips: "Series clips",
   clipLabel: (n: number, title: string | null, size: string) =>
     title === null ? `Download clip ${n}, ${size}` : `Download clip ${n}: ${title}, ${size}`,
   previewClips: "Preview the clips",
@@ -55,29 +50,29 @@ const en = {
   signInForClips: "Sign in to preview and download the clips.",
   download: "Download",
   downloadThis: "Download this clip",
-  promote: "Promo links",
+  promote: "Your promo links",
   promoteBody:
-    "Your own link for this drama, the same on TikTok, Facebook or anywhere else. Every click counts under your name, and when the platform settles, orders are matched back to your link.",
-  signInToPromote: "Sign in with Google to get your promo link.",
+    "Made for you when you open this drama, the same on TikTok, Facebook or anywhere else. Clicks on either link count under your name, and when the platform settles, orders are matched back to your links.",
+  signInToPromote: "Sign in with Google and your promo links are made for you.",
   signIn: "Sign in",
-  getLink: "Get my promo link",
-  claiming: "Getting your link…",
-  claimFailed: "That did not work. Please try again.",
-  dramaLink: "Drama link",
+  claiming: "Making your links…",
+  claimFailed: "Your links could not be made.",
+  retry: "Try again",
+  dramaLink: "Promo link",
   dramaLinkBody:
-    "Opens this drama's page on our site, with its cover, story and trailer. Put it in the video's caption or pin it in the comments.",
-  previewPage: "See the page your link opens",
-  linkAfterClaim: "Shows here once you get your link.",
-  whitelistTitle: "Whitelist your accounts",
-  whitelistBody: "Submit the TikTok and Facebook accounts you post from, so our team can whitelist them on the platform.",
-  whitelistAction: "Submit accounts",
+    "Readers land on this drama's page on GenGrowth, with its cover, story and trailer, and go on to the platform from there.",
+  resourceLink: "Resource link",
+  resourceLinkBody:
+    "Readers go straight to this drama on the platform. Until the drama's platform link is set up, it opens the drama's page on GenGrowth.",
+  previewPage: "See the page the promo link opens",
+  linkAfterSignIn: "Shows here once you sign in.",
   copy: "Copy",
   copied: "Copied",
   howTo: "How it works",
   howToSteps: [
     "Download the clips.",
-    "Get your promo link and copy it.",
-    "Post the clips on TikTok or Facebook, with your link in the caption or a pinned comment. It opens the drama's page on our site.",
+    "Copy your promo link or resource link. Both are made for you when you open the drama.",
+    "Post the clips on TikTok or Facebook, with the link in the caption or a pinned comment.",
     "After each settlement, orders through your link are credited to you and show on My Earnings.",
   ] as readonly string[],
   tabTasks: "Task Center",
@@ -85,7 +80,7 @@ const en = {
   tabEarnings: "My Earnings",
   promotionsTitle: "My Promotions",
   promotionsSubtitle:
-    "Every drama you took links for, how often each link was followed, and the accounts you post from.",
+    "Every drama you have links for, how often they were followed, and the accounts you post from.",
   signInForPromotions: "Sign in with Google to see your promo links and accounts.",
   anyChannel: "Any",
   accountsTitle: "Accounts to whitelist",
@@ -117,12 +112,12 @@ const en = {
   noSettlement: "No settlement data has been imported for your links yet.",
   byPlatform: "By platform",
   myLinks: "My promo links",
-  noLinks: "You have not taken a promo link yet.",
+  noLinks: "You have no promo links yet. Open a drama and yours are made for you.",
   browseTasks: "Browse the task center",
   drama: "Drama",
   channel: "Channel",
   clicks: "Clicks",
-  claimedOn: "Claimed",
+  claimedOn: "Since",
   partialValue: (value: string) => `${value} (partial)`,
   partialNote:
     "Partial: the platform reported this figure for some days and not others, so the total covers only the days it reported.",
@@ -139,7 +134,7 @@ const en = {
     episode: "Full episode",
   } as Readonly<Record<ClipType, string>>,
   hotThisWeek: "Hot this week",
-  hotNote: "One of the three dramas the most people took a link for in the last 7 days.",
+  hotNote: "One of the three dramas the most promoters got links for in the last 7 days.",
   noClipResults: "No clips match these filters.",
   noClipsListed: "No clips are listed yet.",
   playClip: (title: string) => `Play ${title}`,
@@ -154,7 +149,7 @@ export type TaskCopy = typeof en;
 
 const zh: TaskCopy = {
   tasksTitle: "任务中心",
-  tasksSubtitle: "挑运营剪好的素材，一键领取专属推广链接，下载后发到 TikTok 或 Facebook。",
+  tasksSubtitle: "挑运营剪好的素材，打开剧就有你的专属推广链接，下载后发到 TikTok 或 Facebook。",
   allOption: "全部",
   searchPlaceholder: "按剧名搜索",
   apply: "筛选",
@@ -174,18 +169,13 @@ const zh: TaskCopy = {
   platform: "平台",
   language: "语言",
   listedOn: "上架时间",
-  episodesLabel: "集数",
-  payStartLabel: "收费起始",
-  fromEpisode: (n: number) => `第 ${n} 集`,
-  allFreeShort: "全部免费",
-  promotersLabel: "推广人数",
   synopsis: "简介",
   contents: "目录",
   contentsUnknown: "还没有提供集数。",
   lockedNote: "带锁的集数在平台上需要付费观看。",
   clips: "免费素材下载",
   clipsBody: "点数字下载对应的素材。",
-  allClips: "这部剧的全部素材",
+  seriesClips: "系列资源",
   clipLabel: (n: number, title: string | null, size: string) =>
     title === null ? `下载素材 ${n}，${size}` : `下载素材 ${n}：${title}，${size}`,
   previewClips: "预览素材",
@@ -193,34 +183,33 @@ const zh: TaskCopy = {
   signInForClips: "登录后可以预览和下载素材。",
   download: "下载",
   downloadThis: "下载这条素材",
-  promote: "推广链接",
-  promoteBody: "这部剧给你的专属链接，TikTok、Facebook 都用这一条。每次点击都记在你名下，平台结算时按你的链接把订单对回到你。",
-  signInToPromote: "用 Google 登录后领取推广链接。",
+  promote: "我的推广链接",
+  promoteBody: "打开这部剧时自动为你生成，TikTok、Facebook 都能用。两条链接的点击都记在你名下，平台结算时按你的链接把订单对回到你。",
+  signInToPromote: "用 Google 登录后自动生成你的推广链接。",
   signIn: "登录",
-  getLink: "一键获取推广链接",
-  claiming: "获取中…",
-  claimFailed: "没有成功，请再试一次。",
-  dramaLink: "短剧推广链接",
-  dramaLinkBody: "点开是这部剧在我们站上的页面，有封面、简介和预告片。适合放在视频文案里或评论区置顶。",
-  previewPage: "看看链接打开的页面",
-  linkAfterClaim: "领取后显示在这里。",
-  whitelistTitle: "账号报白",
-  whitelistBody: "发布用的 TikTok、Facebook 账号，先提交给运营去平台报白。",
-  whitelistAction: "去提交账号",
+  claiming: "正在生成你的链接…",
+  claimFailed: "链接没有生成成功。",
+  retry: "重试",
+  dramaLink: "推广链接",
+  dramaLinkBody: "用户点击后打开这部剧在 GenGrowth 的介绍页（封面、简介、预告片），再从那里去平台看全集。",
+  resourceLink: "资源推广链接",
+  resourceLinkBody: "用户点击后直接跳到平台上的这部剧。平台链接还没配好的剧，先打开 GenGrowth 的介绍页。",
+  previewPage: "看看推广链接打开的页面",
+  linkAfterSignIn: "登录后显示在这里。",
   copy: "复制",
   copied: "已复制",
   howTo: "使用说明",
   howToSteps: [
     "下载素材。",
-    "领取并复制你的推广链接。",
-    "把素材发到 TikTok 或 Facebook，推广链接放视频文案或评论区置顶。读者点开先到我们站上这部剧的页面。",
+    "复制推广链接或资源推广链接，打开剧时已自动生成。",
+    "把素材发到 TikTok 或 Facebook，链接放视频文案或评论区置顶。",
     "每次平台结算后，你的链接带来的订单会记到你名下，在「我的收益」里查看。",
   ],
   tabTasks: "任务中心",
   tabPromotions: "我的推广",
   tabEarnings: "我的收益",
   promotionsTitle: "我的推广",
-  promotionsSubtitle: "你领过链接的每部剧、每条链接被点开的次数，以及你用来发布的账号。",
+  promotionsSubtitle: "你有推广链接的每部剧、链接被点开的次数，以及你用来发布的账号。",
   signInForPromotions: "用 Google 登录后查看你的推广链接和账号。",
   anyChannel: "通用",
   accountsTitle: "账号报白",
@@ -245,12 +234,12 @@ const zh: TaskCopy = {
   noSettlement: "你的推广链接还没有导入结算数据。",
   byPlatform: "按平台",
   myLinks: "我的推广链接",
-  noLinks: "你还没有领取推广链接。",
+  noLinks: "你还没有推广链接，打开一部剧就会自动生成。",
   browseTasks: "去任务中心看看",
   drama: "短剧",
   channel: "渠道",
   clicks: "点击",
-  claimedOn: "领取时间",
+  claimedOn: "生成时间",
   partialValue: (value: string) => `${value}（部分）`,
   partialNote: "部分：平台只给了其中一些天的这一项，合计只算了给了的那些天。",
   searchClips: "按剧名或素材名搜索",
@@ -266,7 +255,7 @@ const zh: TaskCopy = {
     episode: "整集",
   },
   hotThisWeek: "本周爆款",
-  hotNote: "最近 7 天领取推广链接人数最多的 3 部剧之一。",
+  hotNote: "最近 7 天拿到推广链接人数最多的 3 部剧之一。",
   noClipResults: "没有符合条件的素材。",
   noClipsListed: "还没有上架的素材。",
   playClip: (title: string) => `播放 ${title}`,
@@ -292,7 +281,6 @@ export function genreLabel(slug: string): string {
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
 }
-
 
 /** How each platform the 选剧台 lookup knows writes its own name. */
 export const PLATFORM_LABELS: Readonly<Record<LookupPlatform, string>> = {
@@ -393,13 +381,6 @@ export function episodeLine(episodes: number | null, payStart: number | null, co
   return parts.length === 0 ? null : parts.join(" · ");
 }
 
-/** 收费起始 as a value: the first paid episode, or 全部免费 when it lies past the last one; null when unknown. */
-export function paidFrom(episodes: number | null, payStart: number | null, copy: TaskCopy): string | null {
-  if (payStart === null) return null;
-  if (episodes !== null && payStart > episodes) return copy.allFreeShort;
-  return copy.fromEpisode(Math.max(1, payStart));
-}
-
 /**
  * A clip's title as promoters should see it, or null when it is only a machine
  * name. Titles default to the uploaded file's name, and files saved from a
@@ -419,7 +400,12 @@ export function formatBytes(bytes: number): string {
   return `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
-/** The promo link we hand out: opens the drama's page on our site, /watch/<id>. */
+/** 推广链接: opens the drama's page on our site, /watch/<id>. */
 export function promoLink(origin: string, code: string): string {
   return `${origin}/t/${code}`;
+}
+
+/** 资源推广链接: the same code, straight to the drama on its platform (or its page on our site until it has a platform link). */
+export function resourceLink(origin: string, code: string): string {
+  return `${origin}/t/${code}/go`;
 }
