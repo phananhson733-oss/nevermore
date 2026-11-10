@@ -1,5 +1,5 @@
-// @input  -- a drama id, its status and assets; the admin status, upload and asset APIs; R2 via signed PUT URLs
-// @output -- publish/take-down buttons, each clip's title rename, the cover and clip uploaders (one button opens the file picker, or files are dropped on the box, and the upload starts as soon as files are picked; progress, one upload at a time, a still cut from each video in the browser), per-clip type and delete
+// @input  -- a drama id, its status and assets; the admin status, refill, upload and asset APIs; R2 via signed PUT URLs
+// @output -- publish/take-down buttons, 从官网补全资料 (re-runs 查剧 for the drama and says where the details came from, how the cover went, or why nothing changed), each clip's title rename, the cover and clip uploaders (one button opens the file picker, or files are dropped on the box, and the upload starts as soon as files are picked; progress, one upload at a time, a still cut from each video in the browser), per-clip type and delete
 // @pos    -- the interactive half of /admin/tasks/<id>
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
@@ -57,6 +57,102 @@ export function StatusControl({ dramaId, status }: { dramaId: string; status: Dr
         </button>
       )}
       {error && <p role="alert" className="text-[13.5px] text-brand-error">{error}</p>}
+    </div>
+  );
+}
+
+const REFILL_COVER_NOTES: Readonly<Record<string, string>> = {
+  saved: "封面也拷过来了。",
+  missing: "选剧台和官网都没有封面，请手动上传一张。",
+  failed: "封面没拷成功，请手动上传一张。",
+};
+
+function refillError(answer: Parameters<typeof describeError>[0]): string {
+  const code = typeof answer.error?.code === "string" ? answer.error.code : "";
+  const message = typeof answer.error?.message === "string" ? answer.error.message : null;
+  if (code === "lookup_unavailable") return `选剧台暂时查不了：${message ?? "请稍后再试"}。`;
+  if (code === "lookup_rejected") return `选剧台不接受这次查询：${message ?? "请检查剧名"}。`;
+  if (code === "lookup_not_configured") return "选剧台查剧还没接上。";
+  if (code === "lookup_platform_unknown") return "选剧台不认识这个平台，只能在下面「修改剧集信息」里手填。";
+  if (code === "lookup_not_found") {
+    return "选剧台按这个剧名和语言没查到这部剧。剧名要和平台上的一字不差，可以在下面「修改剧集信息」里改剧名再试。";
+  }
+  if (code === "lookup_ambiguous") return "选剧台查到好几部同名的剧，分不出是哪一部，请在下面「修改剧集信息」里手填。";
+  if (code === "already_listed") return "这部剧在后台已经有另一份（从查剧建的），两份只该留一份。";
+  if (code === "language_unknown") return "不知道这部剧的语言，请先在「修改剧集信息」里填好。";
+  return describeError(answer);
+}
+
+/**
+ * 从官网补全资料: re-runs 查剧 for a drama already listed and writes what it
+ * finds over the drama's details. The note stays after the page refreshes.
+ */
+export function RefillControl({
+  dramaId,
+  platform,
+  fromTheater,
+}: {
+  dramaId: string;
+  /** The platform's name, as the note says it. */
+  platform: string;
+  /** Whether 查剧 also reads this platform's own site, so a 北斗-only answer means the site was not read. */
+  fromTheater: boolean;
+}) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const [error, setError] = useState<{ readonly text: string; readonly otherId: string | null } | null>(null);
+
+  async function refill(): Promise<void> {
+    setBusy(true);
+    setNote(null);
+    setError(null);
+    const answer = await adminFetch(`/api/admin/tasks/dramas/${dramaId}/refill`, "POST", {});
+    setBusy(false);
+    if (!answer.ok || answer.data === null) {
+      const otherId = answer.error?.code === "already_listed" && typeof answer.error.id === "string" ? answer.error.id : null;
+      setError({ text: refillError(answer), otherId });
+      return;
+    }
+    const from =
+      answer.data.details === "official"
+        ? `已按 ${platform} 官网的资料更新。`
+        : fromTheater
+          ? `${platform} 官网这次没读到，只按选剧台的资料更新了，标签、频道和题材可能还是不全。`
+          : "已按选剧台的资料更新。";
+    const cover = typeof answer.data.cover === "string" ? (REFILL_COVER_NOTES[answer.data.cover] ?? "") : "";
+    setNote(`${from}${cover}`);
+    router.refresh();
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-3">
+        <button type="button" className={BUTTON} disabled={busy} onClick={() => void refill()}>
+          {busy ? "正在查…" : "从官网补全资料"}
+        </button>
+        <span className="text-[12.5px] leading-[1.5] text-text-dark-secondary">
+          按选剧台和官网现在的资料更新集数、收费、简介、标签、频道和题材；剧名、语言、平台链接不变。没有封面时也拷一张。
+        </span>
+      </div>
+      {note !== null && (
+        <p role="status" className="text-[13.5px] text-brand-accent-text">
+          {note}
+        </p>
+      )}
+      {error !== null && (
+        <p role="alert" className="text-[13.5px] text-brand-error">
+          {error.text}
+          {error.otherId !== null && (
+            <>
+              {" "}
+              <a href={`./${error.otherId}`} className="text-brand-accent-text hover:underline">
+                打开另一份
+              </a>
+            </>
+          )}
+        </p>
+      )}
     </div>
   );
 }

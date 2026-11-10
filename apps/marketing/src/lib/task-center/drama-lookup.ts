@@ -1,5 +1,5 @@
 // @input  -- PICK_LOOKUP_URL and PICK_LOOKUP_TOKEN; a platform, a title and maybe a language from the admin; what the theater's own page shows, when theater-details.ts could read it
-// @output -- the dramas the 选剧台 lookup found in its own 剧库 or on 北斗 (北斗's signed cover URL kept server-side; 完结 unknown for a 剧库 row), one of them fitted to the dramas table with the theater's page taking over field by field, and a cover image fetched from a URL either gave
+// @output -- the dramas the 选剧台 lookup found in its own 剧库 or on 北斗 (北斗's signed cover URL kept server-side; 完结 unknown for a 剧库 row), which of them is a drama already listed (by its platform id, or by its title when it has none), one of them fitted to the dramas table with the theater's page taking over field by field, and a cover image fetched from a URL either gave
 // @pos    -- the only code that talks to pick-workbench's /api/pick/lookup/drama/ (contract: its deploy/lookup-api.md)
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 //
@@ -115,6 +115,30 @@ const LANGUAGE_PATTERN = /^[a-z]{2,3}(-[A-Za-z0-9]{2,8}){0,2}$/;
 function clean(value: string, max: number): string {
   // eslint-disable-next-line no-control-regex
   return value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "").trim().slice(0, max).trim();
+}
+
+/** Two spellings of one title: case, curly quotes, full-width forms and runs of spaces aside. */
+function sameTitle(a: string, b: string): boolean {
+  const norm = (value: string) =>
+    value.normalize("NFKC").replace(/[‘’ʼ]/g, "'").replace(/[“”]/g, '"').replace(/\s+/g, " ").trim().toLowerCase();
+  return norm(a) === norm(b);
+}
+
+/**
+ * The lookup row this drama is: the one with its platform id when it has one,
+ * otherwise the one whose title is the drama's. Never "the only result": a
+ * near title is another drama.
+ */
+export function pickMatch(
+  dramas: readonly LookupDrama[],
+  drama: { readonly title: string; readonly sourceDramaId: string | null },
+): LookupDrama | "none" | "several" {
+  const matches =
+    drama.sourceDramaId === null
+      ? dramas.filter((found) => sameTitle(found.title, drama.title))
+      : dramas.filter((found) => found.platformDramaId === drama.sourceDramaId);
+  if (matches.length === 0) return "none";
+  return matches.length === 1 && matches[0] !== undefined ? matches[0] : "several";
 }
 
 /**

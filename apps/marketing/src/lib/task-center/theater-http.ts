@@ -1,5 +1,5 @@
 // @input  -- one request a theater reader wants to make (a page or an API on that theater's own hosts) and the fetch and deadline 查剧 gives it
-// @output -- the shape every theater reader returns, the body of that one response as text (null for anything off the theater's hosts, not the expected type, over 2 MB, late or failed), and the small readers every parser shares: a data script found in one pass, a field, a text, a positive count, the per-page tag cap, a language code the task center uses, a genre slug
+// @output -- the shape every theater reader returns, the body of that one response as text (null for anything off the theater's hosts, not the expected type, over 2 MB, late or failed), and the small readers every parser shares: a data script found in one pass, a field, a text, a description sent as HTML read as plain text, a positive count, the per-page tag cap, a language code the task center uses, a genre slug
 // @pos    -- the one network door for theater-details.ts and its per-site readers (theater-*.ts); they parse, this fetches
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 //
@@ -182,6 +182,66 @@ export function list(value: unknown): readonly unknown[] {
 
 export function text(value: unknown): string | null {
   return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
+}
+
+const ENTITIES: Readonly<Record<string, string>> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  nbsp: " ",
+  lsquo: "\u2018",
+  rsquo: "\u2019",
+  ldquo: "\u201c",
+  rdquo: "\u201d",
+  ndash: "\u2013",
+  mdash: "\u2014",
+  hellip: "\u2026",
+};
+
+function entity(whole: string, name: string): string {
+  const code = name.startsWith("#x") || name.startsWith("#X")
+    ? Number.parseInt(name.slice(2), 16)
+    : name.startsWith("#")
+      ? Number.parseInt(name.slice(1), 10)
+      : null;
+  if (code === null) return ENTITIES[name] ?? whole;
+  const usable = code > 0 && code <= 0x10ffff && (code < 0xd800 || code > 0xdfff);
+  return usable ? String.fromCodePoint(code) : whole;
+}
+
+/** HTML as plain text: one blank line between paragraphs, a line break where it had one. */
+function plainText(html: string): string {
+  const plain = html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(?:p|div|li|ul|ol|blockquote|h[1-6])\s*>/gi, "\n\n")
+    .replace(/<[^>]*>/g, "")
+    .replace(/&(#[xX][0-9a-fA-F]{1,6}|#[0-9]{1,7}|[a-zA-Z]{2,8});/g, entity);
+  return plain
+    .split(/\n[ \t]*\n/)
+    .map((paragraph) =>
+      paragraph
+        .split("\n")
+        .map((line) => line.replace(/[ \t]+/g, " ").trim())
+        .filter((line) => line !== "")
+        .join("\n"),
+    )
+    .filter((paragraph) => paragraph !== "")
+    .join("\n\n");
+}
+
+/**
+ * A description a site sends as HTML, as plain text. Everything from the first
+ * heading on is left out when there is story before it: on ReelShort that part
+ * is a cast list under "Characters", not the story. Text with no tags comes
+ * back as `text` gives it.
+ */
+export function htmlText(value: unknown): string | null {
+  const raw = text(value);
+  if (raw === null || !/<\/?[a-z][a-z0-9]*[\s/>]/i.test(raw)) return raw;
+  const story = plainText(raw.split(/<h[1-6][\s>]/i)[0] ?? "");
+  return (story || plainText(raw)) || null;
 }
 
 /** A positive whole number, or null. */

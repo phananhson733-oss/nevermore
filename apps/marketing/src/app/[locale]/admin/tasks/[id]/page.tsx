@@ -1,5 +1,5 @@
 // @input  -- locale and drama id params, ?new=<cover outcome>&details=<official|beidou> after 查剧; the admin check; the drama and all its assets; R2 for the cover
-// @output -- the admin drama page: cover, title, episodes, pay start, tags, synopsis and where the details came from (a drama from 查剧 links to its page on the theater's site where there is a link to make: ReelShort, DramaBox, StardustTV, MoboReels, NetShort, YourChannel) up top, with a note after 查剧 on whether the theater's own page was read; the optional platform link (what 去看全集 on the drama's page opens) with what promoters get instead; links to the promoter page and, once listed, the reader's drama page; publish switch with a note on what a draft hides; clip upload, rename, retag and delete; the full details form folded away
+// @output -- the admin drama page: cover, title, episodes, pay start, tags, synopsis and where the details came from (a drama from 查剧 links to its page on the theater's site where there is a link to make: ReelShort, DramaBox, StardustTV, MoboReels, NetShort, YourChannel) up top, with a note after 查剧 on whether the theater's own page was read, and 从官网补全资料 for a drama on a platform 查剧 knows (re-runs 查剧 and writes its details over the drama's); the optional platform link (what 去看全集 on the drama's page opens) with what promoters get instead; links to the promoter page and, once listed, the reader's drama page; publish switch with a note on what a draft hides; clip upload, rename, retag and delete; the full details form folded away
 // @pos    -- /admin/tasks/<id> (Chinese only); 404 for anyone not on TASK_ADMIN_EMAILS
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -11,13 +11,14 @@ import {
   AssetTitle,
   ClipTypeSelect,
   DeleteAssetButton,
+  RefillControl,
   StatusControl,
   UploadControl,
 } from "@/components/task-center/admin/drama-admin-controls";
 import { DramaForm, PromoLinkForm, type DramaFormValues } from "@/components/task-center/admin/drama-form";
 import { TagList } from "@/components/task-center/admin/drama-quick-create";
 import { checkTaskAdmin } from "@/lib/task-center/admin";
-import { isUuid, THEATER_PLATFORMS } from "@/lib/task-center/contracts";
+import { isUuid, LOOKUP_PLATFORMS, THEATER_PLATFORMS } from "@/lib/task-center/contracts";
 import { DRAMA_STATUS_LABELS, languageName, platformLabel } from "@/lib/task-center/copy";
 import { getTaskDb } from "@/lib/task-center/db";
 import { getDramaForAdmin } from "@/lib/task-center/dramas-store";
@@ -178,6 +179,13 @@ export default async function AdminDramaPage({
           <p className="whitespace-pre-line text-[14px] leading-[1.65] text-text-dark-primary">
             {drama.synopsis ?? <span className="text-text-dark-secondary">没有简介。</span>}
           </p>
+          {LOOKUP_PLATFORMS.some((known) => known === drama.platform) && (
+            <RefillControl
+              dramaId={drama.id}
+              platform={platformLabel(drama.platform)}
+              fromTheater={THEATER_PLATFORMS.has(drama.platform)}
+            />
+          )}
         </div>
       </div>
 
@@ -230,7 +238,9 @@ export default async function AdminDramaPage({
       <details className={PANEL}>
         <summary className="cursor-pointer text-[15px] font-medium text-text-dark-primary">修改剧集信息（剧名、集数、简介、标签等）</summary>
         <div className="mt-5">
-          <DramaForm dramaId={drama.id} adminBase={base} initial={values} />
+          {/* Remounted on any write (从官网补全 included): its fields are uncontrolled, and a stale
+              select would write the old value back on the next save. */}
+          <DramaForm key={drama.updatedAt} dramaId={drama.id} adminBase={base} initial={values} />
         </div>
       </details>
     </div>

@@ -1,5 +1,5 @@
 // @input  -- theater-details.ts and theater-reelshort.ts with a fake fetch in place of www.reelshort.com; a page trimmed from the real one for a Spanish drama
-// @output -- proof that a ReelShort page is read field by field (tags as shown, 女频/男频 and genre by tag id), that only a theater's own host is followed, that anything odd gives null rather than a guess, that only a platform's own ids are sent or linked, and that the reader list matches THEATER_PLATFORMS
+// @output -- proof that a ReelShort page is read field by field (a synopsis sent as HTML read as plain paragraphs without its cast list, tags as shown, 女频/男频 and genre by tag id), that only a theater's own host is followed, that anything odd gives null rather than a guess, that only a platform's own ids are sent or linked, and that the reader list matches THEATER_PLATFORMS
 // @pos    -- unit tests for 查剧's second step; no network, no database
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -134,6 +134,27 @@ describe("parseReelShortPage", () => {
       coverUrl: null,
       tags: ["Revenge"],
     });
+  });
+
+  it("reads a synopsis sent as HTML as plain paragraphs and leaves out the cast list after it", () => {
+    // Shaped like Surf God's Revenge's special_desc on 2026-11-09.
+    const special_desc =
+      '<p style="margin-bottom: 1.2em;">Duke Koa is secretly the God of the Island.</p>\n\n' +
+      '<p style="margin-bottom: 1.2em;">To restore it, Duke must marry the Sea Hag&rsquo;s daughter &amp; stay<br>for five years.</p>\n\n' +
+      '<h4 style="font-size: 1.2em;">Characters</h4>\n\n<h5>Duke Koa</h5>\n<p>The lead protagonist.</p>';
+    expect(parseReelShortPage(page({ ...DATA, special_desc }))?.synopsis).toBe(
+      "Duke Koa is secretly the God of the Island.\n\nTo restore it, Duke must marry the Sea Hag\u2019s daughter & stay\nfor five years.",
+    );
+  });
+
+  it("keeps a plain synopsis as it is, with its line breaks and anything that only looks like a tag", () => {
+    const special_desc = "Line one.\nLine two, 3 < 5 and a <3 heart.";
+    expect(parseReelShortPage(page({ ...DATA, special_desc }))?.synopsis).toBe(special_desc);
+  });
+
+  it("keeps a synopsis that starts with a heading rather than lose all of it", () => {
+    const special_desc = "<h2>Plot</h2><p>She wakes up &#8220;married&#8221;&#x21;</p>";
+    expect(parseReelShortPage(page({ ...DATA, special_desc }))?.synopsis).toBe("Plot\n\nShe wakes up “married”!");
   });
 
   it("refuses a page that is not one drama", () => {
