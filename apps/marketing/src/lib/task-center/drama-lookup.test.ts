@@ -1,12 +1,19 @@
 // @input  -- drama-lookup.ts with a fake fetch in place of 选剧台 and the cover CDN
-// @output -- proof that the lookup client reads only well-formed answers (GoodShort's base64 ids and a 剧库 row's unknown 完结 included), maps errors, fits a 北斗 row to the dramas table with the theater's own page taking over field by field, and fetches only a sane cover
+// @output -- proof that the lookup client reads only well-formed answers (GoodShort's base64 ids and a 剧库 row's unknown 完结 included), maps errors, finds which row a drama already listed is (by its id, else by its exact title), fits a 北斗 row to the dramas table with the theater's own page taking over field by field, and fetches only a sane cover
 // @pos    -- unit tests for the task center's side of pick-workbench's lookup contract; no network, no database
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import { describe, expect, it } from "vitest";
 
 import { MAX_IMAGE_BYTES } from "./contracts.ts";
-import { fetchCover, lookupDramas, readLookupConfig, toImportedDrama, type LookupDrama } from "./drama-lookup.ts";
+import {
+  fetchCover,
+  lookupDramas,
+  pickMatch,
+  readLookupConfig,
+  toImportedDrama,
+  type LookupDrama,
+} from "./drama-lookup.ts";
 import type { TheaterDetails } from "./theater-details.ts";
 
 const CONFIG = { url: "http://drama-platform-web-1:8088", token: "t0ken" };
@@ -225,6 +232,30 @@ describe("toImportedDrama with the theater's own page", () => {
 
   it("has no 频道 or genre without the page", () => {
     expect(toImportedDrama(ROW, QUERY)).toMatchObject({ audience: null, genre: null, sourceDramaId: "68a1b2c3d4" });
+  });
+});
+
+describe("pickMatch", () => {
+  const plain: LookupDrama = { ...ROW, title: "The Alpha's Return" };
+  const other: LookupDrama = { ...ROW, platformDramaId: "6ad4c0012ea7059aa9045e57", title: "Surf God\u2019s  Revenge" };
+
+  it("finds a drama typed by hand by its title, case, quotes and spacing aside", () => {
+    expect(pickMatch([plain, other], { title: "surf god's revenge", sourceDramaId: null })).toBe(other);
+  });
+
+  it("finds a drama from 查剧 by its platform id, whatever its title now is", () => {
+    expect(pickMatch([plain, other], { title: "Renamed by hand", sourceDramaId: other.platformDramaId })).toBe(other);
+    expect(pickMatch([plain], { title: plain.title, sourceDramaId: other.platformDramaId })).toBe("none");
+  });
+
+  it("never takes a near title, even as the only result", () => {
+    expect(pickMatch([other], { title: "Surf God's Revenge 2", sourceDramaId: null })).toBe("none");
+    expect(pickMatch([], { title: "Surf God's Revenge", sourceDramaId: null })).toBe("none");
+  });
+
+  it("refuses to choose between two dramas with the same title", () => {
+    const twin = { ...other, platformDramaId: "6ad4c0012ea7059aa9045e58" };
+    expect(pickMatch([other, twin], { title: "Surf God's Revenge", sourceDramaId: null })).toBe("several");
   });
 });
 

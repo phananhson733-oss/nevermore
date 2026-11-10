@@ -1,5 +1,5 @@
 // @input  -- a disposable Postgres rebuilt by db/tasks/migrate.sh
-// @output -- proof that the task center's SQL does what the stores promise: the clip grid (its filters, the 标签 one included, and their choices) and its 本周爆款 rule, each listed drama's dialog details, imports from 查剧 (频道 and genre from the theater's page, one drama whichever 北斗 id found it, 完结 left unknown for a 剧库 row, GoodShort's base64 ids) and tags, publishing without a platform link, the reader's drama page (trailer pick, taken-down dramas kept, drafts not), promo clicks that open it, and 去看全集 carrying only a code claimed for that drama, promoter accounts included
+// @output -- proof that the task center's SQL does what the stores promise: the clip grid (its filters, the 标签 one included, and their choices) and its 本周爆款 rule, each listed drama's dialog details, imports from 查剧 (频道 and genre from the theater's page, one drama whichever 北斗 id found it, 完结 left unknown for a 剧库 row, GoodShort's base64 ids), 从官网补全 over a drama already listed (what the operator owns kept, a pay start that no longer fits dropped, never a second listing) and tags, publishing without a platform link, the reader's drama page (trailer pick, taken-down dramas kept, drafts not), promo clicks that open it, and 去看全集 carrying only a code claimed for that drama, promoter accounts included
 // @pos    -- the only test that executes task center SQL
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -41,6 +41,7 @@ import {
   listPublishedAssets,
   listPublishedFacets,
   markAssetReady,
+  refillDrama,
   updateAsset,
   setDramaCover,
   setDramaStatus,
@@ -504,6 +505,78 @@ describe("imports from 查剧", () => {
     expect((await getDramaForAdmin(db, id))?.drama.tags).toEqual(["Romance"]);
     await updateDrama(db, id, drama({ tags: ["CEO", "Revenge"] }));
     expect((await getDramaForAdmin(db, id))?.drama).toMatchObject({ title: "The Heiress Returns", tags: ["CEO", "Revenge"] });
+  });
+
+  it("fills a drama typed by hand from 查剧 and leaves what the operator owns", async () => {
+    const id = await publishedDrama({ title: "Surf God's Revenge", episodes: 14, payStart: 14, genre: "drama" });
+    const found = {
+      ...beidou,
+      title: "Not this title",
+      titleCn: null,
+      language: "es",
+      episodes: 52,
+      payStart: 15,
+      synopsis: "Duke Koa is secretly the God of the Island.",
+      tags: ["Romance", "Toxic Romance"],
+      genre: "romance",
+      finished: null,
+      sourceDramaId: "6ad4c0012ea7059aa9045e57",
+    };
+    expect(await refillDrama(db, id, found)).toEqual({ ok: true });
+    expect((await getDramaForAdmin(db, id))?.drama).toMatchObject({
+      title: "Surf God's Revenge",
+      titleCn: "千金归来",
+      language: "en",
+      status: "published",
+      promoTargetUrl: "https://example.com/d/1?src=gg",
+      episodes: 52,
+      payStart: 15,
+      synopsis: "Duke Koa is secretly the God of the Island.",
+      tags: ["Romance", "Toxic Romance"],
+      audience: "male",
+      genre: "romance",
+      finished: null,
+      source: "beidou",
+      sourceDramaId: "6ad4c0012ea7059aa9045e57",
+    });
+
+    // A source that leaves things out changes none of them.
+    const empty = { ...found, episodes: null, payStart: null, synopsis: null, tags: [], audience: null, genre: null };
+    expect(await refillDrama(db, id, empty)).toEqual({ ok: true });
+    expect((await getDramaForAdmin(db, id))?.drama).toMatchObject({
+      episodes: 52,
+      payStart: 15,
+      synopsis: "Duke Koa is secretly the God of the Island.",
+      tags: ["Romance", "Toxic Romance"],
+      audience: "male",
+      genre: "romance",
+    });
+    expect(await refillDrama(db, "6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b", { ...found, sourceDramaId: "6ad4c0012ea7059aa9045e00" })).toEqual({ ok: false, code: "not_found" });
+  });
+
+  it("drops a first paid episode the new episode count no longer has", async () => {
+    const id = await createDrama(db, drama({ episodes: 80, payStart: 10 }), ADMIN);
+    expect(await refillDrama(db, id, { ...beidou, episodes: 8, payStart: null })).toEqual({ ok: true });
+    expect((await getDramaForAdmin(db, id))?.drama).toMatchObject({ episodes: 8, payStart: null });
+    expect(await refillDrama(db, id, { ...beidou, episodes: null, payStart: 5 })).toEqual({ ok: true });
+    expect((await getDramaForAdmin(db, id))?.drama).toMatchObject({ episodes: 8, payStart: 5 });
+  });
+
+  it("keeps a drama's own platform id and refuses to make it a second listing of another", async () => {
+    const listed = await importDrama(db, beidou, ADMIN);
+    if (!listed.ok) throw new Error("import failed");
+    // The theater's page answering with the drama's newer id leaves the id 查剧 listed it by.
+    expect(await refillDrama(db, listed.id, { ...beidou, sourceDramaId: "6ad4c0012ea7059aa9045e57" })).toEqual({ ok: true });
+    expect((await getDramaForAdmin(db, listed.id))?.drama.sourceDramaId).toBe(beidou.sourceDramaId);
+    expect(await refillDrama(db, listed.id, beidou)).toEqual({ ok: true });
+
+    const typed = await createDrama(db, drama({ title: "Surf God's Revenge", synopsis: null }), ADMIN);
+    expect(await refillDrama(db, typed, { ...beidou, synopsis: "Copied?" })).toEqual({
+      ok: false,
+      code: "already_listed",
+      id: listed.id,
+    });
+    expect((await getDramaForAdmin(db, typed))?.drama).toMatchObject({ synopsis: null, source: null, sourceDramaId: null });
   });
 
   it("refuses more than twenty tags and a source without its id", async () => {

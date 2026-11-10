@@ -1,5 +1,5 @@
 // @input  -- the page locale, one page of clip cards (signed poster and cover URLs made on the server), each listed drama's public details (no platform URLs), the visitor's links per drama
-// @output -- the clip grid with type and 本周爆款 badges (a clip named only by a UUID or hash shows no title); a card opens a wide two-column dialog: on the right the clip playing (first on a phone) with its own download under it; on the left, in MoboReels' order, the drama's title, its chips (language first, then 频道, genre and tags), 上架时间 · 共 N 集 · 前 M 集免费, the full synopsis, the 推广链接 and 资源推广链接 (made for a signed-in visitor as the dialog opens, no 口令), 系列资源 (numbered downloads of all its clips), the how-to as an open box and a link to the drama's page
+// @output -- the clip grid with type and 本周爆款 badges (a clip named only by a UUID or hash shows no title); a card opens a wide two-column dialog: on the right the clip playing (first on a phone) with its own download under it; on the left, in MoboReels' order, the drama's cover with its title, its chips (language first, then 频道, genre and tags), 上架时间 · 共 N 集 · 前 M 集免费, the full synopsis, the 推广链接 and 资源推广链接 (made for a signed-in visitor as the dialog opens, no 口令), 系列资源 (numbered downloads of all its clips), the how-to as an open box and a link to the drama's page
 // @pos    -- the body of /tasks, the task center's 素材广场
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
@@ -164,38 +164,57 @@ export function ClipPlaza({
             </div>
             {/* Information on the left, the player on the right. From md up the
                 columns scroll on their own and the dialog does not; on a phone
-                the player comes first. */}
-            <div className="grid md:grid-cols-[minmax(0,1fr)_320px] lg:grid-cols-[minmax(0,1fr)_380px]">
+                the player comes first. The column is capped at the dialog's
+                width even there, or a link's unbroken URL would widen it past
+                the screen. */}
+            <div className="grid grid-cols-[minmax(0,1fr)] md:grid-cols-[minmax(0,1fr)_320px] lg:grid-cols-[minmax(0,1fr)_380px]">
               {/* MoboReels' order: what the drama is, then the links, then
                   every clip to download, then how it all works. */}
               <div className="space-y-5 p-6 md:max-h-[calc(100dvh-34px)] md:overflow-y-auto lg:p-8">
-                <div className="space-y-2.5">
-                  <h2 className="text-[20px] leading-[1.3] font-semibold">{open.dramaTitle}</h2>
-                  <DramaChips
-                    locale={locale}
-                    language={open.language}
-                    audience={open.audience}
-                    genre={open.genre}
-                    tags={open.tags}
-                  />
-                  {detail !== undefined && (
-                    <DramaFacts
-                      locale={locale}
-                      listedAt={detail.listedAt}
-                      episodes={detail.episodes}
-                      payStart={detail.payStart}
+                {/* MoboReels' header: the cover on the left, the title, chips,
+                    facts and synopsis beside it. On a phone the synopsis drops
+                    under both, where it gets the full width. */}
+                <div
+                  className={
+                    open.coverUrl === null
+                      ? "space-y-3"
+                      : "grid grid-cols-[88px_minmax(0,1fr)] gap-x-4 gap-y-3 sm:grid-cols-[120px_minmax(0,1fr)] sm:gap-x-5"
+                  }
+                >
+                  {open.coverUrl !== null && (
+                    <img
+                      src={open.coverUrl}
+                      alt=""
+                      className="aspect-[3/4] w-full self-start rounded-[8px] border border-brand-border-card bg-brand-panel-raised object-cover sm:row-span-2"
                     />
                   )}
+                  <div className="min-w-0 space-y-2.5">
+                    <h2 className="text-[20px] leading-[1.3] font-semibold">{open.dramaTitle}</h2>
+                    <DramaChips
+                      locale={locale}
+                      language={open.language}
+                      audience={open.audience}
+                      genre={open.genre}
+                      tags={open.tags}
+                    />
+                    {detail !== undefined && (
+                      <DramaFacts
+                        locale={locale}
+                        listedAt={detail.listedAt}
+                        episodes={detail.episodes}
+                        payStart={detail.payStart}
+                      />
+                    )}
+                  </div>
+                  {detail?.synopsis && (
+                    <section className={open.coverUrl === null ? undefined : "col-span-2 sm:col-span-1 sm:col-start-2"}>
+                      <h3 className="sr-only">{copy.synopsis}</h3>
+                      <p className="text-[13.5px] leading-[1.65] whitespace-pre-line text-text-dark-secondary">
+                        {detail.synopsis}
+                      </p>
+                    </section>
+                  )}
                 </div>
-
-                {detail?.synopsis && (
-                  <section>
-                    <h3 className="sr-only">{copy.synopsis}</h3>
-                    <p className="text-[13.5px] leading-[1.65] whitespace-pre-line text-text-dark-secondary">
-                      {detail.synopsis}
-                    </p>
-                  </section>
-                )}
 
                 <ClaimPanel
                   key={open.dramaId}

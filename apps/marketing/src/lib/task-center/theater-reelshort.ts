@@ -1,5 +1,5 @@
 // @input  -- a ReelShort book id 北斗 gave; www.reelshort.com/movie/x-<id> through theater-http.ts
-// @output -- the drama as that page shows it (tags in the page's language, 女频/男频 and a genre slug by tag id), or null; the page's link
+// @output -- the drama as that page shows it (the synopsis as plain paragraphs without the cast list ReelShort adds under it, tags in the page's language, 女频/男频 and a genre slug by tag id), or null; the page's link
 // @pos    -- ReelShort's reader for theater-details.ts
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 //
@@ -21,6 +21,7 @@ import type { DramaAudience } from "./contracts.ts";
 import {
   count,
   field,
+  htmlText,
   httpsUrl,
   languageCode,
   list,
@@ -103,7 +104,7 @@ export function parseReelShortPage(html: string): TheaterDetails | null {
     episodes: count(field(data, "total")),
     paid,
     payStart: paid === true ? count(field(data, "paid_start")) : null,
-    synopsis: text(field(data, "special_desc")),
+    synopsis: htmlText(field(data, "special_desc")),
     tags,
     audience,
     genre,

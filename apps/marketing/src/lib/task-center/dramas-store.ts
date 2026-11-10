@@ -1,5 +1,5 @@
 // @input  -- a TaskDb and admin or visitor requests already parsed by contracts.ts
-// @output -- dramas (with their optional platform link) and their clip assets: the public clip grid (filtered by any one tag, with this week's hot dramas and each listed drama's details and clips) and its filter choices (tags included), the drama list and detail, the reader's drama page (/watch/<id>: cover, synopsis, trailer, whether there is a platform link, never the link itself), and the admin reads and writes, including a drama imported from 查剧 (北斗 through the 选剧台 lookup, filled in from the theater's own page)
+// @output -- dramas (with their optional platform link) and their clip assets: the public clip grid (filtered by any one tag, with this week's hot dramas and each listed drama's details and clips) and its filter choices (tags included), the drama list and detail, the reader's drama page (/watch/<id>: cover, synopsis, trailer, whether there is a platform link, never the link itself), and the admin reads and writes, including a drama imported from 查剧 (北斗 through the 选剧台 lookup, filled in from the theater's own page) and one already listed filled in again from it (从官网补全)
 // @pos    -- every SQL statement on task_center.dramas and task_center.drama_assets
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -635,6 +635,58 @@ export async function updateDrama(
             updated_at = now()
       where id = $12`,
     [...dramaValues(input), id, input.tags ?? null],
+  );
+  return rowCount === 0 ? { ok: false, code: "not_found" } : { ok: true };
+}
+
+export type RefillResult =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly code: "not_found" }
+  | { readonly ok: false; readonly code: "already_listed"; readonly id: string };
+
+/**
+ * 从官网补全: what 查剧 finds now, written over a drama already here (one
+ * typed by hand before 查剧 filled anything in, say). What the source knows
+ * replaces what the drama had; what it leaves out stays, and an empty tag
+ * list keeps the tags. Title, platform, language, status, cover and the
+ * platform link are the operator's and never change here. The first paid
+ * episode is kept only while it still fits the episode count (0001). The
+ * drama takes the source's id when it has none; another drama already
+ * holding that id is a second listing of the same drama, and refuses.
+ */
+export async function refillDrama(db: TaskDb, id: string, drama: ImportedDrama): Promise<RefillResult> {
+  const listed = await listedBySource(db, drama.platform, [drama.sourceDramaId]);
+  const other = listed.get(drama.sourceDramaId);
+  if (other !== undefined && other !== id) return { ok: false, code: "already_listed", id: other };
+  const { rowCount } = await db.query(
+    `update task_center.dramas d
+        set episodes = n.episodes,
+            pay_start = case when n.episodes is null or n.pay_start <= n.episodes then n.pay_start end,
+            synopsis = coalesce($4, d.synopsis),
+            tags = case when cardinality($5::text[]) > 0 then $5::text[] else d.tags end,
+            audience = coalesce($6, d.audience),
+            genre = coalesce($7, d.genre),
+            title_cn = coalesce($8, d.title_cn),
+            finished = coalesce($9, d.finished),
+            source = case when d.source_drama_id is null then 'beidou' else d.source end,
+            source_drama_id = coalesce(d.source_drama_id, $10),
+            updated_at = now()
+       from (select coalesce($2::integer, episodes) as episodes,
+                    coalesce($3::integer, pay_start) as pay_start
+               from task_center.dramas where id = $1) n
+      where d.id = $1`,
+    [
+      id,
+      drama.episodes,
+      drama.payStart,
+      drama.synopsis,
+      drama.tags,
+      drama.audience,
+      drama.genre,
+      drama.titleCn,
+      drama.finished,
+      drama.sourceDramaId,
+    ],
   );
   return rowCount === 0 ? { ok: false, code: "not_found" } : { ok: true };
 }
