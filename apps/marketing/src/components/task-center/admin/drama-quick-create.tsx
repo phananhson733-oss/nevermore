@@ -1,5 +1,5 @@
 // @input  -- a title, a platform and maybe a language typed on /admin/tasks; POST /api/admin/tasks/dramas/lookup and /import
-// @output -- 查剧: one exact match is listed straight away, several are offered to pick from, none (or a platform 选剧台 does not know) opens the full form, filled from 选剧台's 剧库 when it has the drama on this platform and with a switch to the platforms where it has it otherwise; a listed drama opens with ?new=<cover outcome>&details=<official|beidou>; while waiting it says whether 选剧台 is reading its 剧库 or asking 北斗
+// @output -- 查剧: one exact match is listed straight away, several are offered to pick from, none (or a platform 选剧台 does not know) opens the full form, filled from 选剧台's 剧库 when it has the drama on this platform and with a switch to the platforms where it has it otherwise; a listed drama opens on its admin page; while waiting it says whether 选剧台 is reading its 剧库 or asking 北斗
 // @pos    -- the new-drama panel on /admin/tasks; the full DramaForm stays as the manual way
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
@@ -161,9 +161,7 @@ export function DramaQuickCreate({ adminBase }: { adminBase: string }) {
       platformDramaId: candidate.platformDramaId,
     });
     if (answer.ok && typeof answer.data?.id === "string") {
-      const cover = typeof answer.data.cover === "string" ? answer.data.cover : "missing";
-      const details = typeof answer.data.details === "string" ? answer.data.details : "beidou";
-      router.push(`${adminBase}/${answer.data.id}?new=${encodeURIComponent(cover)}&details=${encodeURIComponent(details)}`);
+      router.push(`${adminBase}/${answer.data.id}`);
       return;
     }
     if (answer.status === 409 && typeof answer.error?.id === "string") {

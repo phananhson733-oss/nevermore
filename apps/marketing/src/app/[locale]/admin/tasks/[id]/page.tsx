@@ -1,5 +1,5 @@
-// @input  -- locale and drama id params, ?new=<cover outcome>&details=<official|beidou> after 查剧; the admin check; the drama and all its assets; R2 for the cover
-// @output -- the admin drama page: cover, title, episodes, pay start, tags, synopsis and where the details came from (a drama from 查剧 links to its page on the theater's site where there is a link to make: ReelShort, DramaBox, StardustTV, MoboReels, NetShort, YourChannel) up top, with a note after 查剧 on whether the theater's own page was read, and 从官网补全资料 for a drama on a platform 查剧 knows (re-runs 查剧 and writes its details over the drama's); links to the promoter page and, once listed, the reader's drama page; a note on what a draft hides; clip upload (files or a whole folder, in file-name order), each clip numbered as 系列资源 numbers it, rename, retag and delete; the publish switch under the clips, on the right (上架 as a large button); the platform-link panel hidden for now (SHOW_PROMO_LINK, still editable in the details form); the full details form folded away
+// @input  -- locale and drama id params; the admin check; the drama and all its assets; R2 for the cover
+// @output -- the admin drama page: cover, title, episodes, pay start, tags, synopsis and where the details came from (a drama from 查剧 links to its page on the theater's site where there is a link to make: ReelShort, DramaBox, StardustTV, MoboReels, NetShort, YourChannel) up top, and 从官网补全资料 for a drama on a platform 查剧 knows (re-runs 查剧 and writes its details over the drama's); links to the promoter page and, once listed, the reader's drama page (no draft or 查剧 notes: the status line says draft); clip upload (files or a whole folder, in file-name order), each clip numbered as 系列资源 numbers it, rename, retag and delete; the publish switch under the clips, on the right (上架 as a large button); the platform-link panel hidden for now (SHOW_PROMO_LINK, still editable in the details form); the full details form folded away
 // @pos    -- /admin/tasks/<id> (Chinese only); 404 for anyone not on TASK_ADMIN_EMAILS
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -33,35 +33,12 @@ function formatBytes(bytes: number): string {
   return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
 }
 
-const NEW_COVER_NOTES: Readonly<Record<string, string>> = {
-  saved: "封面也拷过来了。核对一下信息，上传素材后就能上架。",
-  missing: "没找到这部剧的封面，请在左边上传一张。",
-  failed: "封面没拷成功，请在左边上传一张。",
-};
-
-/** What 查剧 says after listing a drama: where its details came from, then how the cover went. */
-function newDramaNote(cover: string | string[] | undefined, details: string | string[] | undefined, platform: string): string | null {
-  const coverNote = typeof cover === "string" ? NEW_COVER_NOTES[cover] : undefined;
-  if (coverNote === undefined) return null;
-  const name = platformLabel(platform);
-  const from =
-    details === "official"
-      ? `已按 ${name} 官网的资料建好草稿。`
-      : THEATER_PLATFORMS.has(platform)
-        ? `${name} 官网这次没读到，先按选剧台的资料建好了草稿，标签、频道和题材可能不全，请核对。`
-        : "已按选剧台的资料建好草稿。";
-  return `${from}${coverNote}`;
-}
-
 export default async function AdminDramaPage({
   params,
-  searchParams,
 }: {
   params: Promise<{ locale: string; id: string }>;
-  searchParams: Promise<{ new?: string | string[]; details?: string | string[] }>;
 }) {
   const { locale, id } = await params;
-  const fresh = await searchParams;
   const admin = await checkTaskAdmin();
   if (admin.status !== "admin" || !isUuid(id)) notFound();
   const base = localePath(locale, "/admin/tasks");
@@ -75,7 +52,6 @@ export default async function AdminDramaPage({
   const readyNumber = new Map(
     assets.filter((asset) => asset.status === "ready").map((asset, index) => [asset.id, index + 1] as const),
   );
-  const newNote = newDramaNote(fresh.new, fresh.details, drama.platform);
   const sourcePage = drama.source === "beidou" ? theaterPageUrl(drama.platform, drama.sourceDramaId) : null;
   const r2 = readR2Config();
   const values: DramaFormValues = {
@@ -122,19 +98,6 @@ export default async function AdminDramaPage({
           </p>
         </div>
       </div>
-      {drama.status !== "published" && (
-        <p className="rounded-[8px] border border-brand-border-card bg-brand-panel-raised px-4 py-3 text-[13.5px] leading-[1.6] text-text-dark-secondary">
-          {drama.status === "draft" ? "草稿" : "已下架"}：推广者在任务中心看不到这部剧，也看不到它的素材，没法下载。传好素材后点页面下方的「上架」，才对推广者显示。
-          {drama.status === "archived" && "已经发出去的推广链接照旧打开这部剧的页面。"}
-        </p>
-      )}
-
-      {newNote !== null && (
-        <p role="status" className="rounded-[8px] border border-brand-border-card bg-brand-panel-raised px-4 py-3 text-[13.5px] leading-[1.6] text-brand-accent-text">
-          {newNote}
-        </p>
-      )}
-
       <div className={`${PANEL} flex flex-col gap-6 sm:flex-row`}>
         <div className="w-full shrink-0 sm:w-48">
           <div className="aspect-[3/4] w-full overflow-hidden rounded-[10px] border border-brand-border-card bg-brand-panel-raised">
