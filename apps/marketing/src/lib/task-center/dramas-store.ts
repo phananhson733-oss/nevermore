@@ -1,5 +1,5 @@
 // @input  -- a TaskDb and admin or visitor requests already parsed by contracts.ts
-// @output -- dramas (with their optional platform link) and their clip assets: the public clip grid (filtered by any one tag, with this week's hot dramas and each listed drama's details and clips) and its filter choices (tags included), the drama list and detail, the reader's drama page (/watch/<id>: cover, synopsis, trailer, whether there is a platform link, never the link itself), and the admin reads and writes, including a drama imported from 查剧 (北斗 through the 选剧台 lookup, filled in from the theater's own page) and one already listed filled in again from it (从官网补全)
+// @output -- dramas (with their optional platform link) and their clip assets: the public clip grid (filtered by a tag, typed in part and in any case, with this week's hot dramas and each listed drama's details and clips) and its filter choices (tags included), the drama list and detail, the reader's drama page (/watch/<id>: cover, synopsis, trailer, whether there is a platform link, never the link itself), and the admin reads and writes, including a drama imported from 查剧 (北斗 through the 选剧台 lookup, filled in from the theater's own page) and one already listed filled in again from it (从官网补全)
 // @pos    -- every SQL statement on task_center.dramas and task_center.drama_assets
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -199,7 +199,11 @@ export interface PlazaQuery {
   readonly language?: string | null;
   readonly audience?: DramaAudience | null;
   readonly genre?: string | null;
-  /** One of the drama's tags, spelled exactly as stored: the choices come from listPublishedFacets. */
+  /**
+   * Part of a tag, in any case: a drama matches when one of its tags contains
+   * it, so a whole tag picked from listPublishedFacets matches as well. `%` and
+   * `_` are letters here, as in the search.
+   */
   readonly tag?: string | null;
   readonly clipType?: ClipType | null;
   readonly search?: string | null;
@@ -225,9 +229,10 @@ export async function listPublishedAssets(
   equal("d.audience", query.audience);
   equal("d.genre", query.genre);
   equal("a.clip_type", query.clipType);
-  if (query.tag) {
-    values.push(query.tag);
-    where.push(`$${values.length} = any(d.tags)`);
+  const tag = query.tag?.trim();
+  if (tag) {
+    values.push(likePattern(tag));
+    where.push(`exists (select 1 from unnest(d.tags) t where t ilike $${values.length})`);
   }
   const search = query.search?.trim();
   if (search) {

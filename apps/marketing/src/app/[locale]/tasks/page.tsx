@@ -1,5 +1,5 @@
-// @input  -- locale param; q, language, genre, tag and page query (no others: a filter the bar does not show is not applied); the task database; the session; R2 for stills and covers
-// @output -- the promoter tabs, the four filters MoboReels' bar has (search, 语言, 题材, 标签 from the tags of published dramas), each named by a label above it, then every ready clip of a published drama, newest first, as a paged 素材广场 grid, with what each listed drama's dialog shows (上架时间, episodes, synopsis, its clips for a signed-in visitor, and the visitor's two links when they already hold them)
+// @input  -- locale param; q, platform, language, genre, tag and page query (no others: a filter the bar does not show is not applied); the task database; the session; R2 for stills and covers
+// @output -- the promoter tabs, the filters (search, 剧场 from the platforms of published dramas, then MoboReels' 语言, 题材 and 标签, a text box that matches any part of a tag in any case with a list of the published tags that contain what is typed), each named by a label above it, then every ready clip of a published drama, newest first, as a paged 素材广场 grid, with what each listed drama's dialog shows (上架时间, episodes, synopsis, its clips for a signed-in visitor, and the visitor's two links when they already hold them)
 // @pos    -- /tasks, the task center's entry page
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -8,12 +8,21 @@ import type { ReactNode } from "react";
 
 import type { LinkView } from "@/components/task-center/claim-panel";
 import { ClipPlaza, type ClipCard, type PlazaDrama } from "@/components/task-center/clip-plaza";
+import { TagCombobox } from "@/components/task-center/tag-combobox";
 import { TaskTabs } from "@/components/task-center/task-tabs";
 import { siteConfig } from "@/config/site";
 import { getServerAuthenticatedUser } from "@/lib/auth/server-auth-user";
 import { listMyClaims } from "@/lib/task-center/claims-store";
 import { PAGE_SIZE, SLUG_PATTERN } from "@/lib/task-center/contracts";
-import { formatBytes, genreLabel, languageName, promoLink, resourceLink, taskCopy } from "@/lib/task-center/copy";
+import {
+  formatBytes,
+  genreLabel,
+  languageName,
+  platformLabel,
+  promoLink,
+  resourceLink,
+  taskCopy,
+} from "@/lib/task-center/copy";
 import { getTaskDb } from "@/lib/task-center/db";
 import {
   listPlazaDramaDetails,
@@ -64,13 +73,15 @@ export default async function TasksPage({
   const { locale } = await params;
   const query = await searchParams;
   const copy = taskCopy(locale);
-  // Only what the bar shows. An old link's platform, audience, type or sort is
-  // dropped rather than applied where nobody could see or clear it.
+  // Only what the bar shows. An old link's audience, type or sort is dropped
+  // rather than applied where nobody could see or clear it.
+  // 剧场 is a drama's platform slug, matched exactly, so any value is safe.
+  const platform = one(query.platform);
   const language = one(query.language);
   const genreParam = one(query.genre);
   const genre = genreParam !== null && SLUG_PATTERN.test(genreParam) ? genreParam : null;
-  // Free text matched exactly against a drama's tags, so any value is safe;
-  // one no drama has just finds nothing.
+  // Free text matched against any part of a drama's tags, in any case, so any
+  // value is safe; one no tag contains just finds nothing.
   const tag = one(query.tag);
   const search = one(query.q);
   const page = Math.max(1, Math.min(1000, Number.parseInt(one(query.page) ?? "1", 10) || 1));
@@ -82,6 +93,7 @@ export default async function TasksPage({
     try {
       [result, facets] = await Promise.all([
         listPublishedAssets(db, {
+          platform,
           language,
           genre,
           tag,
@@ -164,14 +176,16 @@ export default async function TasksPage({
     };
   }
 
-  const filtered = Boolean(language || genre || tag || search);
-  // A tag in the link that no published drama has any more stays a choice,
-  // so the select shows the filter that is on instead of 全部.
-  const tagOptions = tag !== null && !facets.tags.includes(tag) ? [tag, ...facets.tags] : facets.tags;
+  const filtered = Boolean(platform || language || genre || tag || search);
+  // A theater in the link that no published drama has any more stays a
+  // choice, so the select shows the filter that is on instead of 全部.
+  const platformOptions =
+    platform !== null && !facets.platforms.includes(platform) ? [platform, ...facets.platforms] : facets.platforms;
   const pages = result === null ? 1 : Math.max(1, Math.ceil(result.total / PAGE_SIZE));
   const queryString = (target: number) => {
     const next = new URLSearchParams();
     if (search) next.set("q", search);
+    if (platform) next.set("platform", platform);
     if (language) next.set("language", language);
     if (genre) next.set("genre", genre);
     if (tag) next.set("tag", tag);
@@ -191,9 +205,10 @@ export default async function TasksPage({
           {copy.tasksSubtitle}
         </p>
 
-        {/* MoboReels' four filters, each under its own label so a select can
-            say just 全部: one row of equal fields from md up; on a phone the
-            search on its own row, then two to a row with the button last. */}
+        {/* 搜索, 剧场 and MoboReels' 语言, 题材, 标签, each under its own label
+            so a select can say just 全部: one row of equal fields from md up;
+            on a phone the search on its own row, then two to a row, and the
+            button alone across the last one. */}
         <form
           method="get"
           action={here}
@@ -208,6 +223,17 @@ export default async function TasksPage({
               className={FIELD}
               maxLength={100}
             />
+          </Field>
+          {/* Shown even with one theater, like 语言 and 题材: the bar keeps one shape. */}
+          <Field label={copy.theaterField}>
+            <select name="platform" defaultValue={platform ?? ""} className={FIELD}>
+              <option value="">{copy.allOption}</option>
+              {platformOptions.map((value) => (
+                <option key={value} value={value}>
+                  {platformLabel(value)}
+                </option>
+              ))}
+            </select>
           </Field>
           <Field label={copy.language}>
             <select name="language" defaultValue={language ?? ""} className={FIELD}>
@@ -229,20 +255,15 @@ export default async function TasksPage({
               ))}
             </select>
           </Field>
-          {/* Shown even with no tags yet, like 语言 and 题材: the bar keeps one shape. */}
+          {/* Typed, not only picked: any part of a tag finds the dramas whose
+              tags contain it, and the list under the box shows the published
+              tags that do. Shown even with no tags yet: the bar keeps one shape. */}
           <Field label={copy.tagField}>
-            <select name="tag" defaultValue={tag ?? ""} className={FIELD}>
-              <option value="">{copy.allOption}</option>
-              {tagOptions.map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </select>
+            <TagCombobox locale={locale} tags={facets.tags} defaultValue={tag ?? ""} className={FIELD} />
           </Field>
           <button
             type="submit"
-            className="h-10 w-full rounded-[10px] bg-primary px-6 text-[14px] font-medium text-primary-foreground hover:bg-primary/90 md:w-auto md:shrink-0"
+            className="col-span-2 h-10 w-full rounded-[10px] bg-primary px-6 text-[14px] font-medium text-primary-foreground hover:bg-primary/90 md:w-auto md:shrink-0"
           >
             {copy.apply}
           </button>
