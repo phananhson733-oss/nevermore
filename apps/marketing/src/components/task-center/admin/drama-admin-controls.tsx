@@ -1,5 +1,5 @@
 // @input  -- a drama id, its status and assets; the admin status, refill, upload and asset APIs; R2 via signed PUT URLs
-// @output -- publish/take-down buttons, 从官网补全资料 (re-runs 查剧 for the drama and says where the details came from, how the cover went, or why nothing changed), each clip's title rename, the cover and clip uploaders (one button opens the file picker, a second picks a whole folder for clips, or files and folders are dropped on the box, and the upload starts as soon as they are picked; a batch goes up in file-name order so 第2集 comes before 第10集 and the clips are numbered that way, files of other types are skipped and named; progress with the batch position, one upload at a time, a still cut from each video in the browser), per-clip type and delete
+// @output -- publish/take-down buttons, 从官网补全资料 (re-runs 查剧 for the drama and says where the details came from, how the cover went, or why nothing changed), each clip's title rename, the cover and clip uploaders (one button opens the file picker, a second picks a whole folder for clips, or files and folders are dropped on the box, and the upload starts as soon as they are picked; a batch goes up in file-name order so 第2集 comes before 第10集 and the clips are numbered that way, files of other types are skipped and named; progress with the batch position, one upload at a time, a still cut from each video in the browser), the upload's type set to 高光 until changed, per-clip type and delete
 // @pos    -- the interactive half of /admin/tasks/<id>
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
@@ -400,7 +400,8 @@ export function UploadControl({
   const input = useRef<HTMLInputElement>(null);
   const folderInput = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState("");
-  const [clipType, setClipType] = useState<ClipType | "">("");
+  // 高光 by default: most uploads are highlight cuts. 未分类 stays a choice.
+  const [clipType, setClipType] = useState<ClipType | "">("highlight");
   const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // A ref, not state: a second click in the same tick must already see it.
