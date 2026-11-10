@@ -1,17 +1,22 @@
 // @input  -- a title, a platform and maybe a language typed on /admin/tasks; POST /api/admin/tasks/dramas/lookup and /import
-// @output -- 查剧: one exact match is listed straight away, several are offered to pick from, none (or a platform 选剧台 does not know) opens the full form; a listed drama opens with ?new=<cover outcome>&details=<official|beidou>
+// @output -- 查剧: one exact match is listed straight away, several are offered to pick from, none (or a platform 选剧台 does not know) opens the full form, filled from 选剧台's 剧库 when it has the drama on this platform and with a switch to the platforms where it has it otherwise; a listed drama opens with ?new=<cover outcome>&details=<official|beidou>; while waiting it says whether 选剧台 is reading its 剧库 or asking 北斗
 // @pos    -- the new-drama panel on /admin/tasks; the full DramaForm stays as the manual way
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 
-import { LOOKUP_LANGUAGES, LOOKUP_PLATFORMS, THEATER_PLATFORMS } from "../../../lib/task-center/contracts.ts";
+import {
+  CATALOG_FIRST_PLATFORMS,
+  LOOKUP_LANGUAGES,
+  LOOKUP_PLATFORMS,
+  THEATER_PLATFORMS,
+} from "../../../lib/task-center/contracts.ts";
 import { languageName, PLATFORM_LABELS, platformLabel } from "../../../lib/task-center/copy.ts";
 import { adminFetch, describeError } from "./admin-fetch.ts";
-import { DramaForm } from "./drama-form.tsx";
+import { DramaForm, type DramaFormValues } from "./drama-form.tsx";
 
 const OTHER = "other";
 
@@ -30,24 +35,54 @@ interface Candidate {
   readonly listedDramaId: string | null;
 }
 
-interface Query {
+/** A 剧库 row with the title looked up, sent when nothing was found: no id, so never imported. */
+export interface CatalogHint {
+  readonly platform: string;
+  readonly title: string;
+  readonly titleCn: string | null;
+  readonly language: string | null;
+  readonly episodes: number | null;
+  readonly payStart: number | null;
+}
+
+export interface Query {
   readonly title: string;
   readonly platform: string;
   readonly language: string | null;
 }
 
-type Step =
+export type Step =
   | { readonly kind: "idle" }
-  | { readonly kind: "searching" }
+  | { readonly kind: "searching"; readonly platform: string }
   | { readonly kind: "importing"; readonly title: string; readonly platform: string }
   | { readonly kind: "pick"; readonly query: Query; readonly candidates: readonly Candidate[] }
-  | { readonly kind: "manual"; readonly query: Query; readonly why: string | null };
+  | {
+      readonly kind: "manual";
+      readonly query: Query;
+      readonly why: string | null;
+      /** What 选剧台's 剧库 knows of this drama on this platform, typed in for the operator. */
+      readonly prefill?: Partial<DramaFormValues>;
+      /** Other platforms whose 剧库 has a drama of this title, to look it up there instead. */
+      readonly elsewhere?: readonly CatalogHint[];
+    };
+
+/** After this long a 剧库-first lookup is almost surely waiting on 北斗 (the 剧库 answers in a second or two). */
+const CATALOG_SECONDS = 3;
 
 const FIELD =
   "mt-1 h-10 w-full rounded-[8px] border border-brand-border-strong bg-brand-bg px-3 text-[14px] text-text-dark-primary";
 const BUTTON =
   "h-10 rounded-[10px] bg-primary px-5 text-[14px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50";
 const LINK_BUTTON = "text-[13.5px] text-brand-accent-text hover:underline";
+
+function isHint(value: unknown): value is CatalogHint {
+  const row = value as Partial<CatalogHint> | null;
+  return typeof row?.platform === "string" && typeof row.title === "string" && row.title !== "";
+}
+
+function readHints(value: unknown): readonly CatalogHint[] {
+  return Array.isArray(value) ? value.filter(isHint) : [];
+}
 
 function isCandidate(value: unknown): value is Candidate {
   const row = value as Partial<Candidate> | null;
@@ -61,6 +96,14 @@ export function DramaQuickCreate({ adminBase }: { adminBase: string }) {
   const [platform, setPlatform] = useState<string>(LOOKUP_PLATFORMS[0]);
   const [lastQuery, setLastQuery] = useState<Query>({ title: "", platform: "", language: null });
   const busy = step.kind === "searching" || step.kind === "importing";
+  // Whether a 剧库-first lookup has run long enough that 选剧台 must be asking 北斗.
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    setSlow(false);
+    if (step.kind !== "searching") return;
+    const timer = setTimeout(() => setSlow(true), CATALOG_SECONDS * 1000);
+    return () => clearTimeout(timer);
+  }, [step]);
 
   function readQuery(form: HTMLFormElement): Query {
     const data = new FormData(form);
@@ -74,14 +117,17 @@ export function DramaQuickCreate({ adminBase }: { adminBase: string }) {
 
   async function search(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
-    const query = readQuery(event.currentTarget);
+    await runSearch(readQuery(event.currentTarget));
+  }
+
+  async function runSearch(query: Query): Promise<void> {
     setError(null);
     setLastQuery(query);
     if (query.platform === OTHER) {
       setStep({ kind: "manual", query: { ...query, platform: "" }, why: "选剧台不认识这个平台，请手填。" });
       return;
     }
-    setStep({ kind: "searching" });
+    setStep({ kind: "searching", platform: query.platform });
     const answer = await adminFetch("/api/admin/tasks/dramas/lookup", "POST", query);
     if (!answer.ok) {
       setStep({ kind: "idle" });
@@ -94,7 +140,7 @@ export function DramaQuickCreate({ adminBase }: { adminBase: string }) {
     }
     const candidates = Array.isArray(answer.data?.dramas) ? answer.data.dramas.filter(isCandidate) : [];
     if (candidates.length === 0) {
-      setStep({ kind: "manual", query, why: `选剧台在 ${platformLabel(query.platform)} 没查到「${query.title}」，请手填。` });
+      setStep(missed(query, readHints(answer.data?.inCatalog)));
       return;
     }
     const exact = candidates.filter((candidate) => candidate.exact);
@@ -130,6 +176,11 @@ export function DramaQuickCreate({ adminBase }: { adminBase: string }) {
     }
     setStep({ kind: "pick", query, candidates: [candidate] });
     setError(lookupError(answer));
+  }
+
+  function switchTo(query: Query, hint: CatalogHint): void {
+    setPlatform(hint.platform);
+    void runSearch({ ...query, platform: hint.platform });
   }
 
   return (
@@ -174,7 +225,7 @@ export function DramaQuickCreate({ adminBase }: { adminBase: string }) {
 
       {step.kind === "searching" && (
         <p role="status" className="text-[13.5px] text-text-dark-secondary">
-          正在问选剧台，它和别的任务共用北斗账号，排队时可能要半分钟到一分钟。
+          {waitingNote(step.platform, slow)}
         </p>
       )}
       {step.kind === "importing" && (
@@ -268,13 +319,32 @@ export function DramaQuickCreate({ adminBase }: { adminBase: string }) {
       {step.kind === "manual" && (
         <div className="space-y-4 border-t border-brand-border-card pt-5">
           {step.why !== null && <p className="text-[13.5px] text-text-dark-secondary">{step.why}</p>}
+          {step.elsewhere !== undefined && step.elsewhere.length > 0 && (
+            <ul className="flex flex-wrap gap-2">
+              {step.elsewhere.map((hint) => (
+                <li key={`${hint.platform}|${hint.language ?? ""}`}>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => switchTo(step.query, hint)}
+                    className="h-9 rounded-[8px] border border-brand-border-strong bg-brand-bg px-3 text-[13.5px] text-text-dark-primary hover:border-primary disabled:opacity-50"
+                  >
+                    换成 {platformLabel(hint.platform)} 查
+                    {hint.language === null ? "" : `（${languageName(hint.language, "zh")}）`}
+                    {hint.titleCn === null ? "" : ` · ${hint.titleCn}`}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
           <DramaForm
-            key={`${step.query.title}|${step.query.platform}|${step.query.language ?? ""}`}
+            key={`${step.query.title}|${step.query.platform}|${step.query.language ?? ""}|${step.prefill === undefined ? "" : "prefill"}`}
             adminBase={adminBase}
             initial={{
               title: step.query.title,
               platform: step.query.platform,
               language: step.query.language ?? "en",
+              ...step.prefill,
             }}
           />
         </div>
@@ -296,6 +366,58 @@ export function TagList({ tags }: { tags: readonly string[] }) {
       ))}
     </ul>
   );
+}
+
+/**
+ * Nothing found on the platform looked up. When 选剧台's 剧库 has the drama
+ * there anyway (FlickReels: 北斗's account has none of its dramas, and the 剧库
+ * has no id to list it by), its title, 中文名, language and counts are typed in.
+ * Otherwise the platforms where the 剧库 has it are offered, one per platform
+ * and language.
+ */
+export function missed(query: Query, hints: readonly CatalogHint[]): Step {
+  const label = platformLabel(query.platform);
+  const here = hints.find(
+    (hint) => hint.platform === query.platform && (query.language === null || hint.language === query.language),
+  );
+  if (here !== undefined) {
+    return {
+      kind: "manual",
+      query,
+      why: `选剧台的剧库里有这部 ${label} 的剧，但查不到它的简介、标签和封面（北斗上也没查到）。剧名、中文名和语种已按剧库填好，其余请手填。`,
+      prefill: {
+        title: here.title,
+        ...(here.titleCn === null ? {} : { titleCn: here.titleCn }),
+        ...(here.language === null ? {} : { language: here.language }),
+        ...(here.episodes === null ? {} : { episodes: here.episodes }),
+        ...(here.payStart === null ? {} : { payStart: here.payStart }),
+      },
+    };
+  }
+  const seen = new Set<string>();
+  const elsewhere = hints.filter((hint) => {
+    const key = `${hint.platform}|${hint.language ?? ""}`;
+    if (hint.platform === query.platform || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  if (elsewhere.length > 0) {
+    const where = [...new Set(elsewhere.map((hint) => platformLabel(hint.platform)))].join("、");
+    return {
+      kind: "manual",
+      query,
+      why: `选剧台在 ${label} 没查到「${query.title}」，但它的剧库里 ${where} 有同名的剧，是不是平台选错了？可以换过去查，或者在下面手填。`,
+      elsewhere,
+    };
+  }
+  return { kind: "manual", query, why: `选剧台在 ${label} 没查到「${query.title}」，请手填。` };
+}
+
+/** What 查剧 says while it waits: the 剧库 answers in a second or two, 北斗 waits its turn on a shared account. */
+export function waitingNote(platform: string, slow: boolean): string {
+  const beidou = "北斗账号和别的任务共用，排队时可能要半分钟到一分钟。";
+  if (!CATALOG_FIRST_PLATFORMS.has(platform)) return `正在通过选剧台问北斗：${beidou}`;
+  return slow ? `剧库里没直接查到，转去问北斗了：${beidou}` : "正在查选剧台的剧库，一般一两秒。";
 }
 
 function lookupError(answer: Parameters<typeof describeError>[0]): string {

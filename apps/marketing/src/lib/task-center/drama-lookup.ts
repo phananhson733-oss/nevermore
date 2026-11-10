@@ -1,5 +1,5 @@
 // @input  -- PICK_LOOKUP_URL and PICK_LOOKUP_TOKEN; a platform, a title and maybe a language from the admin; what the theater's own page shows, when theater-details.ts could read it
-// @output -- the dramas the 选剧台 lookup found in its own 剧库 or on 北斗 (北斗's signed cover URL kept server-side; 完结 unknown for a 剧库 row), which of them is a drama already listed (by its platform id, or by its title when it has none), one of them fitted to the dramas table with the theater's page taking over field by field, and a cover image fetched from a URL either gave
+// @output -- the dramas the 选剧台 lookup found in its own 剧库 or on 北斗 (北斗's signed cover URL kept server-side; 完结 unknown for a 剧库 row), and when it found none the 剧库 rows of that title on any theater (no id: only a hint and a head start for hand entry), which of them is a drama already listed (by its platform id, or by its title when it has none), one of them fitted to the dramas table with the theater's page taking over field by field, and a cover image fetched from a URL either gave
 // @pos    -- the only code that talks to pick-workbench's /api/pick/lookup/drama/ (contract: its deploy/lookup-api.md)
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 //
@@ -46,21 +46,42 @@ const dramaSchema = z.object({
 });
 export type LookupDrama = z.infer<typeof dramaSchema>;
 
+/**
+ * A 剧库 row with the title looked up, on any theater, sent only when nothing
+ * was found. No id: most FlickReels rows are keyed on the title, so these are
+ * never imported, only offered as "try that platform" or typed in by hand.
+ */
+const catalogRowSchema = z.object({
+  platform: z.string().regex(/^[a-z0-9][a-z0-9-]{0,31}$/),
+  title: z.string().min(1),
+  titleCn: z.string().nullable(),
+  language: z.string().nullable(),
+  episodeCount: z.number().int().nullable(),
+  payStart: z.number().int().nullable(),
+});
+export type CatalogRow = z.infer<typeof catalogRowSchema>;
+
+function readable<T>(schema: z.ZodType<T>) {
+  return z.array(z.unknown()).transform((rows) =>
+    rows.flatMap((row) => {
+      const parsed = schema.safeParse(row);
+      return parsed.success ? [parsed.data] : [];
+    }),
+  );
+}
+
 const answerSchema = z.object({
   ok: z.literal(true),
   // A row without the platform's own id cannot be listed or told apart; drop it.
-  dramas: z.array(z.unknown()).transform((rows) =>
-    rows.flatMap((row) => {
-      const parsed = dramaSchema.safeParse(row);
-      return parsed.success ? [parsed.data] : [];
-    }),
-  ),
+  dramas: readable(dramaSchema),
+  // Optional: a 选剧台 from before 2026-11-10 does not send it.
+  inCatalog: readable(catalogRowSchema).optional().catch(undefined),
 });
 
 const errorSchema = z.object({ ok: z.literal(false), error: z.string(), message: z.string().optional() });
 
 export type LookupResult =
-  | { readonly ok: true; readonly dramas: readonly LookupDrama[] }
+  | { readonly ok: true; readonly dramas: readonly LookupDrama[]; readonly inCatalog: readonly CatalogRow[] }
   | {
       readonly ok: false;
       /** unavailable: try again later. rejected: this query will not work. */
@@ -98,7 +119,7 @@ export async function lookupDramas(
   const body: unknown = await response.json().catch(() => null);
   if (response.ok) {
     const parsed = answerSchema.safeParse(body);
-    if (parsed.success) return { ok: true, dramas: parsed.data.dramas };
+    if (parsed.success) return { ok: true, dramas: parsed.data.dramas, inCatalog: parsed.data.inCatalog ?? [] };
     return { ok: false, reason: "unavailable", message: "选剧台的回答看不懂" };
   }
   const failure = errorSchema.safeParse(body);

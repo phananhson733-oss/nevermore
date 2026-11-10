@@ -1,5 +1,5 @@
 // @input  -- drama-lookup.ts with a fake fetch in place of 选剧台 and the cover CDN
-// @output -- proof that the lookup client reads only well-formed answers (GoodShort's base64 ids and a 剧库 row's unknown 完结 included), maps errors, finds which row a drama already listed is (by its id, else by its exact title), fits a 北斗 row to the dramas table with the theater's own page taking over field by field, and fetches only a sane cover
+// @output -- proof that the lookup client reads only well-formed answers (GoodShort's base64 ids, a 剧库 row's unknown 完结 and the id-less 剧库 rows of a miss included), maps errors, finds which row a drama already listed is (by its id, else by its exact title), fits a 北斗 row to the dramas table with the theater's own page taking over field by field, and fetches only a sane cover
 // @pos    -- unit tests for the task center's side of pick-workbench's lookup contract; no network, no database
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -58,7 +58,7 @@ describe("lookupDramas", () => {
       return new Response(JSON.stringify({ ok: true, dramas: [ROW, { title: "no id" }] }), { status: 200 });
     }) as typeof fetch;
     const result = await lookupDramas(CONFIG, { ...QUERY, language: "es" }, fetchImpl);
-    expect(result).toEqual({ ok: true, dramas: [ROW] });
+    expect(result).toEqual({ ok: true, dramas: [ROW], inCatalog: [] });
     expect(seen).toEqual({
       url: "http://drama-platform-web-1:8088/api/pick/lookup/drama/?platform=reelshort&title=Surf+God&language=es",
       auth: "Bearer t0ken",
@@ -71,15 +71,35 @@ describe("lookupDramas", () => {
     const slashed = { ...ROW, platformDramaId: "9i/dssELM0MvEetSwJbzYw==" };
     const rows = [goodShort, slashed, { ...ROW, platformDramaId: "../etc" }, { ...ROW, platformDramaId: "a b" }];
     const result = await lookupDramas(CONFIG, { ...QUERY, platform: "goodshort" }, answer(200, { ok: true, dramas: rows }));
-    expect(result).toEqual({ ok: true, dramas: [goodShort, slashed] });
+    expect(result).toEqual({ ok: true, dramas: [goodShort, slashed], inCatalog: [] });
   });
 
   it("keeps a 剧库 row, whose 完结 is unknown, and imports it as unknown", async () => {
     // What 选剧台 answers from its own 剧库 (2026-11-09): no synopsis, cover, tags or 完结.
     const fromCatalog = { ...ROW, finished: null, description: null, tags: [], coverUrl: null };
     const result = await lookupDramas(CONFIG, QUERY, answer(200, { ok: true, source: "catalog", dramas: [fromCatalog] }));
-    expect(result).toEqual({ ok: true, dramas: [fromCatalog] });
+    expect(result).toEqual({ ok: true, dramas: [fromCatalog], inCatalog: [] });
     expect(toImportedDrama(fromCatalog, QUERY)).toMatchObject({ finished: null, synopsis: null, tags: [] });
+  });
+
+  it("reads the 剧库 rows of the title sent when nothing was found, dropping the unreadable", async () => {
+    // 2026-11-10: a FlickReels drama looked up on ReelShort; 北斗 has no FlickReels drama at all.
+    const flick = {
+      platform: "flickreels", title: "The Ascent: Formative Years Season 2", titleCn: "龙抬头2：一骑绝尘",
+      language: "en", listedOn: "2026-07-03", episodeCount: null, payStart: null,
+    };
+    const rows = [flick, { ...flick, platform: "Flick Reels" }, { ...flick, title: "" }, "x"];
+    expect(await lookupDramas(CONFIG, QUERY, answer(200, { ok: true, dramas: [], inCatalog: rows }))).toEqual({
+      ok: true,
+      dramas: [],
+      inCatalog: [{ platform: "flickreels", title: flick.title, titleCn: flick.titleCn, language: "en", episodeCount: null, payStart: null }],
+    });
+    // A garbled inCatalog is only a lost hint, never a failed lookup.
+    expect(await lookupDramas(CONFIG, QUERY, answer(200, { ok: true, dramas: [ROW], inCatalog: "x" }))).toEqual({
+      ok: true,
+      dramas: [ROW],
+      inCatalog: [],
+    });
   });
 
   it("tells a query that will never work from one to retry", async () => {

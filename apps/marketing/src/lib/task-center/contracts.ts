@@ -61,6 +61,15 @@ export const LOOKUP_PLATFORMS = [
 ] as const;
 export type LookupPlatform = (typeof LOOKUP_PLATFORMS)[number];
 
+/**
+ * The lookup platforms 选剧台 first answers from its own 剧库, in a second or
+ * two, before it asks 北斗 (its CATALOG_FIRST). Only what the 查剧 panel says
+ * while it waits; nothing else depends on it.
+ */
+export const CATALOG_FIRST_PLATFORMS: ReadonlySet<string> = new Set<LookupPlatform>([
+  "reelshort", "stardusttv", "moboreels", "netshort",
+]);
+
 /** The lookup platforms 查剧 also reads from their own site (theater-details.ts); the others keep 北斗's details (DramaBox: its site refuses the server). */
 export const THEATER_PLATFORMS: ReadonlySet<string> = new Set<LookupPlatform>([
   "reelshort", "stardusttv", "moboreels", "netshort", "yourchannel",
