@@ -126,6 +126,8 @@ const en = {
   theaterField: "Platform",
   genreField: "Genre",
   tagField: "Tag",
+  tagPlaceholder: "Type or pick a tag",
+  tagNoMatch: "No matching tags",
   audience: { female: "Female", male: "Male" } as Readonly<Record<DramaAudience, string>>,
   clipType: {
     recap: "Recap",
@@ -248,6 +250,8 @@ const zh: TaskCopy = {
   theaterField: "剧场",
   genreField: "题材",
   tagField: "标签",
+  tagPlaceholder: "输入或选择标签",
+  tagNoMatch: "没有匹配的标签",
   audience: { female: "女频", male: "男频" },
   clipType: {
     recap: "解说",

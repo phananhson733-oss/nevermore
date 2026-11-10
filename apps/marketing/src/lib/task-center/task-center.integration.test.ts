@@ -1,5 +1,5 @@
 // @input  -- a disposable Postgres rebuilt by db/tasks/migrate.sh
-// @output -- proof that the task center's SQL does what the stores promise: the clip grid (its filters, the 标签 one included, and their choices) and its 本周爆款 rule, each listed drama's dialog details, imports from 查剧 (频道 and genre from the theater's page, one drama whichever 北斗 id found it, 完结 left unknown for a 剧库 row, GoodShort's base64 ids), 从官网补全 over a drama already listed (what the operator owns kept, a pay start that no longer fits dropped, never a second listing) and tags, publishing without a platform link, the reader's drama page (trailer pick, taken-down dramas kept, drafts not), promo clicks that open it, and 去看全集 carrying only a code claimed for that drama, promoter accounts included
+// @output -- proof that the task center's SQL does what the stores promise: the clip grid (its filters, the 标签 one matching part of a tag in any case, and their choices) and its 本周爆款 rule, each listed drama's dialog details, imports from 查剧 (频道 and genre from the theater's page, one drama whichever 北斗 id found it, 完结 left unknown for a 剧库 row, GoodShort's base64 ids), 从官网补全 over a drama already listed (what the operator owns kept, a pay start that no longer fits dropped, never a second listing) and tags, publishing without a platform link, the reader's drama page (trailer pick, taken-down dramas kept, drafts not), promo clicks that open it, and 去看全集 carrying only a code claimed for that drama, promoter accounts included
 // @pos    -- the only test that executes task center SQL
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -312,11 +312,18 @@ describe("dramas", () => {
     expect(await ids({ clipType: "recap" })).toEqual([clipC1, clipA]);
     expect(await ids({ language: "es" })).toEqual([clipB]);
 
-    // 标签: one tag, spelled as stored, on a published drama.
+    // 标签: part of a tag, in any case, on a published drama.
     expect(await ids({ tag: "Alpha" })).toEqual([clipC2, clipC1, clipB]);
     expect(await ids({ tag: "Werewolf" })).toEqual([clipB]);
-    expect(await ids({ tag: "werewolf" })).toEqual([]);
+    expect(await ids({ tag: "werewolf" })).toEqual([clipB]);
+    expect(await ids({ tag: "ALP" })).toEqual([clipC2, clipC1, clipB]);
+    expect(await ids({ tag: "olf" })).toEqual([clipB]);
+    expect(await ids({ tag: " lph " })).toEqual([clipC2, clipC1, clipB]);
+    // Only the draft has it.
     expect(await ids({ tag: "Hidden" })).toEqual([]);
+    // "%" and "_" are letters, not wildcards.
+    expect(await ids({ tag: "%" })).toEqual([]);
+    expect(await ids({ tag: "Al_ha" })).toEqual([]);
     expect(await ids({ tag: "Alpha", clipType: "highlight" })).toEqual([clipB]);
 
     expect(await ids({ search: "%" })).toEqual([clipA]);
