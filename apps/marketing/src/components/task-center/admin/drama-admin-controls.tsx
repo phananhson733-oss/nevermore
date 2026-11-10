@@ -1,5 +1,5 @@
 // @input  -- a drama id, its status and assets; the admin status, refill, upload and asset APIs; R2 via signed PUT URLs
-// @output -- publish/take-down buttons, 从官网补全资料 (re-runs 查剧 for the drama and says where the details came from, how the cover went, or why nothing changed), each clip's title rename, the cover and clip uploaders (one button opens the file picker, a second picks a whole folder for clips, or files and folders are dropped on the box, and the upload starts as soon as they are picked; a batch goes up in file-name order so 第2集 comes before 第10集 and the clips are numbered that way, files of other types are skipped and named; progress with the batch position, one upload at a time, a still cut from each video in the browser), the upload's type set to 高光 until changed, per-clip type and delete
+// @output -- publish/take-down buttons (上架 as a large brand-gradient button), 从官网补全资料 (re-runs 查剧 for the drama and says where the details came from, how the cover went, or why nothing changed), each clip's title rename, the cover and clip uploaders (one button opens the file picker, a second picks a whole folder for clips, or files and folders are dropped on the box, and the upload starts as soon as they are picked; a batch goes up in file-name order so 第2集 comes before 第10集 and the clips are numbered that way, files of other types are skipped and named; progress with the batch position, one upload at a time, a still cut from each video in the browser), the upload's type set to 高光 until changed, per-clip type and delete
 // @pos    -- the interactive half of /admin/tasks/<id>
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
@@ -21,6 +21,9 @@ import { adminFetch, describeError } from "./admin-fetch.ts";
 
 const BUTTON =
   "h-9 rounded-[8px] border border-brand-border-strong bg-brand-panel px-4 text-[13.5px] text-text-dark-primary hover:border-brand-accent/50 disabled:opacity-50";
+// 上架 is the step the page builds up to, so it gets the site's big gradient call to action.
+const PUBLISH_BUTTON =
+  "inline-flex h-14 min-w-[220px] items-center justify-center rounded-[14px] bg-brand-gradient px-10 text-[18px] font-semibold text-brand-on-accent shadow-cta-sm transition-shadow hover:shadow-cta disabled:opacity-60";
 
 export function StatusControl({ dramaId, status }: { dramaId: string; status: DramaStatus }) {
   const router = useRouter();
@@ -40,10 +43,10 @@ export function StatusControl({ dramaId, status }: { dramaId: string; status: Dr
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-3">
+    <div className="flex flex-wrap items-center justify-end gap-4">
       {status !== "published" && (
-        <button type="button" className={BUTTON} disabled={busy} onClick={() => void change("published")}>
-          上架
+        <button type="button" className={PUBLISH_BUTTON} disabled={busy} onClick={() => void change("published")}>
+          {busy ? "上架中…" : "上架"}
         </button>
       )}
       {status === "published" && (

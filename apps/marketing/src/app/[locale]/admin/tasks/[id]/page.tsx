@@ -1,5 +1,5 @@
 // @input  -- locale and drama id params, ?new=<cover outcome>&details=<official|beidou> after 查剧; the admin check; the drama and all its assets; R2 for the cover
-// @output -- the admin drama page: cover, title, episodes, pay start, tags, synopsis and where the details came from (a drama from 查剧 links to its page on the theater's site where there is a link to make: ReelShort, DramaBox, StardustTV, MoboReels, NetShort, YourChannel) up top, with a note after 查剧 on whether the theater's own page was read, and 从官网补全资料 for a drama on a platform 查剧 knows (re-runs 查剧 and writes its details over the drama's); the optional platform link (what 去看全集 on the drama's page opens) with what promoters get instead; links to the promoter page and, once listed, the reader's drama page; publish switch with a note on what a draft hides; clip upload (files or a whole folder, in file-name order), each clip numbered as 系列资源 numbers it, rename, retag and delete; the full details form folded away
+// @output -- the admin drama page: cover, title, episodes, pay start, tags, synopsis and where the details came from (a drama from 查剧 links to its page on the theater's site where there is a link to make: ReelShort, DramaBox, StardustTV, MoboReels, NetShort, YourChannel) up top, with a note after 查剧 on whether the theater's own page was read, and 从官网补全资料 for a drama on a platform 查剧 knows (re-runs 查剧 and writes its details over the drama's); links to the promoter page and, once listed, the reader's drama page; a note on what a draft hides; clip upload (files or a whole folder, in file-name order), each clip numbered as 系列资源 numbers it, rename, retag and delete; the publish switch under the clips, on the right (上架 as a large button); the platform-link panel hidden for now (SHOW_PROMO_LINK, still editable in the details form); the full details form folded away
 // @pos    -- /admin/tasks/<id> (Chinese only); 404 for anyone not on TASK_ADMIN_EMAILS
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -121,11 +121,10 @@ export default async function AdminDramaPage({
             )}
           </p>
         </div>
-        <StatusControl dramaId={drama.id} status={drama.status} />
       </div>
       {drama.status !== "published" && (
         <p className="rounded-[8px] border border-brand-border-card bg-brand-panel-raised px-4 py-3 text-[13.5px] leading-[1.6] text-text-dark-secondary">
-          {drama.status === "draft" ? "草稿" : "已下架"}：推广者在任务中心看不到这部剧，也看不到它的素材，没法下载。点「上架」后才对推广者显示。
+          {drama.status === "draft" ? "草稿" : "已下架"}：推广者在任务中心看不到这部剧，也看不到它的素材，没法下载。传好素材后点页面下方的「上架」，才对推广者显示。
           {drama.status === "archived" && "已经发出去的推广链接照旧打开这部剧的页面。"}
         </p>
       )}
@@ -192,15 +191,19 @@ export default async function AdminDramaPage({
         </div>
       </div>
 
-      <div className={PANEL}>
-        <h2 className={H2}>平台链接</h2>
-        <p className="mt-1 text-[13.5px] leading-[1.6] text-text-dark-secondary">
-          推广者拿到的是我们的链接（/t/推广码），点击记在他名下，然后打开我们站上这部剧的页面（封面、简介、预告片，按上传的素材自动生成）。这里填平台给的原始链接后，剧页面才有「去看全集」按钮，跳过去时带上推广码；不填也能上架。
-        </p>
-        <div className="mt-4">
-          <PromoLinkForm dramaId={drama.id} initial={values} />
+      {/* Hidden for now: promoters land on our drama page either way. The link can still be
+          set in 修改剧集信息 below; flip SHOW_PROMO_LINK to bring the panel back. */}
+      {SHOW_PROMO_LINK && (
+        <div className={PANEL}>
+          <h2 className={H2}>平台链接</h2>
+          <p className="mt-1 text-[13.5px] leading-[1.6] text-text-dark-secondary">
+            推广者拿到的是我们的链接（/t/推广码），点击记在他名下，然后打开我们站上这部剧的页面（封面、简介、预告片，按上传的素材自动生成）。这里填平台给的原始链接后，剧页面才有「去看全集」按钮，跳过去时带上推广码；不填也能上架。
+          </p>
+          <div className="mt-4">
+            <PromoLinkForm dramaId={drama.id} initial={values} />
+          </div>
         </div>
-      </div>
+      )}
 
       <div className={PANEL}>
         <h2 className={H2}>推广素材</h2>
@@ -242,6 +245,11 @@ export default async function AdminDramaPage({
         )}
       </div>
 
+      {/* 上架 sits under the clips, on the right: upload first, then publish. */}
+      <div className="flex justify-end">
+        <StatusControl dramaId={drama.id} status={drama.status} />
+      </div>
+
       <details className={PANEL}>
         <summary className="cursor-pointer text-[15px] font-medium text-text-dark-primary">修改剧集信息（剧名、集数、简介、标签等）</summary>
         <div className="mt-5">
@@ -263,5 +271,6 @@ function Fact({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
+const SHOW_PROMO_LINK = false;
 const H2 = "text-[18px] font-semibold text-text-dark-primary";
 const PANEL = "rounded-card border border-brand-border-card bg-brand-panel p-6";
