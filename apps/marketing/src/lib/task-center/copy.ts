@@ -1,5 +1,5 @@
 // @input  -- the page locale ("en" or "zh")
-// @output -- every visitor-facing string of /tasks (the clip grid and its drama dialog), /tasks/<id>, /promotions, /earnings and the reader's drama page /watch/<id>, audience, genre, clip-type and platform labels, a clip's title with machine names (UUIDs, hashes) left out, the Chinese labels the admin pages share, and the two promo links' URLs (/t/<code> and /t/<code>/go)
+// @output -- every visitor-facing string of /tasks (the drama grid and its drama dialog), /tasks/<id>, /promotions, /earnings and the reader's drama page /watch/<id>, audience, genre, clip-type and platform labels, a clip's title with machine names (UUIDs, hashes) left out, the Chinese labels the admin pages share, and the two promo links' URLs (/t/<code> and /t/<code>/go)
 // @pos    -- task center copy, kept beside the code like the waitlist page's; the admin pages are Chinese only
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -43,6 +43,10 @@ const en = {
   clips: "Free clips to download",
   clipsBody: "Click a number to download that clip.",
   seriesClips: "Series clips",
+  seriesClipsBody: "Click a number to play that clip, then download it under the player.",
+  clipCount: (n: number) => (n === 1 ? "1 clip" : `${n} clips`),
+  playNumbered: (n: number, title: string | null, size: string) =>
+    title === null ? `Play clip ${n}, ${size}` : `Play clip ${n}: ${title}, ${size}`,
   clipLabel: (n: number, title: string | null, size: string) =>
     title === null ? `Download clip ${n}, ${size}` : `Download clip ${n}: ${title}, ${size}`,
   previewClips: "Preview the clips",
@@ -176,6 +180,10 @@ const zh: TaskCopy = {
   clips: "免费素材下载",
   clipsBody: "点数字下载对应的素材。",
   seriesClips: "系列资源",
+  seriesClipsBody: "点数字切换到对应的素材，在播放器下面下载。",
+  clipCount: (n: number) => `${n} 条素材`,
+  playNumbered: (n: number, title: string | null, size: string) =>
+    title === null ? `播放素材 ${n}，${size}` : `播放素材 ${n}：${title}，${size}`,
   clipLabel: (n: number, title: string | null, size: string) =>
     title === null ? `下载素材 ${n}，${size}` : `下载素材 ${n}：${title}，${size}`,
   previewClips: "预览素材",

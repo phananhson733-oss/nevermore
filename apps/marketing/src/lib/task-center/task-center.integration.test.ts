@@ -1,5 +1,5 @@
 // @input  -- a disposable Postgres rebuilt by db/tasks/migrate.sh
-// @output -- proof that the task center's SQL does what the stores promise: the clip grid (its filters, the 标签 one included, and their choices) and its 本周爆款 rule, each listed drama's dialog details, imports from 查剧 (频道 and genre from the theater's page, one drama whichever 北斗 id found it, 完结 left unknown for a 剧库 row, GoodShort's base64 ids), 从官网补全 over a drama already listed (what the operator owns kept, a pay start that no longer fits dropped, never a second listing) and tags, publishing without a platform link, the reader's drama page (trailer pick, taken-down dramas kept, drafts not), promo clicks that open it, and 去看全集 carrying only a code claimed for that drama, promoter accounts included
+// @output -- proof that the task center's SQL does what the stores promise: the grid of one card per drama (fronted by its first clip, counting its clips, paged by drama; its filters, the 标签 one included, and their choices) and its 本周爆款 rule, each listed drama's dialog details (its clips in order with kind, type and still), imports from 查剧 (频道 and genre from the theater's page, one drama whichever 北斗 id found it, 完结 left unknown for a 剧库 row, GoodShort's base64 ids), 从官网补全 over a drama already listed (what the operator owns kept, a pay start that no longer fits dropped, never a second listing) and tags, publishing without a platform link, the reader's drama page (trailer pick, taken-down dramas kept, drafts not), promo clicks that open it, and 去看全集 carrying only a code claimed for that drama, promoter accounts included
 // @pos    -- the only test that executes task center SQL
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -295,7 +295,8 @@ describe("dramas", () => {
     const clipA = await readyClip(a, { clipType: "recap" });
     const clipB = await readyClip(b, { title: "Full moon hook", clipType: "highlight" });
     const clipC1 = await readyClip(c, { clipType: "recap" });
-    const clipC2 = await readyClip(c, { contentType: "image/png" });
+    // c's second clip, uploaded last: it makes c the newest drama but does not front its card.
+    await readyClip(c, { contentType: "image/png" });
     await readyClip(draft);
     await claimTask(db, { userId: USER_A, dramaId: c, channel: "all" });
     await claimTask(db, { userId: USER_B, dramaId: c, channel: "all" });
@@ -304,16 +305,17 @@ describe("dramas", () => {
     const ids = async (query: Partial<Parameters<typeof listPublishedAssets>[1]>) =>
       (await listPublishedAssets(db, { ...everything, ...query })).items.map((item) => item.id);
 
-    // Newest upload first, every ready clip of every published drama.
-    expect(await ids({})).toEqual([clipC2, clipC1, clipB, clipA]);
-    expect(await ids({ platform: "dramabox" })).toEqual([clipC2, clipC1, clipB]);
+    // One card per published drama, fronted by its first clip, the drama
+    // with the newest upload first: c's two clips are one card.
+    expect(await ids({})).toEqual([clipC1, clipB, clipA]);
+    expect(await ids({ platform: "dramabox" })).toEqual([clipC1, clipB]);
     expect(await ids({ audience: "female" })).toEqual([clipA]);
     expect(await ids({ genre: "werewolf" })).toEqual([clipB]);
     expect(await ids({ clipType: "recap" })).toEqual([clipC1, clipA]);
     expect(await ids({ language: "es" })).toEqual([clipB]);
 
     // 标签: one tag, spelled as stored, on a published drama.
-    expect(await ids({ tag: "Alpha" })).toEqual([clipC2, clipC1, clipB]);
+    expect(await ids({ tag: "Alpha" })).toEqual([clipC1, clipB]);
     expect(await ids({ tag: "Werewolf" })).toEqual([clipB]);
     expect(await ids({ tag: "werewolf" })).toEqual([]);
     expect(await ids({ tag: "Hidden" })).toEqual([]);
@@ -328,16 +330,16 @@ describe("dramas", () => {
     expect(await ids({ search: "full moon" })).toEqual([clipB]);
 
     const popular = await listPublishedAssets(db, { ...everything, sort: "promoters" });
-    expect(popular.items.map((item) => [item.id, item.drama.promoterCount])).toEqual([
-      [clipC2, 2],
-      [clipC1, 2],
-      [clipB, 1],
-      [clipA, 0],
+    expect(popular.items.map((item) => [item.id, item.drama.promoterCount, item.clipCount])).toEqual([
+      [clipC1, 2, 2],
+      [clipB, 1, 1],
+      [clipA, 0, 1],
     ]);
-    expect(popular.items[0]).toMatchObject({ kind: "image", drama: { audience: "male", genre: null } });
+    expect(popular.items[0]).toMatchObject({ kind: "video", drama: { audience: "male", genre: null } });
 
-    const page2 = await listPublishedAssets(db, { sort: "newest", page: 2, pageSize: 3 });
-    expect(page2).toMatchObject({ total: 4, items: [{ id: clipA }] });
+    // Pages and the total count dramas, not clips.
+    const page2 = await listPublishedAssets(db, { sort: "newest", page: 2, pageSize: 2 });
+    expect(page2).toMatchObject({ total: 3, items: [{ id: clipA }] });
 
     // Each tag once, and none that only a draft has.
     expect(await listPublishedFacets(db)).toEqual({
@@ -346,6 +348,35 @@ describe("dramas", () => {
       genres: ["revenge", "werewolf"],
       tags: ["Alpha", "Werewolf"],
     });
+  });
+
+  it("shows a drama uploaded as a batch as one card that counts every clip", async () => {
+    const older = await publishedDrama({ title: "Older" });
+    const olderClip = await readyClip(older);
+    const batch = await publishedDrama({ title: "Batch" });
+    const one = await readyClip(batch, { title: "Episode 1", clipType: "highlight" });
+    const two = await readyClip(batch, { title: "Episode 2" });
+    const three = await readyClip(batch, { title: "Episode 3", contentType: "image/png" });
+
+    const all = await listPublishedAssets(db, everything);
+    expect(all.total).toBe(2);
+    expect(all.items.map((item) => [item.id, item.drama.id, item.clipCount])).toEqual([
+      [one, batch, 3],
+      [olderClip, older, 1],
+    ]);
+    // A search for a later clip's title fronts the card with that clip, and
+    // the count is still the drama's whole series.
+    const found = await listPublishedAssets(db, { ...everything, search: "Episode 2" });
+    expect(found.items.map((item) => [item.id, item.clipCount])).toEqual([[two, 3]]);
+    expect((await listPublishedAssets(db, { ...everything, clipType: "highlight" })).items.map((item) => item.id)).toEqual([one]);
+
+    // The dialog numbers all three in upload order, with what the player needs.
+    const details = await listPlazaDramaDetails(db, [batch]);
+    expect(details[batch]?.clips.map((clip) => [clip.id, clip.kind, clip.clipType, clip.stillKey])).toEqual([
+      [one, "video", "highlight", null],
+      [two, "video", null, null],
+      [three, "image", null, `dramas/${batch}/assets/${three}.png`],
+    ]);
   });
 
   it("badges the three dramas the most people claimed in the last seven days", async () => {

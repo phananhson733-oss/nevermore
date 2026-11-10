@@ -1,5 +1,5 @@
 // @input  -- a drama id, its status and assets; the admin status, refill, upload and asset APIs; R2 via signed PUT URLs
-// @output -- publish/take-down buttons, 从官网补全资料 (re-runs 查剧 for the drama and says where the details came from, how the cover went, or why nothing changed), each clip's title rename, the cover and clip uploaders (one button opens the file picker, or files are dropped on the box, and the upload starts as soon as files are picked; progress, one upload at a time, a still cut from each video in the browser), per-clip type and delete
+// @output -- publish/take-down buttons, 从官网补全资料 (re-runs 查剧 for the drama and says where the details came from, how the cover went, or why nothing changed), each clip's title rename, the cover and clip uploaders (one button opens the file picker, a second picks a whole folder for clips, or files and folders are dropped on the box, and the upload starts as soon as they are picked; a batch goes up in file-name order so 第2集 comes before 第10集 and the clips are numbered that way, files of other types are skipped and named; progress with the batch position, one upload at a time, a still cut from each video in the browser), per-clip type and delete
 // @pos    -- the interactive half of /admin/tasks/<id>
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
@@ -340,6 +340,53 @@ export function ClipTypeSelect({ assetId, clipType }: { assetId: string; clipTyp
 const SELECT =
   "h-9 rounded-[8px] border border-brand-border-strong bg-brand-bg px-2 text-[13.5px] text-text-dark-primary disabled:opacity-50";
 
+/** File names in the order a person numbers them: "2.mp4" before "10.mp4", 第2集 before 第10集. */
+const byName = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+
+/** A folder's file keeps its path inside the folder; sorting by it keeps subfolders together. */
+function pathOf(file: File): string {
+  return file.webkitRelativePath || file.name;
+}
+
+/** Hidden and system files a folder brings along (.DS_Store, Thumbs.db); never shown as skipped. */
+function isJunk(file: File): boolean {
+  return file.name.startsWith(".") || file.name.toLowerCase() === "thumbs.db" || file.name.toLowerCase() === "desktop.ini";
+}
+
+/** Every file in a dropped folder, however deep. readEntries hands them over a hundred at a time. */
+async function filesIn(entry: FileSystemEntry, prefix: string): Promise<File[]> {
+  if (entry.isFile) {
+    const file = await new Promise<File | null>((resolve) =>
+      (entry as FileSystemFileEntry).file(resolve, () => resolve(null)),
+    );
+    if (file === null) return [];
+    // Keeps the folder path so the batch sorts the same as one picked with the folder button.
+    Object.defineProperty(file, "webkitRelativePath", { value: `${prefix}${file.name}` });
+    return [file];
+  }
+  if (!entry.isDirectory) return [];
+  const reader = (entry as FileSystemDirectoryEntry).createReader();
+  const children: FileSystemEntry[] = [];
+  for (;;) {
+    const batch = await new Promise<FileSystemEntry[]>((resolve) => reader.readEntries(resolve, () => resolve([])));
+    if (batch.length === 0) break;
+    children.push(...batch);
+  }
+  const nested = await Promise.all(children.map((child) => filesIn(child, `${prefix}${entry.name}/`)));
+  return nested.flat();
+}
+
+/** What was dropped: plain files as they are, folders opened up. */
+async function droppedFiles(transfer: DataTransfer): Promise<File[]> {
+  // Entries must be taken before the first await: the DataTransfer empties after the event.
+  const entries = Array.from(transfer.items)
+    .filter((item) => item.kind === "file")
+    .map((item) => item.webkitGetAsEntry());
+  if (entries.length === 0 || entries.some((entry) => entry === null)) return Array.from(transfer.files);
+  const nested = await Promise.all(entries.map((entry) => filesIn(entry as FileSystemEntry, "")));
+  return nested.flat();
+}
+
 export function UploadControl({
   dramaId,
   purpose,
@@ -351,6 +398,7 @@ export function UploadControl({
 }) {
   const router = useRouter();
   const input = useRef<HTMLInputElement>(null);
+  const folderInput = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState("");
   const [clipType, setClipType] = useState<ClipType | "">("");
   const [progress, setProgress] = useState<string | null>(null);
@@ -364,19 +412,18 @@ export function UploadControl({
     return <p className="text-[13.5px] text-text-dark-secondary">R2 还没配置（R2_ACCOUNT_ID 等四项），暂时不能上传。</p>;
   }
 
-  async function uploadOne(file: File): Promise<boolean> {
-    if (!(types as readonly string[]).includes(file.type)) {
-      setError(`${file.name}：不支持的类型 ${file.type || "未知"}。`);
-      return false;
-    }
+  /** Why a file cannot go up, or null when it can. Checked for the whole batch before the first byte. */
+  function refusal(file: File): string | null {
+    if (!(types as readonly string[]).includes(file.type)) return `不支持的类型 ${file.type || "未知"}`;
     const limit = file.type.startsWith("video/") ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
-    if (file.size > limit) {
-      setError(`${file.name}：超过 ${Math.round(limit / 1024 ** 2)} MB 上限。`);
-      return false;
-    }
+    if (file.size > limit) return `超过 ${Math.round(limit / 1024 ** 2)} MB 上限`;
+    return null;
+  }
+
+  async function uploadOne(file: File, position: string, fileTitle: string | null): Promise<boolean> {
     const start = await adminFetch(`/api/admin/tasks/dramas/${dramaId}/uploads`, "POST", {
       purpose,
-      title: purpose === "asset" && title.trim() !== "" ? title.trim() : null,
+      title: purpose === "asset" ? fileTitle : null,
       clipType: purpose === "asset" && clipType !== "" ? clipType : null,
       fileName: file.name.slice(0, 255),
       contentType: file.type,
@@ -390,7 +437,7 @@ export function UploadControl({
     const posterUrl = start.data?.posterUploadUrl;
     const poster = typeof posterUrl === "string" ? capturePoster(file) : Promise.resolve(null);
     const status = await putWithProgress(uploadUrl, file, (fraction) =>
-      setProgress(`${file.name}：${Math.round(fraction * 100)}%`),
+      setProgress(`${position}${file.name}：${Math.round(fraction * 100)}%`),
     );
     if (status < 200 || status >= 300) {
       // Status 0 is usually the bucket's CORS rule missing this origin.
@@ -418,23 +465,39 @@ export function UploadControl({
     return true;
   }
 
-  async function upload(files: readonly File[]): Promise<void> {
-    if (files.length === 0 || uploading.current) return;
-    // Disables the button before the first progress event, so a second click
+  async function upload(picked: readonly File[] | Promise<readonly File[]>): Promise<void> {
+    if (uploading.current) return;
+    // Disables the buttons before the first progress event, so a second click
     // cannot start the same files again as duplicate clips.
     uploading.current = true;
     setProgress("准备上传…");
     setError(null);
     try {
+      const all = (await picked).filter((file) => !isJunk(file));
+      // Name order is upload order is 系列资源's numbering: neither a picker
+      // nor a folder listing promises any order of its own.
+      const sorted = purpose === "cover" ? all.slice(0, 1) : [...all].sort((a, b) => byName.compare(pathOf(a), pathOf(b)));
+      const files = sorted.filter((file) => refusal(file) === null);
+      const skipped = sorted.filter((file) => refusal(file) !== null);
+      if (skipped.length > 0) {
+        const named = skipped.slice(0, 5).map((file) => `${file.name}（${refusal(file)}）`).join("、");
+        setError(`跳过了 ${skipped.length} 个文件：${named}${skipped.length > 5 ? " 等" : ""}。`);
+      }
+      const typed = title.trim();
+      // One file takes the typed title; a batch numbers it, so twelve episodes are not twelve of the same name.
+      const titleFor = (index: number): string | null =>
+        typed === "" ? null : files.length === 1 ? typed : `${typed} ${index + 1}`;
       // One at a time: a clip is tens of MB and the admin's uplink is the bottleneck.
-      for (const file of purpose === "cover" ? files.slice(0, 1) : files) {
-        if (!(await uploadOne(file))) break;
+      for (const [index, file] of files.entries()) {
+        const position = files.length > 1 ? `第 ${index + 1}/${files.length} 个 · ` : "";
+        if (!(await uploadOne(file, position, titleFor(index)))) break;
       }
     } finally {
       uploading.current = false;
       setProgress(null);
       setTitle("");
       if (input.current) input.current.value = "";
+      if (folderInput.current) folderInput.current.value = "";
       router.refresh();
     }
   }
@@ -452,7 +515,7 @@ export function UploadControl({
       onDrop={(event) => {
         event.preventDefault();
         setDragging(false);
-        void upload(Array.from(event.dataTransfer.files));
+        void upload(droppedFiles(event.dataTransfer));
       }}
     >
       <div className="flex flex-wrap items-center gap-3">
@@ -475,7 +538,7 @@ export function UploadControl({
           <input
             value={title}
             onChange={(event) => setTitle(event.target.value)}
-            placeholder="素材标题（不填用文件名）"
+            placeholder="素材标题（不填用文件名；多个文件会加上 1、2、3）"
             maxLength={200}
             className="h-9 min-w-60 rounded-[8px] border border-brand-border-strong bg-brand-bg px-3 text-[13.5px] text-text-dark-primary"
           />
@@ -502,10 +565,38 @@ export function UploadControl({
         >
           {purpose === "cover" ? "选择并上传封面" : "选择并上传素材"}
         </button>
+        {purpose === "asset" && (
+          <>
+            {/* webkitdirectory picks a folder; accept does not apply to it, so
+                upload() filters the types itself. Set as an attribute: React
+                has no typed prop for it. */}
+            <input
+              ref={(node) => {
+                folderInput.current = node;
+                node?.setAttribute("webkitdirectory", "");
+              }}
+              type="file"
+              multiple
+              aria-label="选择素材文件夹"
+              className="hidden"
+              onChange={(event) => void upload(Array.from(event.target.files ?? []))}
+            />
+            <button
+              type="button"
+              className={BUTTON}
+              disabled={progress !== null}
+              onClick={() => {
+                if (!uploading.current) folderInput.current?.click();
+              }}
+            >
+              选择文件夹上传
+            </button>
+          </>
+        )}
         <span className="text-[13px] text-text-dark-secondary">
           {purpose === "cover"
             ? "点按钮选图片，或把图片拖到这个框里，选好就开始上传"
-            : "点按钮选文件（可多选），或把文件拖到这个框里，选好就开始上传"}
+            : "选文件（可多选）或整个文件夹，也可以拖到这个框里；按文件名顺序上传，编号 1、2、3 就是这个顺序，不是视频或图片的文件会跳过"}
         </span>
       </div>
       {progress && <p className="font-mono text-[13px] text-text-dark-secondary">{progress}</p>}

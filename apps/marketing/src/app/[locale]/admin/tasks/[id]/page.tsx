@@ -1,5 +1,5 @@
 // @input  -- locale and drama id params, ?new=<cover outcome>&details=<official|beidou> after 查剧; the admin check; the drama and all its assets; R2 for the cover
-// @output -- the admin drama page: cover, title, episodes, pay start, tags, synopsis and where the details came from (a drama from 查剧 links to its page on the theater's site where there is a link to make: ReelShort, DramaBox, StardustTV, MoboReels, NetShort, YourChannel) up top, with a note after 查剧 on whether the theater's own page was read, and 从官网补全资料 for a drama on a platform 查剧 knows (re-runs 查剧 and writes its details over the drama's); the optional platform link (what 去看全集 on the drama's page opens) with what promoters get instead; links to the promoter page and, once listed, the reader's drama page; publish switch with a note on what a draft hides; clip upload, rename, retag and delete; the full details form folded away
+// @output -- the admin drama page: cover, title, episodes, pay start, tags, synopsis and where the details came from (a drama from 查剧 links to its page on the theater's site where there is a link to make: ReelShort, DramaBox, StardustTV, MoboReels, NetShort, YourChannel) up top, with a note after 查剧 on whether the theater's own page was read, and 从官网补全资料 for a drama on a platform 查剧 knows (re-runs 查剧 and writes its details over the drama's); the optional platform link (what 去看全集 on the drama's page opens) with what promoters get instead; links to the promoter page and, once listed, the reader's drama page; publish switch with a note on what a draft hides; clip upload (files or a whole folder, in file-name order), each clip numbered as 系列资源 numbers it, rename, retag and delete; the full details form folded away
 // @pos    -- /admin/tasks/<id> (Chinese only); 404 for anyone not on TASK_ADMIN_EMAILS
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -72,6 +72,9 @@ export default async function AdminDramaPage({
   const found = await getDramaForAdmin(db, id);
   if (found === null) notFound();
   const { drama, assets } = found;
+  const readyNumber = new Map(
+    assets.filter((asset) => asset.status === "ready").map((asset, index) => [asset.id, index + 1] as const),
+  );
   const newNote = newDramaNote(fresh.new, fresh.details, drama.platform);
   const sourcePage = drama.source === "beidou" ? theaterPageUrl(drama.platform, drama.sourceDramaId) : null;
   const r2 = readR2Config();
@@ -202,7 +205,7 @@ export default async function AdminDramaPage({
       <div className={PANEL}>
         <h2 className={H2}>推广素材</h2>
         <p className="mt-1 text-[13.5px] text-text-dark-secondary">
-          剪好的视频（MP4、MOV、WebM，单个不超过 4 GB）或图片。浏览器直接传到 R2，传完核对过大小才对推广者显示。
+          剪好的视频（MP4、MOV、WebM，单个不超过 4 GB）或图片。浏览器直接传到 R2，传完核对过大小才对推广者显示。同一部剧的素材在任务中心合成一张卡片，弹窗里按下面的编号列成系列资源 1、2、3。
         </p>
         <div className="mt-4">
           <UploadControl dramaId={drama.id} purpose="asset" storageReady={r2 !== null} />
@@ -211,6 +214,10 @@ export default async function AdminDramaPage({
           <ul className="mt-6 divide-y divide-brand-border-card rounded-[8px] border border-brand-border-card">
             {assets.map((asset) => (
               <li key={asset.id} className="flex flex-wrap items-center gap-4 px-4 py-3 text-[13.5px]">
+                {/* The number 系列资源 gives it on /tasks: only ready clips count. */}
+                <span className="w-6 shrink-0 text-right font-mono text-text-dark-secondary">
+                  {asset.status === "ready" ? (readyNumber.get(asset.id) ?? "") : "–"}
+                </span>
                 <AssetTitle assetId={asset.id} title={asset.title} />
                 <span className="text-text-dark-secondary">{asset.kind === "video" ? "视频" : "图片"}</span>
                 <ClipTypeSelect assetId={asset.id} clipType={asset.clipType} />
