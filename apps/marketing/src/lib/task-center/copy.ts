@@ -127,8 +127,11 @@ const en = {
     "Partial: the platform reported this figure for some days and not others, so the total covers only the days it reported.",
   searchClips: "Search by drama or clip",
   searchLabel: "Search",
+  theaterField: "Platform",
   genreField: "Genre",
   tagField: "Tag",
+  tagPlaceholder: "Type or pick a tag",
+  tagNoMatch: "No matching tags",
   audience: { female: "Female", male: "Male" } as Readonly<Record<DramaAudience, string>>,
   clipType: {
     recap: "Recap",
@@ -252,8 +255,11 @@ const zh: TaskCopy = {
   partialNote: "部分：平台只给了其中一些天的这一项，合计只算了给了的那些天。",
   searchClips: "按剧名或素材名搜索",
   searchLabel: "搜索",
+  theaterField: "剧场",
   genreField: "题材",
   tagField: "标签",
+  tagPlaceholder: "输入或选择标签",
+  tagNoMatch: "没有匹配的标签",
   audience: { female: "女频", male: "男频" },
   clipType: {
     recap: "解说",
