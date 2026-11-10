@@ -1,9 +1,9 @@
 // @input  -- POST {platform, title, language?} from 查剧 on /admin/tasks, by an email on TASK_ADMIN_EMAILS
-// @output -- the dramas the 选剧台 lookup found, each marked with the drama already listed for it; configured:false when the lookup is not set up
+// @output -- the dramas the 选剧台 lookup found, each marked with the drama already listed for it; when none, the 剧库 rows of that title on the platforms 查剧 knows (inCatalog: to switch platform or type in by hand); configured:false when the lookup is not set up
 // @pos    -- step 1 of the one-step listing; the operator then imports one (../import) or types the drama by hand
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
-import { dramaLookupSchema } from "../../../../../../lib/task-center/contracts.ts";
+import { dramaLookupSchema, LOOKUP_PLATFORMS } from "../../../../../../lib/task-center/contracts.ts";
 import { lookupDramas, readLookupConfig } from "../../../../../../lib/task-center/drama-lookup.ts";
 import { listedBySource } from "../../../../../../lib/task-center/dramas-store.ts";
 import {
@@ -23,7 +23,7 @@ export async function POST(request: Request): Promise<Response> {
   const parsed = dramaLookupSchema.safeParse(mutation.value.body);
   if (!parsed.success) return invalidInput(parsed.error.issues);
   const config = readLookupConfig();
-  if (config === null) return privateJson({ data: { configured: false, dramas: [] } });
+  if (config === null) return privateJson({ data: { configured: false, dramas: [], inCatalog: [] } });
 
   const result = await lookupDramas(config, parsed.data);
   if (!result.ok) {
@@ -58,5 +58,17 @@ export async function POST(request: Request): Promise<Response> {
     hasCover: drama.coverUrl !== null,
     listedDramaId: listed.get(drama.platformDramaId) ?? null,
   }));
-  return privateJson({ data: { configured: true, dramas } });
+  // Only the platforms the panel can switch to; 选剧台's 剧库 also has DramaWave, StarShort and the like.
+  const known: ReadonlySet<string> = new Set(LOOKUP_PLATFORMS);
+  const inCatalog = result.inCatalog
+    .filter((row) => known.has(row.platform))
+    .map((row) => ({
+      platform: row.platform,
+      title: row.title,
+      titleCn: row.titleCn,
+      language: row.language,
+      episodes: row.episodeCount,
+      payStart: row.payStart,
+    }));
+  return privateJson({ data: { configured: true, dramas, inCatalog } });
 }
