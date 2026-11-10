@@ -1,5 +1,5 @@
-// @input  -- the page locale, one page of clip cards (signed poster and cover URLs made on the server), each listed drama's public details (no platform URLs), the visitor's links per drama
-// @output -- the clip grid with type and 本周爆款 badges (a clip named only by a UUID or hash shows no title); a card opens a wide two-column dialog: on the right the clip playing (first on a phone) with its own download under it; on the left, in MoboReels' order, the drama's cover with its title, its chips (language first, then 频道, genre and tags), 上架时间 · 共 N 集 · 前 M 集免费, the full synopsis, the 推广链接 and 资源推广链接 (made for a signed-in visitor as the dialog opens, no 口令), 系列资源 (numbered downloads of all its clips), the how-to as an open box and a link to the drama's page
+// @input  -- the page locale, one page of drama cards (each fronted by the drama's first clip; signed poster and cover URLs made on the server), each listed drama's public details and clips with their stills (no platform URLs), the visitor's links per drama
+// @output -- the grid, one card per drama, with type, clip count and 本周爆款 badges (a clip named only by a UUID or hash shows no title); a card opens a wide two-column dialog: on the right the clip playing (first on a phone) with its own download under it; on the left, in MoboReels' order, the drama's cover with its title, its chips (language first, then 频道, genre and tags), 上架时间 · 共 N 集 · 前 M 集免费, the full synopsis, the 推广链接 and 资源推广链接 (made for a signed-in visitor as the dialog opens, no 口令), 系列资源 (one numbered button per clip that switches the player and its download to that clip), the how-to as an open box and a link to the drama's page
 // @pos    -- the body of /tasks, the task center's 素材广场
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
@@ -9,9 +9,9 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import type { ClipType, DramaAudience } from "../../lib/task-center/contracts.ts";
-import { clipTitle, genreLabel, languageName, taskCopy } from "../../lib/task-center/copy.ts";
+import { clipTitle, formatBytes, genreLabel, languageName, taskCopy } from "../../lib/task-center/copy.ts";
 import { ClaimPanel, type LinkView } from "./claim-panel.tsx";
-import { ClipDownloads, DramaChips, DramaFacts, HowTo, type DownloadClip } from "./drama-info.tsx";
+import { DramaChips, DramaFacts, HowTo, type DownloadClip } from "./drama-info.tsx";
 
 export interface ClipCard {
   readonly id: string;
@@ -23,6 +23,8 @@ export interface ClipCard {
   readonly coverUrl: string | null;
   readonly size: string;
   readonly hot: boolean;
+  /** Every ready clip of the drama; the card stands for all of them. */
+  readonly clipCount: number;
   readonly dramaId: string;
   readonly dramaTitle: string;
   readonly dramaHref: string;
@@ -34,13 +36,31 @@ export interface ClipCard {
   readonly language: string;
 }
 
+/** One of a drama's clips in its dialog: 系列资源 numbers them and the player switches between them. */
+export interface PlazaClip extends DownloadClip {
+  readonly kind: "video" | "image";
+  readonly clipType: ClipType | null;
+  /** Signed; the clip's still, or an image itself. Null shows the drama's cover. */
+  readonly stillUrl: string | null;
+}
+
 /** What a drama's dialog shows beyond the card; built on the server, never with the platform's own URLs. */
 export interface PlazaDrama {
   readonly synopsis: string | null;
   readonly listedAt: string | null;
   readonly episodes: number | null;
   readonly payStart: number | null;
-  readonly clips: readonly DownloadClip[];
+  readonly clips: readonly PlazaClip[];
+}
+
+/** What the player shows: the card's own clip, or the one picked in 系列资源. */
+interface Playing {
+  readonly id: string;
+  readonly kind: "video" | "image";
+  readonly title: string;
+  readonly clipType: ClipType | null;
+  readonly stillUrl: string | null;
+  readonly size: string;
 }
 
 export function ClipPlaza({
@@ -64,8 +84,24 @@ export function ClipPlaza({
   // Links claimed in a dialog stay shown when it is opened again. Kept apart
   // from the server's links, which change with each page of the grid.
   const [held, setHeld] = useState<Readonly<Record<string, LinkView>>>({});
+  // The clip picked in 系列资源; null plays the card's own clip.
+  const [picked, setPicked] = useState<string | null>(null);
   const detail = open === null ? undefined : dramas[open.dramaId];
-  const openName = open === null ? null : clipTitle(open.title);
+  const pickedClip = picked === null ? undefined : detail?.clips.find((clip) => clip.id === picked);
+  const playing: Playing | null =
+    open === null
+      ? null
+      : pickedClip === undefined || pickedClip.id === open.id
+        ? { id: open.id, kind: open.kind, title: open.title, clipType: open.clipType, stillUrl: open.posterUrl, size: open.size }
+        : {
+            id: pickedClip.id,
+            kind: pickedClip.kind,
+            title: pickedClip.title,
+            clipType: pickedClip.clipType,
+            stillUrl: pickedClip.stillUrl,
+            size: formatBytes(pickedClip.byteSize),
+          };
+  const openName = playing === null ? null : clipTitle(playing.title);
 
   useEffect(() => {
     if (open !== null && dialog.current?.open === false) dialog.current.showModal();
@@ -90,8 +126,11 @@ export function ClipPlaza({
             <li key={card.id}>
               <button
                 type="button"
-                onClick={() => setOpen(card)}
-                aria-label={copy.playClip(name === null ? card.dramaTitle : `${card.dramaTitle} · ${name}`)}
+                onClick={() => {
+                  setPicked(null);
+                  setOpen(card);
+                }}
+                aria-label={copy.playClip(card.dramaTitle)}
                 className="group block w-full overflow-hidden rounded-card border border-brand-border-card bg-brand-panel text-left transition-colors hover:border-brand-accent/50"
               >
                 <div className="relative aspect-[9/16] bg-brand-panel-raised">
@@ -102,6 +141,11 @@ export function ClipPlaza({
                   {card.clipType !== null && (
                     <span className="absolute top-2 left-2 rounded-[6px] bg-media/60 px-2 py-0.5 text-[12px] text-on-media">
                       {copy.clipType[card.clipType]}
+                    </span>
+                  )}
+                  {card.clipCount > 1 && (
+                    <span className="absolute top-2 right-2 rounded-[6px] bg-media/60 px-2 py-0.5 text-[12px] text-on-media">
+                      {copy.clipCount(card.clipCount)}
                     </span>
                   )}
                   {card.kind === "video" && (
@@ -129,7 +173,10 @@ export function ClipPlaza({
                     <p className="line-clamp-2 text-[14px] leading-[1.35] font-semibold text-text-dark-primary group-hover:text-brand-accent-text">
                       {card.dramaTitle}
                     </p>
-                    {name !== null && <p className="mt-1 truncate text-[12.5px] text-text-dark-secondary">{name}</p>}
+                    {/* A drama of several clips is named by the drama alone; one clip keeps its own name. */}
+                    {card.clipCount === 1 && name !== null && (
+                      <p className="mt-1 truncate text-[12.5px] text-text-dark-secondary">{name}</p>
+                    )}
                     <p className="mt-0.5 truncate text-[12px] text-text-dark-secondary">{meta(card)}</p>
                   </div>
                 </div>
@@ -235,8 +282,32 @@ export function ClipPlaza({
                 {detail !== undefined && detail.clips.length > 0 && (
                   <section>
                     <h3 className={H3}>{copy.seriesClips}</h3>
-                    <p className="mt-1 mb-3 text-[13px] text-text-dark-secondary">{copy.clipsBody}</p>
-                    <ClipDownloads locale={locale} clips={detail.clips} current={open.id} />
+                    <p className="mt-1 mb-3 text-[13px] text-text-dark-secondary">{copy.seriesClipsBody}</p>
+                    <ol className="flex flex-wrap gap-2">
+                      {detail.clips.map((clip, index) => {
+                        const current = clip.id === playing?.id;
+                        const clipName = clipTitle(clip.title);
+                        const size = formatBytes(clip.byteSize);
+                        return (
+                          <li key={clip.id}>
+                            <button
+                              type="button"
+                              onClick={() => setPicked(clip.id)}
+                              title={clipName === null ? size : `${clipName} · ${size}`}
+                              aria-label={copy.playNumbered(index + 1, clipName, size)}
+                              aria-pressed={current}
+                              className={`flex size-11 items-center justify-center rounded-[8px] border font-mono text-[14px] transition-colors hover:border-brand-accent-text hover:text-brand-accent-text ${
+                                current
+                                  ? "border-brand-accent-text bg-brand-accent-soft text-brand-accent-text"
+                                  : "border-brand-border-card bg-brand-panel text-text-dark-primary"
+                              }`}
+                            >
+                              {index + 1}
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ol>
                   </section>
                 )}
 
@@ -257,8 +328,8 @@ export function ClipPlaza({
                 <div className="flex min-h-0 flex-1 items-center justify-center">
                   {!signedIn ? (
                     <div className="relative aspect-[9/16] max-h-[70vh] w-full md:max-h-[calc(100dvh-34px)]">
-                      {(open.posterUrl ?? open.coverUrl) !== null && (
-                        <img src={open.posterUrl ?? open.coverUrl ?? ""} alt="" className="h-full w-full object-cover opacity-60" />
+                      {(playing?.stillUrl ?? open.coverUrl) !== null && (
+                        <img src={playing?.stillUrl ?? open.coverUrl ?? ""} alt="" className="h-full w-full object-cover opacity-60" />
                       )}
                       <p className="absolute inset-x-4 top-1/2 -translate-y-1/2 text-center text-[14px] text-on-media">
                         {copy.signInForClips}{" "}
@@ -267,21 +338,21 @@ export function ClipPlaza({
                         </a>
                       </p>
                     </div>
-                  ) : open.kind === "video" ? (
+                  ) : playing?.kind === "video" ? (
                     <video
-                      key={open.id}
+                      key={playing.id}
                       controls
                       autoPlay
                       playsInline
                       preload="metadata"
-                      poster={open.posterUrl ?? open.coverUrl ?? undefined}
-                      src={`/api/tasks/assets/${open.id}`}
+                      poster={playing.stillUrl ?? open.coverUrl ?? undefined}
+                      src={`/api/tasks/assets/${playing.id}`}
                       // Room left under the player for the download panel.
                       className="aspect-[9/16] max-h-[70vh] w-full md:max-h-[calc(100dvh-150px)]"
                     />
                   ) : (
                     <img
-                      src={`/api/tasks/assets/${open.id}`}
+                      src={`/api/tasks/assets/${playing?.id ?? open.id}`}
                       alt=""
                       className="max-h-[70vh] w-full object-contain md:max-h-[calc(100dvh-150px)]"
                     />
@@ -289,22 +360,22 @@ export function ClipPlaza({
                 </div>
                 {signedIn && (
                   <div className="space-y-3 border-t border-brand-border-card bg-brand-panel p-4">
-                    {(open.clipType !== null || openName !== null) && (
+                    {(playing?.clipType != null || openName !== null) && (
                       <p className="flex items-center gap-2 text-[13px]">
-                        {open.clipType !== null && (
+                        {playing?.clipType != null && (
                           <span className="shrink-0 rounded-[6px] bg-brand-panel-raised px-1.5 py-0.5 text-[12px] text-text-dark-secondary">
-                            {copy.clipType[open.clipType]}
+                            {copy.clipType[playing.clipType]}
                           </span>
                         )}
                         {openName !== null && <span className="min-w-0 truncate text-text-dark-primary">{openName}</span>}
                       </p>
                     )}
                     <a
-                      href={`/api/tasks/assets/${open.id}?download=1`}
+                      href={`/api/tasks/assets/${playing?.id ?? open.id}?download=1`}
                       className="flex h-10 w-full items-center justify-center gap-2 rounded-[10px] bg-primary px-5 text-[14px] font-medium text-primary-foreground hover:bg-primary/90"
                     >
                       <Download aria-hidden className="size-4" />
-                      {copy.downloadThis} · {open.size}
+                      {copy.downloadThis} · {playing?.size ?? open.size}
                     </a>
                   </div>
                 )}

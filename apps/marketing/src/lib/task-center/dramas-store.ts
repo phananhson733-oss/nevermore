@@ -1,5 +1,5 @@
 // @input  -- a TaskDb and admin or visitor requests already parsed by contracts.ts
-// @output -- dramas (with their optional platform link) and their clip assets: the public clip grid (filtered by a tag, typed in part and in any case, with this week's hot dramas and each listed drama's details and clips) and its filter choices (tags included), the drama list and detail, the reader's drama page (/watch/<id>: cover, synopsis, trailer, whether there is a platform link, never the link itself), and the admin reads and writes, including a drama imported from 查剧 (北斗 through the 选剧台 lookup, filled in from the theater's own page) and one already listed filled in again from it (从官网补全)
+// @output -- dramas (with their optional platform link) and their clip assets: the public grid, one card per published drama fronted by its first matching clip (filtered by a tag, typed in part and in any case, with this week's hot dramas, each drama's clip count, and each listed drama's details and clips with their types and stills) and its filter choices (tags included), the drama list and detail, the reader's drama page (/watch/<id>: cover, synopsis, trailer, whether there is a platform link, never the link itself), and the admin reads and writes, including a drama imported from 查剧 (北斗 through the 选剧台 lookup, filled in from the theater's own page) and one already listed filled in again from it (从官网补全)
 // @pos    -- every SQL statement on task_center.dramas and task_center.drama_assets
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -192,6 +192,8 @@ export interface PlazaAsset {
   readonly drama: DramaSummary;
   /** Its drama is one of this week's three most claimed. */
   readonly hot: boolean;
+  /** Every ready clip of its drama, filters or not: what 系列资源 numbers. */
+  readonly clipCount: number;
 }
 
 export interface PlazaQuery {
@@ -212,7 +214,13 @@ export interface PlazaQuery {
   readonly pageSize: number;
 }
 
-/** Ready clips of published dramas, newest upload first: the grid on /tasks. */
+/**
+ * The grid on /tasks: one card per published drama with a ready clip that
+ * matches, never one per clip, so a drama uploaded as twelve episodes is one
+ * card and its dialog numbers the twelve (系列资源). The card is fronted by
+ * the drama's first matching clip in upload order, the one numbered lowest.
+ * Dramas come newest upload first; `total` counts dramas.
+ */
 export async function listPublishedAssets(
   db: TaskDb,
   query: PlazaQuery,
@@ -240,15 +248,16 @@ export async function listPublishedAssets(
     const n = values.length;
     where.push(`(a.title ilike $${n} or d.title ilike $${n} or d.title_cn ilike $${n})`);
   }
+  // Outside the CTE: its columns, so unqualified.
   const order =
     query.sort === "promoters"
-      ? "promoter_count desc, a.uploaded_at desc, a.id"
-      : "a.uploaded_at desc, a.id";
+      ? "promoter_count desc, latest_upload desc nulls last, id"
+      : "latest_upload desc nulls last, id";
   const from = `task_center.drama_assets a join task_center.dramas d on d.id = a.drama_id`;
   const whereSql = where.join(" and ");
 
   const { rows: countRows } = await db.query<{ total: string }>(
-    `select count(*) as total from ${from} where ${whereSql}`,
+    `select count(distinct d.id) as total from ${from} where ${whereSql}`,
     values,
   );
   values.push(query.pageSize, (query.page - 1) * query.pageSize);
@@ -263,15 +272,26 @@ export async function listPublishedAssets(
       poster_key: string | null;
       uploaded_at: Date | null;
       hot: boolean;
+      clip_count: string | number;
     }
   >(
-    `with hot as (${HOT_DRAMAS})
-     select a.id as asset_id, a.kind, a.title as asset_title, a.object_key, a.byte_size,
-            a.clip_type, a.poster_key, a.uploaded_at,
-            ${SUMMARY_COLUMNS},
-            exists (select 1 from hot where hot.drama_id = d.id) as hot
-       from ${from}
-      where ${whereSql}
+    // distinct on keeps each drama's first matching clip by the order 系列资源
+    // numbers them in; the window functions see every matching clip of it.
+    `with hot as (${HOT_DRAMAS}),
+     cards as (
+       select distinct on (d.id)
+              a.id as asset_id, a.kind, a.title as asset_title, a.object_key, a.byte_size,
+              a.clip_type, a.poster_key, a.uploaded_at,
+              max(a.uploaded_at) over (partition by d.id) as latest_upload,
+              ${SUMMARY_COLUMNS},
+              (select count(*) from task_center.drama_assets x
+                where x.drama_id = d.id and x.status = 'ready') as clip_count,
+              exists (select 1 from hot where hot.drama_id = d.id) as hot
+         from ${from}
+        where ${whereSql}
+        order by d.id, a.sort, a.created_at, a.id
+     )
+     select * from cards
       order by ${order}
       limit $${values.length - 1} offset $${values.length}`,
     values,
@@ -288,15 +308,16 @@ export async function listPublishedAssets(
       uploadedAt: row.uploaded_at?.toISOString() ?? null,
       drama: toSummary(row),
       hot: row.hot,
+      clipCount: toSafeInteger(row.clip_count) ?? 1,
     })),
     total: toSafeInteger(countRows[0]?.total) ?? 0,
   };
 }
 
 /**
- * What a clip's dialog on /tasks shows about its drama beyond the card: the
- * synopsis and the drama's ready clips in the same order as /tasks/<id>, for
- * the numbered downloads. Never the platform's link: this goes to the browser.
+ * What a drama's dialog on /tasks shows beyond the card: the synopsis and the
+ * drama's ready clips in the same order as /tasks/<id>, for the numbered
+ * 系列资源 that switch the player. Never the platform's link: this goes to the browser.
  */
 export interface PlazaDramaDetail {
   readonly synopsis: string | null;
@@ -304,6 +325,10 @@ export interface PlazaDramaDetail {
     readonly id: string;
     readonly title: string;
     readonly byteSize: number;
+    readonly kind: "video" | "image";
+    readonly clipType: ClipType | null;
+    /** The clip's still, or an image itself; null when a video has none. */
+    readonly stillKey: string | null;
   }[];
 }
 
@@ -321,8 +346,17 @@ export async function listPlazaDramaDetails(
       where d.id = any($1::uuid[]) and d.status = 'published'`,
     [ids],
   );
-  const assets = await db.query<{ id: string; drama_id: string; title: string; byte_size: string | number }>(
-    `select a.id, a.drama_id, a.title, a.byte_size
+  const assets = await db.query<{
+    id: string;
+    drama_id: string;
+    title: string;
+    byte_size: string | number;
+    kind: "video" | "image";
+    clip_type: ClipType | null;
+    still_key: string | null;
+  }>(
+    `select a.id, a.drama_id, a.title, a.byte_size, a.kind, a.clip_type,
+            coalesce(a.poster_key, case when a.kind = 'image' then a.object_key end) as still_key
        from task_center.drama_assets a
       where a.drama_id = any($1::uuid[]) and a.status = 'ready'
       order by a.drama_id, a.sort, a.created_at, a.id`,
@@ -331,7 +365,14 @@ export async function listPlazaDramaDetails(
   const clips = new Map<string, PlazaDramaDetail["clips"][number][]>();
   for (const row of assets.rows) {
     const list = clips.get(row.drama_id) ?? [];
-    list.push({ id: row.id, title: row.title, byteSize: toSafeInteger(row.byte_size) ?? 0 });
+    list.push({
+      id: row.id,
+      title: row.title,
+      byteSize: toSafeInteger(row.byte_size) ?? 0,
+      kind: row.kind,
+      clipType: row.clip_type,
+      stillKey: row.still_key,
+    });
     clips.set(row.drama_id, list);
   }
   const details: Record<string, PlazaDramaDetail> = {};

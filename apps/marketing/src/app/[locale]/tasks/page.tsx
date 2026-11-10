@@ -1,5 +1,5 @@
 // @input  -- locale param; q, platform, language, genre, tag and page query (no others: a filter the bar does not show is not applied); the task database; the session; R2 for stills and covers
-// @output -- the promoter tabs, the filters (search, 剧场 from the platforms of published dramas, then MoboReels' 语言, 题材 and 标签, a text box that matches any part of a tag in any case with a list of the published tags that contain what is typed), each named by a label above it, then every ready clip of a published drama, newest first, as a paged 素材广场 grid, with what each listed drama's dialog shows (上架时间, episodes, synopsis, its clips for a signed-in visitor, and the visitor's two links when they already hold them)
+// @output -- the promoter tabs, the filters (search, 剧场 from the platforms of published dramas, then MoboReels' 语言, 题材 and 标签, a text box that matches any part of a tag in any case with a list of the published tags that contain what is typed), each named by a label above it, then one card per published drama with a ready clip (fronted by its first clip, with its clip count), newest upload first, as a paged 素材广场 grid, with what each listed drama's dialog shows (上架时间, episodes, synopsis, its numbered clips with their stills for a signed-in visitor, and the visitor's two links when they already hold them)
 // @pos    -- /tasks, the task center's entry page
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -152,6 +152,7 @@ export default async function TasksPage({
       coverUrl: r2 !== null && drama.coverKey !== null ? coverImageUrl(r2, drama.coverKey) : null,
       size: formatBytes(item.byteSize),
       hot: item.hot,
+      clipCount: item.clipCount,
       dramaId: drama.id,
       dramaTitle: locale === "zh" && drama.titleCn ? drama.titleCn : drama.title,
       dramaHref: localePath(locale, `/tasks/${drama.id}`),
@@ -172,7 +173,16 @@ export default async function TasksPage({
       episodes: drama.episodes,
       payStart: drama.payStart,
       // Downloads need sign-in, and the dialog lists them only then.
-      clips: signedIn ? (detail?.clips ?? []) : [],
+      clips: signedIn
+        ? (detail?.clips ?? []).map((clip) => ({
+            id: clip.id,
+            title: clip.title,
+            byteSize: clip.byteSize,
+            kind: clip.kind,
+            clipType: clip.clipType,
+            stillUrl: r2 !== null && clip.stillKey !== null ? coverImageUrl(r2, clip.stillKey) : null,
+          }))
+        : [],
     };
   }
 
