@@ -10,6 +10,7 @@ import {
   menuItemPath,
   resourcesMenuGroups,
 } from "./navigation.ts";
+import { PROMOTER_PAGES_VISIBLE } from "../lib/task-center/visibility.ts";
 
 /** The header submenus against the exact catalogue boundaries they promote. */
 
@@ -127,12 +128,14 @@ describe("GGBoost submenu", () => {
     expect(ggboost?.menuViewAllLabelKey).toBeUndefined();
   });
 
-  it("holds the three promoter pages, in the order of their tab row", () => {
+  it("holds the promoter pages in the order of their tab row, My Promotions and My Earnings only while shown", () => {
     expect(
       ggboostMenuGroups.flatMap((group) =>
         group.items.map((item) => menuItemPath("/tasks", item)),
       ),
-    ).toEqual(["/tasks", "/promotions", "/earnings"]);
+    ).toEqual(
+      PROMOTER_PAGES_VISIBLE ? ["/tasks", "/promotions", "/earnings"] : ["/tasks"],
+    );
   });
 
   it("points every promoter page at a concrete route", () => {
