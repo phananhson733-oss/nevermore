@@ -1,5 +1,5 @@
 // @input  -- locale and drama id params; the task database; the verified session; R2 for the cover
-// @output -- one published drama laid out like RS Boost's resource page: cover, title, chips, 上架时间 · 共 N 集 · 前 M 集免费, synopsis; numbered free clip downloads with previews; the 推广链接 and 资源推广链接 (made for a signed-in visitor as the page opens, no 口令) and a link to the drama page the first opens; how it works (with a link to 我的推广 while PROMOTER_PAGES_VISIBLE is on); the episode list with paid locks
+// @output -- one published drama laid out like RS Boost's resource page: cover, title, chips, 上架时间 · 共 N 集 · 前 M 集免费, synopsis; numbered free clip downloads with previews; the 推广链接 and 资源推广链接 (made for a signed-in visitor as the page opens, no 口令) and a link to the drama page the first opens, while PROMO_LINKS_VISIBLE is on; how it works (with a link to 我的推广 while PROMOTER_PAGES_VISIBLE is on); the episode list with paid locks
 // @pos    -- /tasks/<id>, where a promoter copies their links and downloads clips
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -16,7 +16,7 @@ import { isUuid, MAX_TAGS } from "@/lib/task-center/contracts";
 import { formatBytes, platformLabel, promoLink, resourceLink, taskCopy } from "@/lib/task-center/copy";
 import { getTaskDb } from "@/lib/task-center/db";
 import { getPublishedDrama } from "@/lib/task-center/dramas-store";
-import { PROMOTER_PAGES_VISIBLE } from "@/lib/task-center/visibility";
+import { PROMO_LINKS_VISIBLE, PROMOTER_PAGES_VISIBLE } from "@/lib/task-center/visibility";
 import { coverImageUrl, readR2Config } from "@/lib/task-center/r2";
 import { localePath } from "@/lib/locale-path";
 import { generatePageMetadata } from "@/lib/seo";
@@ -71,7 +71,7 @@ export default async function TaskDetailPage({ params }: { params: Params }) {
   // Only the "all" claim is this drama's one pair of links; per-channel codes
   // from before are listed on /promotions (while that page is shown).
   let code: string | null = null;
-  if (user.status === "authenticated") {
+  if (PROMO_LINKS_VISIBLE && user.status === "authenticated") {
     const claims = await listClaimsForDrama(loaded.db, user.userId, drama.id).catch(() => []);
     code = claims.find((claim) => claim.channel === "all")?.code ?? null;
   }
@@ -174,21 +174,23 @@ export default async function TaskDetailPage({ params }: { params: Params }) {
           )}
         </div>
 
-        <div className="mt-10 rounded-card border border-brand-border-card bg-brand-panel p-6">
-          <h2 className={H2}>{copy.promote}</h2>
-          <p className="mt-2 text-[14px] leading-[1.6] text-text-dark-secondary">{copy.promoteBody}</p>
-          <div className="mt-5 max-w-2xl">
-            <ClaimPanel
-              dramaId={drama.id}
-              watchHref={localePath(locale, `/watch/${drama.id}`)}
-              locale={locale}
-              signedIn={signedIn}
-              signInHref={signInHref}
-              initialLink={initialLink}
-              linkLevel={3}
-            />
+        {PROMO_LINKS_VISIBLE && (
+          <div className="mt-10 rounded-card border border-brand-border-card bg-brand-panel p-6">
+            <h2 className={H2}>{copy.promote}</h2>
+            <p className="mt-2 text-[14px] leading-[1.6] text-text-dark-secondary">{copy.promoteBody}</p>
+            <div className="mt-5 max-w-2xl">
+              <ClaimPanel
+                dramaId={drama.id}
+                watchHref={localePath(locale, `/watch/${drama.id}`)}
+                locale={locale}
+                signedIn={signedIn}
+                signInHref={signInHref}
+                initialLink={initialLink}
+                linkLevel={3}
+              />
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="mt-10 rounded-card border border-brand-border-card bg-brand-panel p-6">
           <h2 className={H2}>{copy.howTo}</h2>
