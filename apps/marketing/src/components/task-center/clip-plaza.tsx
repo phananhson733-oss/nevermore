@@ -1,5 +1,5 @@
 // @input  -- the page locale, one page of drama cards (each fronted by the drama's first clip; signed poster and cover URLs made on the server), each listed drama's public details and clips with their stills (no platform URLs), the visitor's links per drama
-// @output -- the grid, one card per drama, with type, clip count and 本周爆款 badges (a clip named only by a UUID or hash shows no title); a card opens a wide two-column dialog: on the right the clip playing (first on a phone) with its own download under it; on the left, in MoboReels' order, the drama's cover with its title, its chips (language first, then 频道, genre and tags), 上架时间 · 共 N 集 · 前 M 集免费, the full synopsis, the 推广链接 and 资源推广链接 (made for a signed-in visitor as the dialog opens, no 口令), 系列资源 (one numbered button per clip that switches the player and its download to that clip), the how-to as an open box and a link to the drama's page
+// @output -- the grid, one card per drama, with type, clip count and 本周爆款 badges (a clip named only by a UUID or hash shows no title); a card opens a wide two-column dialog: on the right the clip playing (first on a phone) with its own download under it; on the left, in MoboReels' order, the drama's cover with its title, its chips (language first, then 频道, genre and tags), 上架时间 · 共 N 集 · 前 M 集免费, the full synopsis, the 推广链接 and 资源推广链接 (made for a signed-in visitor as the dialog opens, no 口令; not shown while PROMO_LINKS_VISIBLE is off), 系列资源 (one numbered button per clip that switches the player and its download to that clip), the how-to as an open box and a link to the drama's page
 // @pos    -- the body of /tasks, the task center's 素材广场
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
@@ -10,6 +10,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { ClipType, DramaAudience } from "../../lib/task-center/contracts.ts";
 import { clipTitle, formatBytes, genreLabel, languageName, taskCopy } from "../../lib/task-center/copy.ts";
+import { PROMO_LINKS_VISIBLE } from "../../lib/task-center/visibility.ts";
 import { ClaimPanel, type LinkView } from "./claim-panel.tsx";
 import { DramaChips, DramaFacts, HowTo, type DownloadClip } from "./drama-info.tsx";
 
@@ -263,20 +264,22 @@ export function ClipPlaza({
                   )}
                 </div>
 
-                <ClaimPanel
-                  key={open.dramaId}
-                  dramaId={open.dramaId}
-                  watchHref={open.watchHref}
-                  locale={locale}
-                  signedIn={signedIn}
-                  signInHref={signInHref}
-                  initialLink={held[open.dramaId] ?? links[open.dramaId] ?? null}
-                  onClaimed={(view) => {
-                    const dramaId = open.dramaId;
-                    setHeld((previous) => ({ ...previous, [dramaId]: view }));
-                  }}
-                  linkLevel={3}
-                />
+                {PROMO_LINKS_VISIBLE && (
+                  <ClaimPanel
+                    key={open.dramaId}
+                    dramaId={open.dramaId}
+                    watchHref={open.watchHref}
+                    locale={locale}
+                    signedIn={signedIn}
+                    signInHref={signInHref}
+                    initialLink={held[open.dramaId] ?? links[open.dramaId] ?? null}
+                    onClaimed={(view) => {
+                      const dramaId = open.dramaId;
+                      setHeld((previous) => ({ ...previous, [dramaId]: view }));
+                    }}
+                    linkLevel={3}
+                  />
+                )}
 
                 {/* Downloads need sign-in, so the page sends the list only then. */}
                 {detail !== undefined && detail.clips.length > 0 && (
