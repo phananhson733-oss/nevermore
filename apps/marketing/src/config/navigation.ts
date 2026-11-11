@@ -1,8 +1,10 @@
 // @input  — @/types 中的 NavItem / FooterLink 类型
-// @output — 顶部主导航、GGBoost（任务中心 / 我的推广 / 我的收益）/ 网站审查 / Resources 子菜单及 footer 链接数据
+// @output — 顶部主导航、GGBoost（任务中心；我的推广 / 我的收益 由 PROMOTER_PAGES_VISIBLE 控制，当前隐藏）/ 网站审查 / Resources 子菜单及 footer 链接数据
 // @pos    — 静态配置，供 Header 和 Footer 组件消费
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 import type { NavItem, FooterLink, NavMenuGroup, NavMenuItem } from "@/types";
+
+import { PROMOTER_PAGES_VISIBLE } from "../lib/task-center/visibility.ts";
 
 export function menuItemPath(
   basePath: string,
@@ -38,14 +40,17 @@ export const agentsMenuGroups: NavMenuGroup[] = [
 ];
 
 /**
- * The three promoter pages, grouped under one header entry. Each has its own
+ * The promoter pages, grouped under one header entry. Each has its own
  * top-level route (they share a tab row rather than a parent path), so every
- * item carries an explicit href.
+ * item carries an explicit href. My Promotions and My Earnings are listed only
+ * while PROMOTER_PAGES_VISIBLE is on.
  */
+const promoterOnlyPages = new Set(["promotions", "earnings"]);
+
 export const ggboostMenuGroups: NavMenuGroup[] = [
   {
     labelKey: "nav.ggboostMenu.group",
-    items: [
+    items: ([
       {
         slug: "tasks",
         href: "/tasks",
@@ -67,7 +72,9 @@ export const ggboostMenuGroups: NavMenuGroup[] = [
         descriptionKey: "nav.ggboostMenu.earnings.description",
         icon: "Wallet",
       },
-    ],
+    ] satisfies NavMenuItem[]).filter(
+      (item) => PROMOTER_PAGES_VISIBLE || !promoterOnlyPages.has(item.slug),
+    ),
   },
 ];
 

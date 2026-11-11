@@ -1,7 +1,9 @@
 // @input  -- locale param; the verified session; this person's imported settlement rows
 // @output -- the promoter tabs, totals per currency and earnings by platform (a total missing some days is marked partial); the links themselves are on /promotions
-// @pos    -- /earnings, private to the signed-in promoter and kept out of search
+// @pos    -- /earnings, private to the signed-in promoter and kept out of search; 404 while PROMOTER_PAGES_VISIBLE is off
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
+
+import { notFound } from "next/navigation";
 
 import { TaskTabs } from "@/components/task-center/task-tabs";
 import { getServerAuthenticatedUser } from "@/lib/auth/server-auth-user";
@@ -19,6 +21,7 @@ import {
   type MyEarnings,
   type SummedFigure,
 } from "@/lib/task-center/earnings-store";
+import { PROMOTER_PAGES_VISIBLE } from "@/lib/task-center/visibility";
 import { localePath } from "@/lib/locale-path";
 import { generatePageMetadata } from "@/lib/seo";
 
@@ -30,6 +33,7 @@ export async function generateMetadata({
 }: {
   params: Promise<{ locale: string }>;
 }) {
+  if (!PROMOTER_PAGES_VISIBLE) notFound();
   const { locale } = await params;
   const copy = taskCopy(locale);
   return generatePageMetadata({
@@ -46,6 +50,7 @@ export default async function EarningsPage({
 }: {
   params: Promise<{ locale: string }>;
 }) {
+  if (!PROMOTER_PAGES_VISIBLE) notFound();
   const { locale } = await params;
   const copy = taskCopy(locale);
   const signInHref = `/api/auth/google/start?next=${encodeURIComponent(localePath(locale, "/earnings"))}`;

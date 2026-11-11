@@ -1,5 +1,5 @@
 // @input  -- locale and drama id params; the task database; the verified session; R2 for the cover
-// @output -- one published drama laid out like RS Boost's resource page: cover, title, chips, 上架时间 · 共 N 集 · 前 M 集免费, synopsis; numbered free clip downloads with previews; the 推广链接 and 资源推广链接 (made for a signed-in visitor as the page opens, no 口令) and a link to the drama page the first opens; how it works; the episode list with paid locks
+// @output -- one published drama laid out like RS Boost's resource page: cover, title, chips, 上架时间 · 共 N 集 · 前 M 集免费, synopsis; numbered free clip downloads with previews; the 推广链接 and 资源推广链接 (made for a signed-in visitor as the page opens, no 口令) and a link to the drama page the first opens; how it works (with a link to 我的推广 while PROMOTER_PAGES_VISIBLE is on); the episode list with paid locks
 // @pos    -- /tasks/<id>, where a promoter copies their links and downloads clips
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -16,6 +16,7 @@ import { isUuid, MAX_TAGS } from "@/lib/task-center/contracts";
 import { formatBytes, platformLabel, promoLink, resourceLink, taskCopy } from "@/lib/task-center/copy";
 import { getTaskDb } from "@/lib/task-center/db";
 import { getPublishedDrama } from "@/lib/task-center/dramas-store";
+import { PROMOTER_PAGES_VISIBLE } from "@/lib/task-center/visibility";
 import { coverImageUrl, readR2Config } from "@/lib/task-center/r2";
 import { localePath } from "@/lib/locale-path";
 import { generatePageMetadata } from "@/lib/seo";
@@ -68,7 +69,7 @@ export default async function TaskDetailPage({ params }: { params: Params }) {
   const user = await getServerAuthenticatedUser().catch(() => ({ status: "unavailable" as const }));
   const signedIn = user.status === "authenticated";
   // Only the "all" claim is this drama's one pair of links; per-channel codes
-  // from before stay listed on /promotions.
+  // from before are listed on /promotions (while that page is shown).
   let code: string | null = null;
   if (user.status === "authenticated") {
     const claims = await listClaimsForDrama(loaded.db, user.userId, drama.id).catch(() => []);
@@ -85,7 +86,6 @@ export default async function TaskDetailPage({ params }: { params: Params }) {
     code === null
       ? null
       : { link: promoLink(siteConfig.url, code), resourceLink: resourceLink(siteConfig.url, code) };
-  const promotionsHref = localePath(locale, "/promotions");
 
   return (
     <section className="bg-brand-bg px-6 pt-10 pb-24 md:px-8">
@@ -195,11 +195,13 @@ export default async function TaskDetailPage({ params }: { params: Params }) {
           <div className="mt-4">
             <HowTo locale={locale} />
           </div>
-          <p className="mt-4 text-[13.5px]">
-            <Link href={promotionsHref} className="text-brand-accent-text hover:underline">
-              {copy.tabPromotions} →
-            </Link>
-          </p>
+          {PROMOTER_PAGES_VISIBLE && (
+            <p className="mt-4 text-[13.5px]">
+              <Link href={localePath(locale, "/promotions")} className="text-brand-accent-text hover:underline">
+                {copy.tabPromotions} →
+              </Link>
+            </p>
+          )}
         </div>
 
         <div className="mt-10">

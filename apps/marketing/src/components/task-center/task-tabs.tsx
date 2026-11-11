@@ -1,5 +1,5 @@
 // @input  -- the page locale and which of the three promoter pages is showing
-// @output -- the 任务中心 / 我的推广 / 我的收益 tab row, the current one marked with aria-current
+// @output -- the 任务中心 / 我的推广 / 我的收益 tab row, the current one marked with aria-current; nothing while PROMOTER_PAGES_VISIBLE is off (a row with one tab would only repeat the page title)
 // @pos    -- top of /tasks, /promotions and /earnings; the site header reaches the same three through its GGBoost menu, the tabs move between them in place
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -7,10 +7,12 @@ import Link from "next/link";
 
 import { taskCopy } from "../../lib/task-center/copy.ts";
 import { localePath } from "../../lib/locale-path.ts";
+import { PROMOTER_PAGES_VISIBLE } from "../../lib/task-center/visibility.ts";
 
 export type TaskTab = "tasks" | "promotions" | "earnings";
 
 export function TaskTabs({ locale, current }: { locale: string; current: TaskTab }) {
+  if (!PROMOTER_PAGES_VISIBLE) return null;
   const copy = taskCopy(locale);
   const tabs: readonly { readonly id: TaskTab; readonly label: string }[] = [
     { id: "tasks", label: copy.tabTasks },

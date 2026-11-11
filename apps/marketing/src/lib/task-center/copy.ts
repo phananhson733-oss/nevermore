@@ -1,5 +1,5 @@
 // @input  -- the page locale ("en" or "zh")
-// @output -- every visitor-facing string of /tasks (the drama grid and its drama dialog), /tasks/<id>, /promotions, /earnings and the reader's drama page /watch/<id>, audience, genre, clip-type and platform labels, a clip's title with machine names (UUIDs, hashes) left out, the Chinese labels the admin pages share, and the two promo links' URLs (/t/<code> and /t/<code>/go)
+// @output -- every visitor-facing string of /tasks (the drama grid and its drama dialog), /tasks/<id>, /promotions, /earnings and the reader's drama page /watch/<id>, audience, genre, clip-type and platform labels, a clip's title with machine names (UUIDs, hashes) left out, the Chinese labels the admin pages share, and the two promo links' URLs (/t/<code> and /t/<code>/go); the how-to's last step points at My Earnings only while PROMOTER_PAGES_VISIBLE is on
 // @pos    -- task center copy, kept beside the code like the waitlist page's; the admin pages are Chinese only
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -12,6 +12,7 @@ import {
   type LookupPlatform,
   type PromoChannel,
 } from "./contracts.ts";
+import { PROMOTER_PAGES_VISIBLE } from "./visibility.ts";
 
 const en = {
   tasksTitle: "Task Center",
@@ -77,7 +78,9 @@ const en = {
     "Download the clips.",
     "Copy your promo link or resource link. Both are made for you when you open the drama.",
     "Post the clips on TikTok or Facebook, with the link in the caption or a pinned comment.",
-    "After each settlement, orders through your link are credited to you and show on My Earnings.",
+    PROMOTER_PAGES_VISIBLE
+      ? "After each settlement, orders through your link are credited to you and show on My Earnings."
+      : "After each settlement, orders through your link are credited to you.",
   ] as readonly string[],
   tabTasks: "Task Center",
   tabPromotions: "My Promotions",
@@ -214,7 +217,9 @@ const zh: TaskCopy = {
     "下载素材。",
     "复制推广链接或资源推广链接，打开剧时已自动生成。",
     "把素材发到 TikTok 或 Facebook，链接放视频文案或评论区置顶。",
-    "每次平台结算后，你的链接带来的订单会记到你名下，在「我的收益」里查看。",
+    PROMOTER_PAGES_VISIBLE
+      ? "每次平台结算后，你的链接带来的订单会记到你名下，在「我的收益」里查看。"
+      : "每次平台结算后，你的链接带来的订单会记到你名下。",
   ],
   tabTasks: "任务中心",
   tabPromotions: "我的推广",

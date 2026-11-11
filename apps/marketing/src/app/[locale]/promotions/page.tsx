@@ -1,9 +1,10 @@
 // @input  -- locale param; the verified session; this person's claims with click counts and their submitted accounts
 // @output -- every drama they have links for, with its 推广链接 (which opens the drama's page on our site) and 资源推广链接 (straight to the drama on its platform), each with a copy button, the clicks on both and the date; and the account whitelisting panel at #accounts
-// @pos    -- /promotions (我的推广), private to the signed-in promoter and kept out of search
+// @pos    -- /promotions (我的推广), private to the signed-in promoter and kept out of search; 404 while PROMOTER_PAGES_VISIBLE is off
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import Link from "next/link";
+import { notFound } from "next/navigation";
 
 import { AccountsPanel } from "@/components/task-center/accounts-panel";
 import { LinkBlock } from "@/components/task-center/link-block";
@@ -14,6 +15,7 @@ import { listMyAccounts, type PromoterAccount } from "@/lib/task-center/accounts
 import { listMyClaims, type ClaimWithStats } from "@/lib/task-center/claims-store";
 import { channelLabel, formatCount, formatDay, promoLink, resourceLink, taskCopy } from "@/lib/task-center/copy";
 import { getTaskDb } from "@/lib/task-center/db";
+import { PROMOTER_PAGES_VISIBLE } from "@/lib/task-center/visibility";
 import { localePath } from "@/lib/locale-path";
 import { generatePageMetadata } from "@/lib/seo";
 
@@ -21,6 +23,7 @@ import { generatePageMetadata } from "@/lib/seo";
 export const dynamic = "force-dynamic";
 
 export async function generateMetadata({ params }: { params: Promise<{ locale: string }> }) {
+  if (!PROMOTER_PAGES_VISIBLE) notFound();
   const { locale } = await params;
   const copy = taskCopy(locale);
   return generatePageMetadata({
@@ -33,6 +36,7 @@ export async function generateMetadata({ params }: { params: Promise<{ locale: s
 }
 
 export default async function PromotionsPage({ params }: { params: Promise<{ locale: string }> }) {
+  if (!PROMOTER_PAGES_VISIBLE) notFound();
   const { locale } = await params;
   const copy = taskCopy(locale);
   const signInHref = `/api/auth/google/start?next=${encodeURIComponent(localePath(locale, "/promotions"))}`;

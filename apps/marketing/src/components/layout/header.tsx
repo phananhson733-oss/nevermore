@@ -82,7 +82,8 @@ export function Header() {
             links, the seven links and the right-hand buttons no longer fit
             side by side at lg (measured 2026-11-05 at 1024px), so below xl the
             menu button carries them. Those pages now share one GGBoost menu,
-            leaving six; lg has not been re-measured. */}
+            leaving six; lg has not been re-measured. (My Promotions and My
+            Earnings are hidden for now; see lib/task-center/visibility.ts.) */}
         <nav
           aria-label="Main navigation"
           className="hidden items-center gap-7.5 xl:flex"
