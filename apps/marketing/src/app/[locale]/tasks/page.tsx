@@ -1,5 +1,5 @@
-// @input  -- locale param; q, platform, language, genre, tag and page query (no others: a filter the bar does not show is not applied); the task database; the session; R2 for stills and covers
-// @output -- the promoter tabs, the filters (search, 剧场 from the platforms of published dramas, then MoboReels' 语言, 题材 and 标签, a text box that matches any part of a tag in any case with a list of the published tags that contain what is typed), each named by a label above it, then one card per published drama with a ready clip (fronted by its first clip, with its clip count), newest upload first, as a paged 素材广场 grid, with what each listed drama's dialog shows (上架时间, episodes, synopsis, its numbered clips with their stills for a signed-in visitor, and the visitor's two links when they already hold them, unless PROMO_LINKS_VISIBLE is off)
+// @input  -- locale param; q, platform, language, genre, tag, day and page query (no others: a filter the bar does not show is not applied); the task database; the session; R2 for stills and covers
+// @output -- the promoter tabs, the filters (search, 剧场 from the platforms of published dramas, then MoboReels' 语言, 题材 and 标签, a text box that matches any part of a tag in any case with a list of the published tags that contain what is typed, and 上架时间: the days, in Beijing time, on which clips were uploaded), each named by a label above it, then one card per published drama with a ready clip (fronted by its first clip, with its clip count), newest upload first, as a paged 素材广场 grid, with what each listed drama's dialog shows (上线时间 on its theater, episodes, synopsis, its numbered clips with their stills for a signed-in visitor, and the visitor's two links when they already hold them, unless PROMO_LINKS_VISIBLE is off)
 // @pos    -- /tasks, the task center's entry page
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -13,9 +13,10 @@ import { TaskTabs } from "@/components/task-center/task-tabs";
 import { siteConfig } from "@/config/site";
 import { getServerAuthenticatedUser } from "@/lib/auth/server-auth-user";
 import { listMyClaims } from "@/lib/task-center/claims-store";
-import { PAGE_SIZE, SLUG_PATTERN } from "@/lib/task-center/contracts";
+import { calendarDay, PAGE_SIZE, SLUG_PATTERN } from "@/lib/task-center/contracts";
 import {
   formatBytes,
+  formatDay,
   genreLabel,
   languageName,
   platformLabel,
@@ -85,11 +86,20 @@ export default async function TasksPage({
   // value is safe; one no tag contains just finds nothing.
   const tag = one(query.tag);
   const search = one(query.q);
+  // 上架时间: a real YYYY-MM-DD only, so nothing else reaches the ::date cast;
+  // anything else is dropped like an unknown filter.
+  const day = calendarDay(one(query.day));
   const page = Math.max(1, Math.min(1000, Number.parseInt(one(query.page) ?? "1", 10) || 1));
 
   const db = getTaskDb();
   let result: Awaited<ReturnType<typeof listPublishedAssets>> | null = null;
-  let facets: Awaited<ReturnType<typeof listPublishedFacets>> = { platforms: [], languages: [], genres: [], tags: [] };
+  let facets: Awaited<ReturnType<typeof listPublishedFacets>> = {
+    platforms: [],
+    languages: [],
+    genres: [],
+    tags: [],
+    uploadDays: [],
+  };
   if (db !== null) {
     try {
       [result, facets] = await Promise.all([
@@ -98,6 +108,7 @@ export default async function TasksPage({
           language,
           genre,
           tag,
+          uploadedOn: day,
           search,
           sort: "newest",
           page,
@@ -170,7 +181,7 @@ export default async function TasksPage({
     const detail = details[drama.id];
     dramas[drama.id] = {
       synopsis: detail?.synopsis ?? null,
-      listedAt: drama.listedAt,
+      launchedOn: drama.launchedOn,
       episodes: drama.episodes,
       payStart: drama.payStart,
       // Downloads need sign-in, and the dialog lists them only then.
@@ -187,11 +198,13 @@ export default async function TasksPage({
     };
   }
 
-  const filtered = Boolean(platform || language || genre || tag || search);
+  const filtered = Boolean(platform || language || genre || tag || day || search);
   // A theater in the link that no published drama has any more stays a
   // choice, so the select shows the filter that is on instead of 全部.
   const platformOptions =
     platform !== null && !facets.platforms.includes(platform) ? [platform, ...facets.platforms] : facets.platforms;
+  // The same for a day with no clips left (or older than the choices go).
+  const dayOptions = day !== null && !facets.uploadDays.includes(day) ? [day, ...facets.uploadDays] : facets.uploadDays;
   const pages = result === null ? 1 : Math.max(1, Math.ceil(result.total / PAGE_SIZE));
   const queryString = (target: number) => {
     const next = new URLSearchParams();
@@ -200,6 +213,7 @@ export default async function TasksPage({
     if (language) next.set("language", language);
     if (genre) next.set("genre", genre);
     if (tag) next.set("tag", tag);
+    if (day) next.set("day", day);
     if (target > 1) next.set("page", String(target));
     const qs = next.toString();
     return qs ? `?${qs}` : "";
@@ -216,7 +230,7 @@ export default async function TasksPage({
           {copy.tasksSubtitle}
         </p>
 
-        {/* 搜索, 剧场 and MoboReels' 语言, 题材, 标签, each under its own label
+        {/* 搜索, 剧场 and MoboReels' 语言, 题材, 标签, then 上架时间, each under its own label
             so a select can say just 全部: one row of equal fields from md up;
             on a phone the search on its own row, then two to a row, and the
             button alone across the last one. */}
@@ -271,6 +285,18 @@ export default async function TasksPage({
               tags that do. Shown even with no tags yet: the bar keeps one shape. */}
           <Field label={copy.tagField}>
             <TagCombobox locale={locale} tags={facets.tags} defaultValue={tag ?? ""} className={FIELD} />
+          </Field>
+          {/* The days clips were uploaded, newest first, in Beijing time: the
+              day the team uploading them calls today. */}
+          <Field label={copy.uploadDayField}>
+            <select name="day" defaultValue={day ?? ""} className={FIELD}>
+              <option value="">{copy.allOption}</option>
+              {dayOptions.map((value) => (
+                <option key={value} value={value}>
+                  {formatDay(value, locale)}
+                </option>
+              ))}
+            </select>
           </Field>
           <button
             type="submit"

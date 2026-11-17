@@ -1,5 +1,5 @@
 // @input  -- zod
-// @output -- claim channels, account platforms and statuses, drama audiences, clip types, suggested genres, the 选剧台 lookup's platforms and languages (and which platforms 查剧 also reads from their own site), the platform drama id shape, upload limits, and the parsers admin and promoter requests go through
+// @output -- claim channels, account platforms and statuses, drama audiences, clip types, suggested genres, the 选剧台 lookup's platforms and languages (and which platforms 查剧 also reads from their own site), the platform drama id shape, a calendar day (YYYY-MM-DD) check, upload limits, and the parsers admin and promoter requests go through
 // @pos    -- the task center's request contract; the SQL checks in db/tasks repeat these limits
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -114,6 +114,23 @@ export const MAX_VIDEO_BYTES = 4 * 1024 ** 3;
 export const MAX_IMAGE_BYTES = 20 * 1024 ** 2;
 
 export const PAGE_SIZE = 24;
+
+/**
+ * A calendar day as YYYY-MM-DD, or null for anything else: the wrong shape,
+ * a day that does not exist (2026-02-30) or a year outside 2000–2100. What
+ * the lookup's listedOn and the /tasks 上架时间 filter go through before
+ * reaching a ::date cast, which would throw on them.
+ */
+export function calendarDay(value: string | null | undefined): string | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value?.trim() ?? "");
+  if (match === null) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  const real = date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+  return real && year >= 2000 && year <= 2100 ? `${match[1]}-${match[2]}-${match[3]}` : null;
+}
 
 const optionalText = (max: number) =>
   z

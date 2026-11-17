@@ -1,5 +1,5 @@
 // @input  -- PICK_LOOKUP_URL and PICK_LOOKUP_TOKEN; a platform, a title and maybe a language from the admin; what the theater's own page shows, when theater-details.ts could read it
-// @output -- the dramas the 选剧台 lookup found in its own 剧库 or on 北斗 (北斗's signed cover URL kept server-side; 完结 unknown for a 剧库 row), and when it found none the 剧库 rows of that title on any theater (no id: only a hint and a head start for hand entry), which of them is a drama already listed (by its platform id, or by its title when it has none), one of them fitted to the dramas table with the theater's page taking over field by field, and a cover image fetched from a URL either gave
+// @output -- the dramas the 选剧台 lookup found in its own 剧库 or on 北斗 (北斗's signed cover URL kept server-side; 完结 unknown for a 剧库 row), and when it found none the 剧库 rows of that title on any theater (no id: only a hint and a head start for hand entry), which of them is a drama already listed (by its platform id, or by its title when it has none), one of them fitted to the dramas table with the theater's page taking over field by field (the day it went live on the theater, 上线时间, only from the lookup, and only when it is a real date), and a cover image fetched from a URL either gave
 // @pos    -- the only code that talks to pick-workbench's /api/pick/lookup/drama/ (contract: its deploy/lookup-api.md)
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 //
@@ -13,7 +13,7 @@
 
 import { z } from "zod";
 
-import { IMAGE_TYPES, LOOKUP_LANGUAGES, MAX_IMAGE_BYTES, MAX_TAGS, PLATFORM_DRAMA_ID } from "./contracts.ts";
+import { calendarDay, IMAGE_TYPES, LOOKUP_LANGUAGES, MAX_IMAGE_BYTES, MAX_TAGS, PLATFORM_DRAMA_ID } from "./contracts.ts";
 import type { ImportedDrama } from "./dramas-store.ts";
 import type { TheaterDetails } from "./theater-details.ts";
 
@@ -171,7 +171,7 @@ export function pickMatch(
  *
  * With the theater's own page, what it shows wins field by field and 北斗
  * fills only what it left out: 北斗 often has no tags, and has no 频道 or
- * genre at all. 中文名 and 完结 are 北斗's alone. The page's id is kept, so
+ * genre at all. 中文名, 完结 and the 上线 day are the lookup's alone. The page's id is kept, so
  * the two ids 北斗 sometimes has for one drama list it once.
  */
 export function toImportedDrama(
@@ -213,6 +213,8 @@ export function toImportedDrama(
     audience: theater?.audience ?? null,
     genre: theater?.genre ?? null,
     finished: drama.finished,
+    // A malformed day is unknown, never a refusal: it must not stop the import.
+    launchedOn: calendarDay(drama.listedOn),
     sourceDramaId,
   };
 }

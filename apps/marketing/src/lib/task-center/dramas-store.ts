@@ -19,7 +19,10 @@ export interface DramaSummary {
   readonly genre: string | null;
   /** As 北斗 or the theater gave them, or as typed; shown, and the /tasks 标签 filter matches one exactly. */
   readonly tags: readonly string[];
+  /** When we published it here. */
   readonly listedAt: string | null;
+  /** The day it went live on its theater (上线时间), YYYY-MM-DD, from 查剧; null when unknown. */
+  readonly launchedOn: string | null;
   /** People who claimed at least one channel, counted from task_claims. */
   readonly promoterCount: number;
 }
@@ -73,6 +76,8 @@ interface DramaRow {
   audience: DramaAudience | null;
   genre: string | null;
   listed_at: Date | null;
+  /** to_char'd: node-pg would turn a date into a local-midnight Date. */
+  launched_on: string | null;
   promoter_count: string | number;
   synopsis?: string | null;
   tags?: string[];
@@ -101,10 +106,17 @@ interface AssetRow {
   poster_key: string | null;
 }
 
+/** The zone a clip's upload day is counted in, for the 上架时间 filter and its choices: the team uploads from China. */
+export const UPLOAD_DAY_ZONE = "Asia/Shanghai";
+
+/** At most this many 上架时间 choices, newest first: the bar is a select, not a calendar. */
+const UPLOAD_DAY_CHOICES = 60;
+
 const PROMOTER_COUNT = `(select count(distinct c.user_id) from task_center.task_claims c where c.drama_id = d.id)`;
 
 const SUMMARY_COLUMNS = `d.id, d.title, d.title_cn, d.platform, d.language, d.episodes, d.pay_start,
-  d.cover_key, d.audience, d.genre, d.tags, d.listed_at, ${PROMOTER_COUNT} as promoter_count`;
+  d.cover_key, d.audience, d.genre, d.tags, d.listed_at,
+  to_char(d.launched_on, 'YYYY-MM-DD') as launched_on, ${PROMOTER_COUNT} as promoter_count`;
 
 const DETAIL_COLUMNS = `${SUMMARY_COLUMNS}, d.synopsis, d.finished, d.source, d.source_drama_id,
   d.status, d.promo_target_url, d.promo_code_param, d.created_at, d.updated_at`;
@@ -123,6 +135,7 @@ function toSummary(row: DramaRow): DramaSummary {
     genre: row.genre,
     tags: row.tags ?? [],
     listedAt: row.listed_at?.toISOString() ?? null,
+    launchedOn: row.launched_on,
     promoterCount: toSafeInteger(row.promoter_count) ?? 0,
   };
 }
@@ -208,6 +221,12 @@ export interface PlazaQuery {
    */
   readonly tag?: string | null;
   readonly clipType?: ClipType | null;
+  /**
+   * 上架时间: a day, YYYY-MM-DD, already checked with calendarDay. A drama
+   * matches when a ready clip of it was uploaded that day in Beijing time,
+   * the day the team uploading it calls today.
+   */
+  readonly uploadedOn?: string | null;
   readonly search?: string | null;
   readonly sort: DramaSort;
   readonly page: number;
@@ -237,6 +256,10 @@ export async function listPublishedAssets(
   equal("d.audience", query.audience);
   equal("d.genre", query.genre);
   equal("a.clip_type", query.clipType);
+  if (query.uploadedOn) {
+    values.push(query.uploadedOn);
+    where.push(`(a.uploaded_at at time zone '${UPLOAD_DAY_ZONE}')::date = $${values.length}::date`);
+  }
   const tag = query.tag?.trim();
   if (tag) {
     values.push(likePattern(tag));
@@ -382,7 +405,11 @@ export async function listPlazaDramaDetails(
   return details;
 }
 
-/** The platforms, languages, genres and tags that currently have something published. */
+/**
+ * The platforms, languages, genres and tags that currently have something
+ * published, and the days (YYYY-MM-DD in Beijing time, newest first, at most
+ * 60) on which a ready clip of a published drama was uploaded.
+ */
 export async function listPublishedFacets(
   db: TaskDb,
 ): Promise<{
@@ -390,6 +417,7 @@ export async function listPublishedFacets(
   readonly languages: readonly string[];
   readonly genres: readonly string[];
   readonly tags: readonly string[];
+  readonly uploadDays: readonly string[];
 }> {
   // Tags in a subquery of their own: unnesting them in the main FROM would
   // drop every published drama without tags from the other three lists.
@@ -398,13 +426,21 @@ export async function listPublishedFacets(
     languages: string[] | null;
     genres: string[] | null;
     tags: string[] | null;
+    upload_days: string[] | null;
   }>(
     `select array_agg(distinct platform order by platform) as platforms,
             array_agg(distinct language order by language) as languages,
             array_agg(distinct genre order by genre) filter (where genre is not null) as genres,
             (select array_agg(distinct t order by t)
                from task_center.dramas x cross join unnest(x.tags) t
-              where x.status = 'published') as tags
+              where x.status = 'published') as tags,
+            (select array_agg(day order by day desc)
+               from (select distinct to_char(a.uploaded_at at time zone '${UPLOAD_DAY_ZONE}', 'YYYY-MM-DD') as day
+                       from task_center.drama_assets a
+                       join task_center.dramas x on x.id = a.drama_id
+                      where x.status = 'published' and a.status = 'ready' and a.uploaded_at is not null
+                      order by day desc
+                      limit ${UPLOAD_DAY_CHOICES}) days) as upload_days
        from task_center.dramas where status = 'published'`,
   );
   return {
@@ -412,6 +448,7 @@ export async function listPublishedFacets(
     languages: rows[0]?.languages ?? [],
     genres: rows[0]?.genres ?? [],
     tags: rows[0]?.tags ?? [],
+    uploadDays: rows[0]?.upload_days ?? [],
   };
 }
 
@@ -605,6 +642,8 @@ export interface ImportedDrama {
   readonly audience: DramaAudience | null;
   readonly genre: string | null;
   readonly finished: boolean | null;
+  /** The day it went live on its theater (上线时间), YYYY-MM-DD; null when the lookup did not say. */
+  readonly launchedOn: string | null;
   readonly sourceDramaId: string;
 }
 
@@ -620,8 +659,8 @@ export async function importDrama(db: TaskDb, drama: ImportedDrama, adminEmail: 
   const { rows } = await db.query<{ id: string }>(
     `insert into task_center.dramas
        (title, title_cn, platform, language, episodes, pay_start, synopsis, tags, audience, genre,
-        finished, source, source_drama_id, created_by)
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'beidou', $12, $13)
+        finished, source, source_drama_id, created_by, launched_on)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'beidou', $12, $13, $14::date)
      on conflict (platform, source_drama_id) where source_drama_id is not null do nothing
      returning id`,
     [
@@ -638,6 +677,7 @@ export async function importDrama(db: TaskDb, drama: ImportedDrama, adminEmail: 
       drama.finished,
       drama.sourceDramaId,
       adminEmail,
+      drama.launchedOn,
     ],
   );
   if (rows[0] !== undefined) return { ok: true, id: rows[0].id };
@@ -714,6 +754,7 @@ export async function refillDrama(db: TaskDb, id: string, drama: ImportedDrama):
             genre = coalesce($7, d.genre),
             title_cn = coalesce($8, d.title_cn),
             finished = coalesce($9, d.finished),
+            launched_on = coalesce($11::date, d.launched_on),
             source = case when d.source_drama_id is null then 'beidou' else d.source end,
             source_drama_id = coalesce(d.source_drama_id, $10),
             updated_at = now()
@@ -732,6 +773,7 @@ export async function refillDrama(db: TaskDb, id: string, drama: ImportedDrama):
       drama.titleCn,
       drama.finished,
       drama.sourceDramaId,
+      drama.launchedOn,
     ],
   );
   return rowCount === 0 ? { ok: false, code: "not_found" } : { ok: true };
