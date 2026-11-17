@@ -1,5 +1,5 @@
 // @input  -- a disposable Postgres rebuilt by db/tasks/migrate.sh
-// @output -- proof that the task center's SQL does what the stores promise: the grid of one card per drama (fronted by its first clip, counting its clips, paged by drama; its filters, the 标签 one matching part of a tag in any case, and their choices, 上架时间 matching a clip's upload day in Beijing time) and its 本周爆款 rule, each listed drama's dialog details (its clips in order with kind, type and still), imports from 查剧 (频道 and genre from the theater's page, one drama whichever 北斗 id found it, 完结 left unknown for a 剧库 row, GoodShort's base64 ids), 从官网补全 over a drama already listed (what the operator owns kept, a pay start that no longer fits dropped, never a second listing) and tags, publishing without a platform link, the reader's drama page (trailer pick, taken-down dramas kept, drafts not), promo clicks that open it, and 去看全集 carrying only a code claimed for that drama, promoter accounts included
+// @output -- proof that the task center's SQL does what the stores promise: the grid of one card per drama (fronted by its first clip, counting its clips, paged by drama; its filters, the 标签 one matching part of a tag in any case, and their choices, 上架时间 matching a clip's upload day in Beijing time) and its 本周爆款 rule, each listed drama's dialog details (its clips in order with kind, type and still), a clip's 推荐文案 set at upload, imports from 查剧 (频道 and genre from the theater's page, one drama whichever 北斗 id found it, 完结 left unknown for a 剧库 row, GoodShort's base64 ids), 从官网补全 over a drama already listed (what the operator owns kept, a pay start that no longer fits dropped, never a second listing) and tags, publishing without a platform link, the reader's drama page (trailer pick, taken-down dramas kept, drafts not), promo clicks that open it, and 去看全集 carrying only a code claimed for that drama, promoter accounts included
 // @pos    -- the only test that executes task center SQL
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -699,6 +699,26 @@ describe("assets", () => {
     expect(await deleteAsset(db, assetId)).toBeNull();
     // A completion that arrives after the delete has nothing to mark.
     expect(await markAssetReady(db, assetId)).toBeNull();
+  });
+
+  it("keeps the 推荐文案 typed in the upload box, and none when nothing was typed", async () => {
+    const dramaId = await publishedDrama();
+    const ids = ["aaaaaaaa-aaaa-4aaa-8aaa-000000000101", "aaaaaaaa-aaaa-4aaa-8aaa-000000000102"] as const;
+    const base = { dramaId, contentType: "video/mp4", byteSize: 1_000, clipType: null, createdBy: ADMIN } as const;
+    expect(
+      await createPendingAsset(db, {
+        ...base,
+        id: ids[0],
+        title: "EP1",
+        objectKey: `dramas/${dramaId}/assets/${ids[0]}.mp4`,
+        caption: "🎬 EP1\nThe sea took her family.",
+        hashtags: ["FamilyLove", "MoboReels"],
+      }),
+    ).toBe(true);
+    expect(await createPendingAsset(db, { ...base, id: ids[1], title: "EP2", objectKey: `dramas/${dramaId}/assets/${ids[1]}.mp4` })).toBe(true);
+    for (const id of ids) await markAssetReady(db, id);
+    expect(await getPublicAsset(db, ids[0])).toMatchObject({ caption: "🎬 EP1\nThe sea took her family.", hashtags: ["FamilyLove", "MoboReels"] });
+    expect(await getPublicAsset(db, ids[1])).toMatchObject({ caption: null, hashtags: [] });
   });
 
   it("keeps a clip's still through a retried completion, retags it, and hands back both keys on delete", async () => {

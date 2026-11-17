@@ -1,5 +1,5 @@
 // @input  -- a drama id, its status and assets; the admin status, refill, upload and asset APIs; R2 via signed PUT URLs
-// @output -- publish/take-down buttons (上架 as a large brand-gradient button), 从官网补全资料 (re-runs 查剧 for the drama and says where the details came from, how the cover went, or why nothing changed), each clip's title rename and its 推荐文案 editor (caption and hashtags; a caption pasted whole has its trailing #tag lines moved to the hashtags, and a word that is not a hashtag is named, not saved), the cover and clip uploaders (one button opens the file picker, a second picks a whole folder for clips, or files and folders are dropped on the box, and the upload starts as soon as they are picked; a batch goes up in file-name order so 第2集 comes before 第10集 and the clips are numbered that way, files of other types are skipped and named; progress with the batch position, one upload at a time, a still cut from each video in the browser), the upload's type set to 高光 until changed, per-clip type and delete
+// @output -- publish/take-down buttons (上架 as a large brand-gradient button), 从官网补全资料 (re-runs 查剧 for the drama and says where the details came from, how the cover went, or why nothing changed), each clip's title rename and its 推荐文案 editor (caption and hashtags; a caption pasted whole has its trailing #tag lines moved to the hashtags, and a word that is not a hashtag is named, not saved), the cover and clip uploaders (one button opens the file picker, a second picks a whole folder for clips, or files and folders are dropped on the box, and the upload starts as soon as they are picked; a batch goes up in file-name order so 第2集 comes before 第10集 and the clips are numbered that way, files of other types are skipped and named; progress with the batch position, one upload at a time, a still cut from each video in the browser), the upload's type set to 高光 until changed, the clip uploader's hand-typed 推荐文案 and 标签 (checked before anything goes up; the caption needs a single file, the tags go onto every file of a batch; kept after a refusal or failure, cleared after a finished upload), per-clip type and delete
 // @pos    -- the interactive half of /admin/tasks/<id>
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
@@ -312,6 +312,26 @@ const TEXT_FIELD =
  * clip on /tasks. Folded to a one-line summary until 写推荐文案 / 改 opens it.
  * Paste a whole post into the caption: its trailing #tag lines go to 标签.
  */
+/**
+ * The 推荐文案 and 标签 fields as typed, ready to send: a caption pasted whole
+ * has its trailing #tag lines moved to the tags. A message instead when a tag
+ * or the length would be refused, so nothing is sent.
+ */
+function readCaptionFields(
+  text: string,
+  tags: string,
+): { readonly caption: string | null; readonly hashtags: readonly string[] } | { readonly error: string } {
+  const split = splitCaption(text);
+  const parsed = parseHashtags(`${tags} ${split.hashtags}`);
+  if (parsed.invalid.length > 0) {
+    return { error: `这些不是标签（只能有字母、数字和下划线）：${parsed.invalid.slice(0, 5).join(" ")}` };
+  }
+  if (parsed.tags.length > MAX_HASHTAGS) return { error: `标签最多 ${MAX_HASHTAGS} 个，现在有 ${parsed.tags.length} 个。` };
+  const length = [...split.caption].length;
+  if (length > MAX_CAPTION) return { error: `文案最多 ${MAX_CAPTION} 个字，现在有 ${length} 个。` };
+  return { caption: split.caption === "" ? null : split.caption, hashtags: parsed.tags };
+}
+
 export function AssetCaption({
   assetId,
   caption,
@@ -337,25 +357,16 @@ export function AssetCaption({
   }
 
   async function save(): Promise<void> {
-    const split = splitCaption(text);
-    const parsed = parseHashtags(`${tags} ${split.hashtags}`);
-    if (parsed.invalid.length > 0) {
-      setError(`这些不是标签（只能有字母、数字和下划线）：${parsed.invalid.slice(0, 5).join(" ")}`);
-      return;
-    }
-    if (parsed.tags.length > MAX_HASHTAGS) {
-      setError(`标签最多 ${MAX_HASHTAGS} 个，现在有 ${parsed.tags.length} 个。`);
-      return;
-    }
-    if ([...split.caption].length > MAX_CAPTION) {
-      setError(`文案最多 ${MAX_CAPTION} 个字，现在有 ${[...split.caption].length} 个。`);
+    const fields = readCaptionFields(text, tags);
+    if ("error" in fields) {
+      setError(fields.error);
       return;
     }
     setBusy(true);
     setError(null);
     const answer = await adminFetch(`/api/admin/tasks/assets/${assetId}`, "PUT", {
-      caption: split.caption === "" ? null : split.caption,
-      hashtags: parsed.tags,
+      caption: fields.caption,
+      hashtags: fields.hashtags,
     });
     setBusy(false);
     if (!answer.ok) {
@@ -363,8 +374,8 @@ export function AssetCaption({
       return;
     }
     // What was saved, as it will read back: the moved #tag lines now sit in 标签.
-    setText(split.caption);
-    setTags(parsed.tags.map((tag) => `#${tag}`).join(" "));
+    setText(fields.caption ?? "");
+    setTags(fields.hashtags.map((tag) => `#${tag}`).join(" "));
     setEditing(false);
     router.refresh();
   }
@@ -524,6 +535,9 @@ export function UploadControl({
   const input = useRef<HTMLInputElement>(null);
   const folderInput = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState("");
+  // 推荐文案 and 标签, typed by the operator for the clip being uploaded.
+  const [captionText, setCaptionText] = useState("");
+  const [tagsText, setTagsText] = useState("");
   // 高光 by default: most uploads are highlight cuts. 未分类 stays a choice.
   const [clipType, setClipType] = useState<ClipType | "">("highlight");
   const [progress, setProgress] = useState<string | null>(null);
@@ -545,7 +559,12 @@ export function UploadControl({
     return null;
   }
 
-  async function uploadOne(file: File, position: string, fileTitle: string | null): Promise<boolean> {
+  async function uploadOne(
+    file: File,
+    position: string,
+    fileTitle: string | null,
+    fields: { readonly caption: string | null; readonly hashtags: readonly string[] },
+  ): Promise<boolean> {
     const start = await adminFetch(`/api/admin/tasks/dramas/${dramaId}/uploads`, "POST", {
       purpose,
       title: purpose === "asset" ? fileTitle : null,
@@ -553,6 +572,7 @@ export function UploadControl({
       fileName: file.name.slice(0, 255),
       contentType: file.type,
       byteSize: file.size,
+      ...(purpose === "asset" ? { caption: fields.caption, hashtags: fields.hashtags } : {}),
     });
     const uploadUrl = start.data?.uploadUrl;
     if (!start.ok || typeof uploadUrl !== "string") {
@@ -592,11 +612,20 @@ export function UploadControl({
 
   async function upload(picked: readonly File[] | Promise<readonly File[]>): Promise<void> {
     if (uploading.current) return;
+    const fields =
+      purpose === "asset" ? readCaptionFields(captionText, tagsText) : { caption: null, hashtags: [] as const };
+    // Checked before anything goes up, and the typed text is kept to fix.
+    if ("error" in fields) {
+      setError(fields.error);
+      clearPickers();
+      return;
+    }
     // Disables the buttons before the first progress event, so a second click
     // cannot start the same files again as duplicate clips.
     uploading.current = true;
     setProgress("准备上传…");
     setError(null);
+    let finished = false;
     try {
       const all = (await picked).filter((file) => !isJunk(file));
       // Name order is upload order is 系列资源's numbering: neither a picker
@@ -608,6 +637,13 @@ export function UploadControl({
         const named = skipped.slice(0, 5).map((file) => `${file.name}（${refusal(file)}）`).join("、");
         setError(`跳过了 ${skipped.length} 个文件：${named}${skipped.length > 5 ? " 等" : ""}。`);
       }
+      // A caption is one episode's: several files at once would all get the
+      // same post, so it goes with one file only. Tags, often the drama's
+      // own, go onto every file of a batch.
+      if (fields.caption !== null && files.length > 1) {
+        setError(`推荐文案只能跟 1 个文件一起上传，这次选了 ${files.length} 个。清空文案再传，传完在每条素材下面写；标签可以留着，会加到每个文件上。`);
+        return;
+      }
       const typed = title.trim();
       // One file takes the typed title; a batch numbers it, so twelve episodes are not twelve of the same name.
       const titleFor = (index: number): string | null =>
@@ -615,16 +651,26 @@ export function UploadControl({
       // One at a time: a clip is tens of MB and the admin's uplink is the bottleneck.
       for (const [index, file] of files.entries()) {
         const position = files.length > 1 ? `第 ${index + 1}/${files.length} 个 · ` : "";
-        if (!(await uploadOne(file, position, titleFor(index)))) break;
+        if (!(await uploadOne(file, position, titleFor(index), fields))) break;
+        if (index === files.length - 1) finished = true;
       }
     } finally {
       uploading.current = false;
       setProgress(null);
-      setTitle("");
-      if (input.current) input.current.value = "";
-      if (folderInput.current) folderInput.current.value = "";
+      // The caption and tags stay after a refusal or a failed upload, to fix or retry.
+      if (finished) {
+        setTitle("");
+        setCaptionText("");
+        setTagsText("");
+      }
+      clearPickers();
       router.refresh();
     }
+  }
+
+  function clearPickers(): void {
+    if (input.current) input.current.value = "";
+    if (folderInput.current) folderInput.current.value = "";
   }
 
   return (
@@ -724,6 +770,27 @@ export function UploadControl({
             : "选文件（可多选）或整个文件夹，也可以拖到这个框里；按文件名顺序上传，编号 1、2、3 就是这个顺序，不是视频或图片的文件会跳过"}
         </span>
       </div>
+      {purpose === "asset" && (
+        <div className="space-y-2">
+          <textarea
+            aria-label="推荐文案"
+            value={captionText}
+            rows={4}
+            disabled={progress !== null}
+            onChange={(event) => setCaptionText(event.target.value)}
+            placeholder={"推荐文案（选填，传 1 个文件时用）：推广者发这条素材时的文案。比如：\n🎬 剧名 - EP1\n这一集讲了什么，一两句。\n结尾抛一个问题？"}
+            className={TEXT_FIELD}
+          />
+          <input
+            aria-label="标签"
+            value={tagsText}
+            disabled={progress !== null}
+            onChange={(event) => setTagsText(event.target.value)}
+            placeholder="标签（选填）：#FamilyLove #FantasyDrama #MoboReels，空格或逗号隔开，# 可省；一次传多个文件时每个都加上"
+            className={`${TEXT_FIELD} h-9 py-0`}
+          />
+        </div>
+      )}
       {progress && <p className="font-mono text-[13px] text-text-dark-secondary">{progress}</p>}
       {error && <p role="alert" className="text-[13.5px] text-brand-error">{error}</p>}
     </div>
