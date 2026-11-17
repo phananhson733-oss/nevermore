@@ -1,5 +1,5 @@
 // @input  -- the page locale, one page of drama cards (each fronted by the drama's first clip; signed poster and cover URLs made on the server), each listed drama's public details and clips with their stills (no platform URLs), the visitor's links per drama
-// @output -- the grid, one card per drama, with type, clip count and 本周爆款 badges (a clip named only by a UUID or hash shows no title); a card opens a wide two-column dialog: on the right the clip playing (first on a phone) with its own download under it; on the left, in MoboReels' order, the drama's cover with its title, its chips (language first, then 频道, genre and tags), 上架时间 · 共 N 集 · 前 M 集免费, the full synopsis, the 推广链接 and 资源推广链接 (made for a signed-in visitor as the dialog opens, no 口令; not shown while PROMO_LINKS_VISIBLE is off), 系列资源 (one numbered button per clip that switches the player and its download to that clip), the how-to as an open box and a link to the drama's page
+// @output -- the grid, one card per drama, fronted by the drama's cover with a play button (the clip's still only when there is no cover; an image clip shows itself), with type, clip count and 本周爆款 badges (a clip named only by a UUID or hash shows no title); a card opens a wide two-column dialog: on the right the clip playing (first on a phone) with its own download under it; on the left, in MoboReels' order, the drama's cover with its title, its chips (language first, then 频道, genre and tags), 上架时间 · 共 N 集 · 前 M 集免费, the full synopsis, the 推广链接 and 资源推广链接 (made for a signed-in visitor as the dialog opens, no 口令; not shown while PROMO_LINKS_VISIBLE is off), 系列资源 (one numbered button per clip that switches the player and its download to that clip), the how-to as an open box and a link to the drama's page
 // @pos    -- the body of /tasks, the task center's 素材广场
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
@@ -121,7 +121,9 @@ export function ClipPlaza({
     <>
       <ul className="mt-10 grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
         {cards.map((card) => {
-          const still = card.posterUrl ?? card.coverUrl;
+          // A video card shows the drama's cover, not a frame cut from the clip,
+          // with the play button over it; an image card shows the image itself.
+          const still = card.kind === "video" ? (card.coverUrl ?? card.posterUrl) : (card.posterUrl ?? card.coverUrl);
           const name = clipTitle(card.title);
           return (
             <li key={card.id}>
