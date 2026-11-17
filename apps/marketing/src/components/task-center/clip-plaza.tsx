@@ -1,5 +1,5 @@
 // @input  -- the page locale, one page of drama cards (each fronted by the drama's first clip; signed poster and cover URLs made on the server), each listed drama's public details and clips with their stills (no platform URLs), the visitor's links per drama
-// @output -- the grid, one card per drama, fronted by the drama's cover with a play button (the clip's still only when there is no cover; an image clip shows itself), with type, clip count and 本周爆款 badges (a clip named only by a UUID or hash shows no title); a card opens a wide two-column dialog: on the right the clip playing (first on a phone) with its own download under it; on the left, in MoboReels' order, the drama's cover with its title, its chips (language first, then 频道, genre and tags), 上架时间 · 共 N 集 · 前 M 集免费, the full synopsis, the 推广链接 and 资源推广链接 (made for a signed-in visitor as the dialog opens, no 口令; not shown while PROMO_LINKS_VISIBLE is off), 系列资源 (one numbered button per clip that switches the player and its download to that clip), the how-to as an open box and a link to the drama's page
+// @output -- the grid, one card per drama, fronted by the drama's cover with a play button (the clip's still only when there is no cover; an image clip shows itself) and the title and meta under it with no second cover, with type, clip count and 本周爆款 badges (a clip named only by a UUID or hash shows no title); a card opens a wide two-column dialog: on the right the clip playing (first on a phone) with its own download under it; on the left, in MoboReels' order, the drama's cover with its title, its chips (language first, then 频道, genre and tags), 上架时间 · 共 N 集 · 前 M 集免费, the full synopsis, the 推广链接 and 资源推广链接 (made for a signed-in visitor as the dialog opens, no 口令; not shown while PROMO_LINKS_VISIBLE is off), 系列资源 (one numbered button per clip that switches the player and its download to that clip), the how-to as an open box and a link to the drama's page
 // @pos    -- the body of /tasks, the task center's 素材广场
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
@@ -168,20 +168,16 @@ export function ClipPlaza({
                     </span>
                   )}
                 </div>
-                <div className="flex gap-3 p-3">
-                  {card.coverUrl !== null && (
-                    <img src={card.coverUrl} alt="" loading="lazy" className="h-12 w-9 shrink-0 rounded-[4px] object-cover" />
+                {/* No small cover beside the title: the card is already fronted by it. */}
+                <div className="min-w-0 p-3">
+                  <p className="line-clamp-2 text-[14px] leading-[1.35] font-semibold text-text-dark-primary group-hover:text-brand-accent-text">
+                    {card.dramaTitle}
+                  </p>
+                  {/* A drama of several clips is named by the drama alone; one clip keeps its own name. */}
+                  {card.clipCount === 1 && name !== null && (
+                    <p className="mt-1 truncate text-[12.5px] text-text-dark-secondary">{name}</p>
                   )}
-                  <div className="min-w-0">
-                    <p className="line-clamp-2 text-[14px] leading-[1.35] font-semibold text-text-dark-primary group-hover:text-brand-accent-text">
-                      {card.dramaTitle}
-                    </p>
-                    {/* A drama of several clips is named by the drama alone; one clip keeps its own name. */}
-                    {card.clipCount === 1 && name !== null && (
-                      <p className="mt-1 truncate text-[12.5px] text-text-dark-secondary">{name}</p>
-                    )}
-                    <p className="mt-0.5 truncate text-[12px] text-text-dark-secondary">{meta(card)}</p>
-                  </div>
+                  <p className="mt-0.5 truncate text-[12px] text-text-dark-secondary">{meta(card)}</p>
                 </div>
               </button>
             </li>
