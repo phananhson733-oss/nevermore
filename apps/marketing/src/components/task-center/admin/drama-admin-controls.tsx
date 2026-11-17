@@ -1,5 +1,5 @@
 // @input  -- a drama id, its status and assets; the admin status, refill, upload and asset APIs; R2 via signed PUT URLs
-// @output -- publish/take-down buttons (上架 as a large brand-gradient button), 从官网补全资料 (re-runs 查剧 for the drama and says where the details came from, how the cover went, or why nothing changed), each clip's title rename and its 推荐文案 editor (caption and hashtags; a caption pasted whole has its trailing #tag lines moved to the hashtags, and a word that is not a hashtag is named, not saved), the cover and clip uploaders (one button opens the file picker, a second picks a whole folder for clips, or files and folders are dropped on the box, and the upload starts as soon as they are picked; a batch goes up in file-name order so 第2集 comes before 第10集 and the clips are numbered that way, files of other types are skipped and named; progress with the batch position, one upload at a time, a still cut from each video in the browser), the upload's type set to 高光 until changed, the clip uploader's hand-typed 推荐文案 and 标签 (checked before anything goes up; the caption needs a single file, the tags go onto every file of a batch; kept after a refusal or failure, cleared after a finished upload), per-clip type and delete
+// @output -- publish/take-down buttons (上架 as a large brand-gradient button), 从官网补全资料 (re-runs 查剧 for the drama and says where the details came from, how the cover went, or why nothing changed), each clip's title rename and its 推荐文案 editor (caption and hashtags; a caption pasted whole has its trailing #tag lines moved to the hashtags, and a word that is not a hashtag is named, not saved), the cover and clip uploaders (one button opens the file picker, a second picks a whole folder for clips, or files and folders are dropped on the box, and a cover goes up as soon as it is picked; a batch goes up in file-name order so 第2集 comes before 第10集 and the clips are numbered that way, files of other types are skipped and named; progress with the batch position, one upload at a time, a still cut from each video in the browser), the upload's type set to 高光 until changed, clips picked, dropped or found in a folder listed in upload order first, each numbered as it will be in 系列资源 with its own hand-typed 推荐文案 and 标签 plus tags shared by the batch, all checked before 开始上传 sends anything (on a failure the clips not yet sent stay listed with their text), per-clip type and delete
 // @pos    -- the interactive half of /admin/tasks/<id>
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
@@ -522,22 +522,32 @@ async function droppedFiles(transfer: DataTransfer): Promise<File[]> {
   return nested.flat();
 }
 
+type CaptionFields = { readonly caption: string | null; readonly hashtags: readonly string[] };
+
+/** A clip picked for upload, with the 推荐文案 and 标签 typed for it so far. */
+type StagedClip = { readonly file: File; readonly caption: string; readonly tags: string };
+
 export function UploadControl({
   dramaId,
   purpose,
   storageReady,
+  readyClips = 0,
 }: {
   dramaId: string;
   purpose: "cover" | "asset";
   storageReady: boolean;
+  /** Clips already ready: a new clip's 系列资源 number follows them. */
+  readyClips?: number;
 }) {
   const router = useRouter();
   const input = useRef<HTMLInputElement>(null);
   const folderInput = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState("");
-  // 推荐文案 and 标签, typed by the operator for the clip being uploaded.
-  const [captionText, setCaptionText] = useState("");
-  const [tagsText, setTagsText] = useState("");
+  // Clips picked and waiting for 开始上传, in upload order, each with the
+  // 推荐文案 and 标签 the operator types for it; null when none are waiting.
+  const [staged, setStaged] = useState<readonly StagedClip[] | null>(null);
+  // Tags typed once for every clip of the batch, the drama's own usually.
+  const [sharedTags, setSharedTags] = useState("");
   // 高光 by default: most uploads are highlight cuts. 未分类 stays a choice.
   const [clipType, setClipType] = useState<ClipType | "">("highlight");
   const [progress, setProgress] = useState<string | null>(null);
@@ -563,7 +573,7 @@ export function UploadControl({
     file: File,
     position: string,
     fileTitle: string | null,
-    fields: { readonly caption: string | null; readonly hashtags: readonly string[] },
+    fields: CaptionFields,
   ): Promise<boolean> {
     const start = await adminFetch(`/api/admin/tasks/dramas/${dramaId}/uploads`, "POST", {
       purpose,
@@ -610,60 +620,86 @@ export function UploadControl({
     return true;
   }
 
-  async function upload(picked: readonly File[] | Promise<readonly File[]>): Promise<void> {
+  /**
+   * Files picked, dropped or found in a folder, sorted into upload order with
+   * the ones that cannot go up named. A cover goes up at once; clips wait in
+   * the list for their 推荐文案 and 开始上传.
+   */
+  async function pick(picked: readonly File[] | Promise<readonly File[]>): Promise<void> {
     if (uploading.current) return;
-    const fields =
-      purpose === "asset" ? readCaptionFields(captionText, tagsText) : { caption: null, hashtags: [] as const };
-    // Checked before anything goes up, and the typed text is kept to fix.
-    if ("error" in fields) {
-      setError(fields.error);
-      clearPickers();
+    setError(null);
+    const all = (await picked).filter((file) => !isJunk(file));
+    clearPickers();
+    // Name order is upload order is 系列资源's numbering: neither a picker
+    // nor a folder listing promises any order of its own.
+    const sorted = purpose === "cover" ? all.slice(0, 1) : [...all].sort((a, b) => byName.compare(pathOf(a), pathOf(b)));
+    const files = sorted.filter((file) => refusal(file) === null);
+    const skipped = sorted.filter((file) => refusal(file) !== null);
+    if (skipped.length > 0) {
+      const named = skipped.slice(0, 5).map((file) => `${file.name}（${refusal(file)}）`).join("、");
+      setError(`跳过了 ${skipped.length} 个文件：${named}${skipped.length > 5 ? " 等" : ""}。`);
+    }
+    if (files.length === 0) return;
+    if (purpose === "cover") {
+      await send([{ file: files[0]!, caption: "", tags: "" }], null);
       return;
     }
+    // A new pick replaces a list still waiting: it is the batch the operator means now.
+    setStaged(files.map((file) => ({ file, caption: "", tags: "" })));
+  }
+
+  function editStaged(index: number, change: Partial<Pick<StagedClip, "caption" | "tags">>): void {
+    setStaged((rows) => rows?.map((row, at) => (at === index ? { ...row, ...change } : row)) ?? null);
+  }
+
+  /** 开始上传: every clip's text checked first, then the clips go up in list order. */
+  async function startStaged(): Promise<void> {
+    if (staged === null || uploading.current) return;
+    const problems: string[] = [];
+    const fields = staged.map((row, index) => {
+      const read = readCaptionFields(row.caption, `${sharedTags} ${row.tags}`);
+      // Named by the number the list shows, which is the one 系列资源 will show.
+      if ("error" in read) problems.push(`系列资源 ${readyClips + index + 1}（${row.file.name}）：${read.error}`);
+      return read;
+    });
+    if (problems.length > 0) {
+      setError(problems.join(" "));
+      return;
+    }
+    await send(staged, fields as readonly CaptionFields[]);
+  }
+
+  /** Uploads one at a time; on a failure the rest stay listed, text kept, to retry. */
+  async function send(rows: readonly StagedClip[], fields: readonly CaptionFields[] | null): Promise<void> {
     // Disables the buttons before the first progress event, so a second click
     // cannot start the same files again as duplicate clips.
     uploading.current = true;
     setProgress("准备上传…");
     setError(null);
-    let finished = false;
+    let sent = 0;
     try {
-      const all = (await picked).filter((file) => !isJunk(file));
-      // Name order is upload order is 系列资源's numbering: neither a picker
-      // nor a folder listing promises any order of its own.
-      const sorted = purpose === "cover" ? all.slice(0, 1) : [...all].sort((a, b) => byName.compare(pathOf(a), pathOf(b)));
-      const files = sorted.filter((file) => refusal(file) === null);
-      const skipped = sorted.filter((file) => refusal(file) !== null);
-      if (skipped.length > 0) {
-        const named = skipped.slice(0, 5).map((file) => `${file.name}（${refusal(file)}）`).join("、");
-        setError(`跳过了 ${skipped.length} 个文件：${named}${skipped.length > 5 ? " 等" : ""}。`);
-      }
-      // A caption is one episode's: several files at once would all get the
-      // same post, so it goes with one file only. Tags, often the drama's
-      // own, go onto every file of a batch.
-      if (fields.caption !== null && files.length > 1) {
-        setError(`推荐文案只能跟 1 个文件一起上传，这次选了 ${files.length} 个。清空文案再传，传完在每条素材下面写；标签可以留着，会加到每个文件上。`);
-        return;
-      }
       const typed = title.trim();
       // One file takes the typed title; a batch numbers it, so twelve episodes are not twelve of the same name.
       const titleFor = (index: number): string | null =>
-        typed === "" ? null : files.length === 1 ? typed : `${typed} ${index + 1}`;
+        typed === "" ? null : rows.length === 1 ? typed : `${typed} ${index + 1}`;
       // One at a time: a clip is tens of MB and the admin's uplink is the bottleneck.
-      for (const [index, file] of files.entries()) {
-        const position = files.length > 1 ? `第 ${index + 1}/${files.length} 个 · ` : "";
-        if (!(await uploadOne(file, position, titleFor(index), fields))) break;
-        if (index === files.length - 1) finished = true;
+      for (const [index, row] of rows.entries()) {
+        const position = rows.length > 1 ? `第 ${index + 1}/${rows.length} 个 · ` : "";
+        const clipFields = fields?.[index] ?? { caption: null, hashtags: [] };
+        if (!(await uploadOne(row.file, position, titleFor(index), clipFields))) break;
+        sent += 1;
       }
     } finally {
       uploading.current = false;
       setProgress(null);
-      // The caption and tags stay after a refusal or a failed upload, to fix or retry.
-      if (finished) {
-        setTitle("");
-        setCaptionText("");
-        setTagsText("");
+      if (purpose === "asset") {
+        const rest = rows.slice(sent);
+        setStaged(rest.length > 0 ? rest : null);
+        if (rest.length === 0) {
+          setTitle("");
+          setSharedTags("");
+        }
       }
-      clearPickers();
       router.refresh();
     }
   }
@@ -686,7 +722,7 @@ export function UploadControl({
       onDrop={(event) => {
         event.preventDefault();
         setDragging(false);
-        void upload(droppedFiles(event.dataTransfer));
+        void pick(droppedFiles(event.dataTransfer));
       }}
     >
       <div className="flex flex-wrap items-center gap-3">
@@ -724,7 +760,7 @@ export function UploadControl({
           accept={types.join(",")}
           aria-label={purpose === "cover" ? "选择封面图片" : "选择素材文件"}
           className="hidden"
-          onChange={(event) => void upload(Array.from(event.target.files ?? []))}
+          onChange={(event) => void pick(Array.from(event.target.files ?? []))}
         />
         <button
           type="button"
@@ -734,12 +770,12 @@ export function UploadControl({
             if (!uploading.current) input.current?.click();
           }}
         >
-          {purpose === "cover" ? "选择并上传封面" : "选择并上传素材"}
+          {purpose === "cover" ? "选择并上传封面" : "选择素材文件"}
         </button>
         {purpose === "asset" && (
           <>
             {/* webkitdirectory picks a folder; accept does not apply to it, so
-                upload() filters the types itself. Set as an attribute: React
+                pick() filters the types itself. Set as an attribute: React
                 has no typed prop for it. */}
             <input
               ref={(node) => {
@@ -750,7 +786,7 @@ export function UploadControl({
               multiple
               aria-label="选择素材文件夹"
               className="hidden"
-              onChange={(event) => void upload(Array.from(event.target.files ?? []))}
+              onChange={(event) => void pick(Array.from(event.target.files ?? []))}
             />
             <button
               type="button"
@@ -760,35 +796,72 @@ export function UploadControl({
                 if (!uploading.current) folderInput.current?.click();
               }}
             >
-              选择文件夹上传
+              选择文件夹
             </button>
           </>
         )}
         <span className="text-[13px] text-text-dark-secondary">
           {purpose === "cover"
             ? "点按钮选图片，或把图片拖到这个框里，选好就开始上传"
-            : "选文件（可多选）或整个文件夹，也可以拖到这个框里；按文件名顺序上传，编号 1、2、3 就是这个顺序，不是视频或图片的文件会跳过"}
+            : "选文件（可多选）或整个文件夹，也可以拖到这个框里；按文件名排好顺序列出来，逐个写推荐文案后开始上传，不是视频或图片的文件会跳过"}
         </span>
       </div>
-      {purpose === "asset" && (
-        <div className="space-y-2">
-          <textarea
-            aria-label="推荐文案"
-            value={captionText}
-            rows={4}
-            disabled={progress !== null}
-            onChange={(event) => setCaptionText(event.target.value)}
-            placeholder={"推荐文案（选填，传 1 个文件时用）：推广者发这条素材时的文案。比如：\n🎬 剧名 - EP1\n这一集讲了什么，一两句。\n结尾抛一个问题？"}
-            className={TEXT_FIELD}
-          />
+      {staged !== null && (
+        <div className="space-y-3 rounded-[8px] border border-brand-border-card bg-brand-panel p-3">
+          <p className="text-[13px] leading-[1.6] text-text-dark-secondary">
+            选了 {staged.length} 个文件，按下面的顺序上传。给每个写推荐文案和标签（都选填，传完也能在素材下面改），再点开始上传。
+          </p>
           <input
-            aria-label="标签"
-            value={tagsText}
+            aria-label="共用标签"
+            value={sharedTags}
             disabled={progress !== null}
-            onChange={(event) => setTagsText(event.target.value)}
-            placeholder="标签（选填）：#FamilyLove #FantasyDrama #MoboReels，空格或逗号隔开，# 可省；一次传多个文件时每个都加上"
+            onChange={(event) => setSharedTags(event.target.value)}
+            placeholder="共用标签（每个文件都加）：#MoboReels #FantasyDrama，空格或逗号隔开，# 可省"
             className={`${TEXT_FIELD} h-9 py-0`}
           />
+          <ol className="space-y-3">
+            {staged.map((row, index) => (
+              <li key={`${pathOf(row.file)}-${index}`} className="space-y-2 border-t border-brand-border-card pt-3">
+                <p className="flex flex-wrap items-baseline gap-x-2 text-[13.5px]">
+                  <span className="font-semibold text-text-dark-primary">系列资源 {readyClips + index + 1}</span>
+                  <span className="min-w-0 truncate text-text-dark-secondary">{pathOf(row.file)}</span>
+                </p>
+                <textarea
+                  aria-label={`第 ${index + 1} 个的推荐文案`}
+                  value={row.caption}
+                  rows={3}
+                  disabled={progress !== null}
+                  onChange={(event) => editStaged(index, { caption: event.target.value })}
+                  placeholder={"推荐文案：\n🎬 剧名 - EP1\n这一集讲了什么，一两句。结尾抛一个问题？"}
+                  className={TEXT_FIELD}
+                />
+                <input
+                  aria-label={`第 ${index + 1} 个的标签`}
+                  value={row.tags}
+                  disabled={progress !== null}
+                  onChange={(event) => editStaged(index, { tags: event.target.value })}
+                  placeholder="这一个的标签：#FamilyLove #WitchPact"
+                  className={`${TEXT_FIELD} h-9 py-0`}
+                />
+              </li>
+            ))}
+          </ol>
+          <div className="flex flex-wrap items-center gap-3">
+            <button type="button" className={BUTTON} disabled={progress !== null} onClick={() => void startStaged()}>
+              开始上传 {staged.length} 个
+            </button>
+            <button
+              type="button"
+              disabled={progress !== null}
+              onClick={() => {
+                setStaged(null);
+                setError(null);
+              }}
+              className="text-[13px] text-text-dark-secondary hover:underline"
+            >
+              不传了
+            </button>
+          </div>
         </div>
       )}
       {progress && <p className="font-mono text-[13px] text-text-dark-secondary">{progress}</p>}
