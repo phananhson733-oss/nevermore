@@ -1,5 +1,5 @@
 // @input  -- the page locale and a published drama's public facts (never its platform URLs), its ready clips
-// @output -- the pieces of a drama's details: language, 频道, genre and tag chips; the 上架时间 · 共 N 集 · 前 M 集免费 line; numbered free clip downloads; the compact how-to
+// @output -- the pieces of a drama's details: language, 频道, genre and tag chips; the 上线时间 (the day it went live on its theater, left out when unknown) · 共 N 集 · 前 M 集免费 line; numbered free clip downloads; the compact how-to
 // @pos    -- shared by the clip dialog on /tasks (client) and /tasks/<id> (server); no state, so either side can render it
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -54,21 +54,25 @@ export function DramaChips({
   );
 }
 
-/** 上架时间 2026年11月5日 · 共 60 集 · 前 9 集免费; parts nobody knows are left out. */
+/**
+ * 上线时间 2026年11月11日 · 共 60 集 · 前 9 集免费; parts nobody knows are left
+ * out. The day is the theater's (from 查剧), never when we listed it here.
+ */
 export function DramaFacts({
   locale,
-  listedAt,
+  launchedOn,
   episodes,
   payStart,
 }: {
   locale: string;
-  listedAt: string | null;
+  /** YYYY-MM-DD. */
+  launchedOn: string | null;
   episodes: number | null;
   payStart: number | null;
 }) {
   const copy = taskCopy(locale);
   const parts = [
-    listedAt === null ? null : `${copy.listedOn} ${formatDay(listedAt, locale)}`,
+    launchedOn === null ? null : `${copy.launchedOn} ${formatDay(launchedOn, locale)}`,
     episodeLine(episodes, payStart, copy),
   ].filter((part): part is string => part !== null);
   if (parts.length === 0) return null;

@@ -9,5 +9,6 @@ The task center's own PostgreSQL schema, `task_center`, in the TencentDB databas
 - `0004_drama_source.sql` — what 查剧 fills from 北斗 through 选剧台: a drama's tags (at most 20), whether it is finished (null: unknown), and where its details came from (`source = 'beidou'` with the platform's own drama id, or both null when typed by hand); one listing per platform and platform drama id.
 - `0005_base64_drama_ids.sql` — widens 0004's check on the platform drama id to also take base64 (`[A-Za-z0-9+/]`, up to two `=` at the end, 64 at most), which is what 北斗 gives for GoodShort; everything 0004 took still passes.
 - `0006_publish_without_target.sql` — drops 0001's rule that a published drama must have a promo target: promoters' links now open our own drama page, and the platform link (still https when set) is only where its 去看全集 button goes.
+- `0007_theater_launch_day.sql` — a drama's `launched_on`: the day it went live on its theater (上线时间) as the 选剧台 lookup gives it, a date with no time; null when unknown or typed by hand. `listed_at` keeps meaning the moment we published it here.
 
 Applied files are never edited. A change is a new, higher-numbered file that only adds, so the image still running during a deploy keeps working against the new schema.

@@ -1,5 +1,5 @@
 // @input  -- a disposable Postgres rebuilt by db/tasks/migrate.sh
-// @output -- proof that the task center's SQL does what the stores promise: the grid of one card per drama (fronted by its first clip, counting its clips, paged by drama; its filters, the 标签 one matching part of a tag in any case, and their choices) and its 本周爆款 rule, each listed drama's dialog details (its clips in order with kind, type and still), imports from 查剧 (频道 and genre from the theater's page, one drama whichever 北斗 id found it, 完结 left unknown for a 剧库 row, GoodShort's base64 ids), 从官网补全 over a drama already listed (what the operator owns kept, a pay start that no longer fits dropped, never a second listing) and tags, publishing without a platform link, the reader's drama page (trailer pick, taken-down dramas kept, drafts not), promo clicks that open it, and 去看全集 carrying only a code claimed for that drama, promoter accounts included
+// @output -- proof that the task center's SQL does what the stores promise: the grid of one card per drama (fronted by its first clip, counting its clips, paged by drama; its filters, the 标签 one matching part of a tag in any case, and their choices, 上架时间 matching a clip's upload day in Beijing time) and its 本周爆款 rule, each listed drama's dialog details (its clips in order with kind, type and still), imports from 查剧 (频道 and genre from the theater's page, one drama whichever 北斗 id found it, 完结 left unknown for a 剧库 row, GoodShort's base64 ids), 从官网补全 over a drama already listed (what the operator owns kept, a pay start that no longer fits dropped, never a second listing) and tags, publishing without a platform link, the reader's drama page (trailer pick, taken-down dramas kept, drafts not), promo clicks that open it, and 去看全集 carrying only a code claimed for that drama, promoter accounts included
 // @pos    -- the only test that executes task center SQL
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -349,12 +349,35 @@ describe("dramas", () => {
     expect(page2).toMatchObject({ total: 3, items: [{ id: clipA }] });
 
     // Each tag once, and none that only a draft has.
-    expect(await listPublishedFacets(db)).toEqual({
+    expect(await listPublishedFacets(db)).toMatchObject({
       platforms: ["dramabox", "reelshort"],
       languages: ["en", "es"],
       genres: ["revenge", "werewolf"],
       tags: ["Alpha", "Werewolf"],
     });
+  });
+
+  it("filters by the day a clip was uploaded in Beijing time, and offers the days there are", async () => {
+    const early = await publishedDrama({ title: "Early" });
+    const earlyClip = await readyClip(early);
+    const late = await publishedDrama({ title: "Late" });
+    const lateClip = await readyClip(late);
+    const draft = await createDrama(db, drama({ title: "Draft" }), ADMIN);
+    const draftClip = await readyClip(draft);
+    const at = (id: string, instant: string) =>
+      db.query("update task_center.drama_assets set uploaded_at = $2::timestamptz where id = $1", [id, instant]);
+    // 01:30 on 11/17 in Beijing is still 11/16 in UTC; 23:30 on 11/16 in Beijing is 15:30 UTC.
+    await at(earlyClip, "2026-11-16T17:30:00Z");
+    await at(lateClip, "2026-11-16T15:30:00Z");
+    await at(draftClip, "2026-11-10T04:00:00Z");
+
+    const titles = async (uploadedOn: string) =>
+      (await listPublishedAssets(db, { ...everything, uploadedOn })).items.map((item) => item.drama.title);
+    expect(await titles("2026-11-17")).toEqual(["Early"]);
+    expect(await titles("2026-11-16")).toEqual(["Late"]);
+    expect(await titles("2026-11-10")).toEqual([]);
+    // A draft's clip offers no day.
+    expect((await listPublishedFacets(db)).uploadDays).toEqual(["2026-11-17", "2026-11-16"]);
   });
 
   it("shows a drama uploaded as a batch as one card that counts every clip", async () => {
@@ -438,6 +461,7 @@ describe("imports from 查剧", () => {
     audience: "male",
     genre: "sports",
     finished: true,
+    launchedOn: "2026-10-22",
     sourceDramaId: "68a1b2c3d4",
   } as const;
 
@@ -462,6 +486,9 @@ describe("imports from 查剧", () => {
       finished: true,
       episodes: 70,
       payStart: 8,
+      // The theater's day, not ours: a draft has no listedAt yet.
+      launchedOn: "2026-10-22",
+      listedAt: null,
     });
     expect(await listedBySource(db, "reelshort", ["68a1b2c3d4", "nope"])).toEqual(new Map([["68a1b2c3d4", id]]));
 
@@ -558,6 +585,7 @@ describe("imports from 查剧", () => {
       tags: ["Romance", "Toxic Romance"],
       genre: "romance",
       finished: null,
+      launchedOn: "2026-11-11",
       sourceDramaId: "6ad4c0012ea7059aa9045e57",
     };
     expect(await refillDrama(db, id, found)).toEqual({ ok: true });
@@ -576,10 +604,20 @@ describe("imports from 查剧", () => {
       finished: null,
       source: "beidou",
       sourceDramaId: "6ad4c0012ea7059aa9045e57",
+      launchedOn: "2026-11-11",
     });
 
     // A source that leaves things out changes none of them.
-    const empty = { ...found, episodes: null, payStart: null, synopsis: null, tags: [], audience: null, genre: null };
+    const empty = {
+      ...found,
+      episodes: null,
+      payStart: null,
+      synopsis: null,
+      tags: [],
+      audience: null,
+      genre: null,
+      launchedOn: null,
+    };
     expect(await refillDrama(db, id, empty)).toEqual({ ok: true });
     expect((await getDramaForAdmin(db, id))?.drama).toMatchObject({
       episodes: 52,
@@ -588,6 +626,7 @@ describe("imports from 查剧", () => {
       tags: ["Romance", "Toxic Romance"],
       audience: "male",
       genre: "romance",
+      launchedOn: "2026-11-11",
     });
     expect(await refillDrama(db, "6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b", { ...found, sourceDramaId: "6ad4c0012ea7059aa9045e00" })).toEqual({ ok: false, code: "not_found" });
   });

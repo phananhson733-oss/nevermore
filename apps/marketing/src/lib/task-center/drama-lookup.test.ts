@@ -1,5 +1,5 @@
 // @input  -- drama-lookup.ts with a fake fetch in place of 选剧台 and the cover CDN
-// @output -- proof that the lookup client reads only well-formed answers (GoodShort's base64 ids, a 剧库 row's unknown 完结 and the id-less 剧库 rows of a miss included), maps errors, finds which row a drama already listed is (by its id, else by its exact title), fits a 北斗 row to the dramas table with the theater's own page taking over field by field, and fetches only a sane cover
+// @output -- proof that the lookup client reads only well-formed answers (and keeps the theater's 上线 day only when it is a real date) (GoodShort's base64 ids, a 剧库 row's unknown 完结 and the id-less 剧库 rows of a miss included), maps errors, finds which row a drama already listed is (by its id, else by its exact title), fits a 北斗 row to the dramas table with the theater's own page taking over field by field, and fetches only a sane cover
 // @pos    -- unit tests for the task center's side of pick-workbench's lookup contract; no network, no database
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -135,8 +135,17 @@ describe("toImportedDrama", () => {
       audience: null,
       genre: null,
       finished: true,
+      launchedOn: null,
       sourceDramaId: "68a1b2c3d4",
     });
+  });
+
+  it("keeps the day the drama went live on its theater, and only a real one", () => {
+    expect(toImportedDrama({ ...ROW, listedOn: "2026-11-11" }, QUERY)?.launchedOn).toBe("2026-11-11");
+    // Bad shapes and days that do not exist are unknown, and the import goes on.
+    for (const listedOn of ["2026-02-30", "2026-11-11T00:00:00", "11/11/2026", "", "1899-01-01"]) {
+      expect(toImportedDrama({ ...ROW, listedOn }, QUERY)).toMatchObject({ launchedOn: null, episodes: 70 });
+    }
   });
 
   it("turns out-of-range numbers into unknown and trims what is too long", () => {
@@ -210,6 +219,7 @@ describe("toImportedDrama with the theater's own page", () => {
       audience: "female",
       genre: "romance",
       finished: true,
+      launchedOn: null,
       // The id the page settled on, so both of 北斗's ids for one drama list it once.
       sourceDramaId: "6ad88d9e996727b60c007958",
     });

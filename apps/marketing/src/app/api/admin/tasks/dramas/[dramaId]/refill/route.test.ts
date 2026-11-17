@@ -55,6 +55,7 @@ const DRAMA: DramaDetail = {
   genre: "male",
   tags: [],
   listedAt: "2026-11-06T08:00:00.000Z",
+  launchedOn: null,
   promoterCount: 3,
   synopsis: null,
   finished: null,
@@ -73,7 +74,7 @@ const FOUND: LookupDrama = {
   titleCn: null,
   exact: true,
   language: "en",
-  listedOn: null,
+  listedOn: "2026-10-22",
   episodeCount: 52,
   payStart: 15,
   finished: null,
@@ -141,6 +142,7 @@ describe("POST /api/admin/tasks/dramas/<id>/refill", () => {
       audience: "male",
       genre: "romance",
       finished: null,
+      launchedOn: "2026-10-22",
       sourceDramaId: SOURCE_ID,
     });
     expect(copyCover).toHaveBeenCalledWith(DB, DRAMA_ID, THEATER.coverUrl, expect.any(Number));
