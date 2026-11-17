@@ -1,5 +1,5 @@
 // @input  -- a TaskDb and admin or visitor requests already parsed by contracts.ts
-// @output -- dramas (with their optional platform link) and their clip assets: the public grid, one card per published drama fronted by its first matching clip (filtered by a tag, typed in part and in any case, with this week's hot dramas, each drama's clip count, and each listed drama's details and clips with their types and stills) and its filter choices (tags included), the drama list and detail, the reader's drama page (/watch/<id>: cover, synopsis, trailer, whether there is a platform link, never the link itself), and the admin reads and writes, including a drama imported from 查剧 (北斗 through the 选剧台 lookup, filled in from the theater's own page) and one already listed filled in again from it (从官网补全)
+// @output -- dramas (with their optional platform link) and their clip assets: the public grid, one card per published drama fronted by its first matching clip (filtered by a tag, typed in part and in any case, with this week's hot dramas, each drama's clip count, and each listed drama's details and clips with their types and stills) and its filter choices (tags included), the drama list and detail, the reader's drama page (/watch/<id>: cover, synopsis, trailer, whether there is a platform link, never the link itself), and the admin reads and writes (a clip's 推荐文案 and hashtags among them, which the dialog's clips carry too), including a drama imported from 查剧 (北斗 through the 选剧台 lookup, filled in from the theater's own page) and one already listed filled in again from it (从官网补全)
 // @pos    -- every SQL statement on task_center.dramas and task_center.drama_assets
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -60,6 +60,10 @@ export interface DramaAsset {
   readonly clipType: ClipType | null;
   /** The still cut from a video at upload; null for images and older videos. */
   readonly posterKey: string | null;
+  /** 推荐文案: the post text we suggest for this clip; null when none was written. */
+  readonly caption: string | null;
+  /** Its suggested hashtags, without the #. */
+  readonly hashtags: readonly string[];
 }
 
 export type DramaSort = "newest" | "promoters";
@@ -104,6 +108,8 @@ interface AssetRow {
   uploaded_at: Date | null;
   clip_type: ClipType | null;
   poster_key: string | null;
+  caption: string | null;
+  hashtags: string[] | null;
 }
 
 /** The zone a clip's upload day is counted in, for the 上架时间 filter and its choices: the team uploads from China. */
@@ -169,6 +175,8 @@ function toAsset(row: AssetRow): DramaAsset {
     uploadedAt: row.uploaded_at?.toISOString() ?? null,
     clipType: row.clip_type,
     posterKey: row.poster_key,
+    caption: row.caption,
+    hashtags: row.hashtags ?? [],
   };
 }
 
@@ -352,6 +360,9 @@ export interface PlazaDramaDetail {
     readonly clipType: ClipType | null;
     /** The clip's still, or an image itself; null when a video has none. */
     readonly stillKey: string | null;
+    /** 推荐文案 and its hashtags (without the #), copied from under the clip. */
+    readonly caption: string | null;
+    readonly hashtags: readonly string[];
   }[];
 }
 
@@ -377,9 +388,12 @@ export async function listPlazaDramaDetails(
     kind: "video" | "image";
     clip_type: ClipType | null;
     still_key: string | null;
+    caption: string | null;
+    hashtags: string[] | null;
   }>(
     `select a.id, a.drama_id, a.title, a.byte_size, a.kind, a.clip_type,
-            coalesce(a.poster_key, case when a.kind = 'image' then a.object_key end) as still_key
+            coalesce(a.poster_key, case when a.kind = 'image' then a.object_key end) as still_key,
+            a.caption, a.hashtags
        from task_center.drama_assets a
       where a.drama_id = any($1::uuid[]) and a.status = 'ready'
       order by a.drama_id, a.sort, a.created_at, a.id`,
@@ -395,6 +409,8 @@ export async function listPlazaDramaDetails(
       kind: row.kind,
       clipType: row.clip_type,
       stillKey: row.still_key,
+      caption: row.caption,
+      hashtags: row.hashtags ?? [],
     });
     clips.set(row.drama_id, list);
   }
@@ -860,18 +876,37 @@ export async function markAssetReady(
   return rows[0] === undefined ? null : { posterKey: rows[0].poster_key };
 }
 
-/** Retags and/or renames a clip; a field left out stays as it is. False when the clip does not exist. */
+/**
+ * Retags, renames or writes a clip's 推荐文案; a field left out stays as it
+ * is, a null caption or an empty hashtag list clears it. False when the clip
+ * does not exist.
+ */
 export async function updateAsset(
   db: TaskDb,
   assetId: string,
-  change: { readonly clipType?: ClipType | null | undefined; readonly title?: string | undefined },
+  change: {
+    readonly clipType?: ClipType | null | undefined;
+    readonly title?: string | undefined;
+    readonly caption?: string | null | undefined;
+    readonly hashtags?: readonly string[] | undefined;
+  },
 ): Promise<boolean> {
   const { rowCount } = await db.query(
     `update task_center.drama_assets
         set clip_type = case when $2 then $3 else clip_type end,
-            title = coalesce($4, title)
+            title = coalesce($4, title),
+            caption = case when $5 then $6 else caption end,
+            hashtags = coalesce($7::text[], hashtags)
       where id = $1`,
-    [assetId, change.clipType !== undefined, change.clipType ?? null, change.title ?? null],
+    [
+      assetId,
+      change.clipType !== undefined,
+      change.clipType ?? null,
+      change.title ?? null,
+      change.caption !== undefined,
+      change.caption ?? null,
+      change.hashtags === undefined ? null : [...change.hashtags],
+    ],
   );
   return rowCount === 1;
 }

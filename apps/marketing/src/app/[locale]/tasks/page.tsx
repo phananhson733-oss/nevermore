@@ -1,5 +1,5 @@
 // @input  -- locale param; q, platform, language, genre, tag, day and page query (no others: a filter the bar does not show is not applied); the task database; the session; R2 for stills and covers
-// @output -- the promoter tabs, the filters (search, 剧场 from the platforms of published dramas, then MoboReels' 语言, 题材 and 标签, a text box that matches any part of a tag in any case with a list of the published tags that contain what is typed, and 上架时间: the days, in Beijing time, on which clips were uploaded), each named by a label above it, then one card per published drama with a ready clip (fronted by its first clip, with its clip count), newest upload first, as a paged 素材广场 grid, with what each listed drama's dialog shows (上线时间 on its theater, episodes, synopsis, its numbered clips with their stills for a signed-in visitor, and the visitor's two links when they already hold them, unless PROMO_LINKS_VISIBLE is off)
+// @output -- the promoter tabs, the filters (search, 剧场 from the platforms of published dramas, then MoboReels' 语言, 题材 and 标签, a text box that matches any part of a tag in any case with a list of the published tags that contain what is typed, and 上架时间: the days, in Beijing time, on which clips were uploaded), each named by a label above it, then one card per published drama with a ready clip (fronted by its first clip, with its clip count), newest upload first, as a paged 素材广场 grid, with what each listed drama's dialog shows (上线时间 on its theater, episodes, synopsis, its numbered clips with their stills and 推荐文案 for a signed-in visitor, and the visitor's two links when they already hold them, unless PROMO_LINKS_VISIBLE is off)
 // @pos    -- /tasks, the task center's entry page
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -193,6 +193,8 @@ export default async function TasksPage({
             kind: clip.kind,
             clipType: clip.clipType,
             stillUrl: r2 !== null && clip.stillKey !== null ? coverImageUrl(r2, clip.stillKey) : null,
+            caption: clip.caption,
+            hashtags: clip.hashtags,
           }))
         : [],
     };

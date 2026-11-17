@@ -1,8 +1,8 @@
-// @input  -- GET (the 预览 link), PUT {clipType?, title?} or DELETE from /admin/tasks/<id>, by an admin
+// @input  -- GET (the 预览 link), PUT {clipType?, title?, caption?, hashtags?} or DELETE from /admin/tasks/<id>, by an admin
 // @output -- GET: a 302 to a 15-minute signed R2 URL for a ready clip of any drama, draft or not;
-//            PUT: the clip retagged and/or renamed; DELETE: the clip's row deleted, then its R2 file and still
+//            PUT: the clip retagged, renamed and/or given its 推荐文案 and hashtags; DELETE: the clip's row deleted, then its R2 file and still
 //            (a failed file delete is logged, not undone)
-// @pos    -- admin preview, retag, rename and delete endpoint for task_center.drama_assets
+// @pos    -- admin preview, retag, rename, 推荐文案 and delete endpoint for task_center.drama_assets
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import { isSameOriginPost } from "../../../../../../lib/auth/disconnect.ts";
@@ -63,7 +63,8 @@ export async function PUT(
   request: Request,
   context: { readonly params: Promise<{ assetId: string }> },
 ): Promise<Response> {
-  const mutation = await readAdminMutation(request, 1024);
+  // Room for a 2200-character caption in a script of 3-byte characters, and its hashtags.
+  const mutation = await readAdminMutation(request, 16_384);
   if (!mutation.ok) return mutation.response;
   const { assetId } = await context.params;
   if (!isUuid(assetId)) return privateError("not_found", 404);

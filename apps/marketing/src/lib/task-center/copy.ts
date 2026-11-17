@@ -46,6 +46,9 @@ const en = {
   clipsBody: "Click a number to download that clip.",
   seriesClips: "Series clips",
   seriesClipsBody: "Click a number to play that clip, then download it under the player.",
+  captionTitle: "Suggested caption",
+  captionBody: "Post the clip with it, or have an AI rewrite it in your own words, with your own referral code.",
+  copyCaption: "Copy caption and hashtags",
   clipCount: (n: number) => (n === 1 ? "1 clip" : `${n} clips`),
   playNumbered: (n: number, title: string | null, size: string) =>
     title === null ? `Play clip ${n}, ${size}` : `Play clip ${n}: ${title}, ${size}`,
@@ -191,6 +194,9 @@ const zh: TaskCopy = {
   clipsBody: "点数字下载对应的素材。",
   seriesClips: "系列资源",
   seriesClipsBody: "点数字切换到对应的素材，在播放器下面下载。",
+  captionTitle: "推荐文案",
+  captionBody: "发这条素材时可以直接用，也可以交给 AI 改成你自己的说法，换上你的推荐码。",
+  copyCaption: "复制文案和标签",
   clipCount: (n: number) => `${n} 条素材`,
   playNumbered: (n: number, title: string | null, size: string) =>
     title === null ? `播放素材 ${n}，${size}` : `播放素材 ${n}：${title}，${size}`,

@@ -1,11 +1,18 @@
 // @input  -- the zod inputs in contracts.ts
-// @output -- proof that 题材 refuses audience words, that the platform link is optional and only a full https URL is taken, that 查剧 takes only platforms and languages 选剧台 knows, and that a clip update needs a field and leaves the other alone
+// @output -- proof that 题材 refuses audience words, that the platform link is optional and only a full https URL is taken, that 查剧 takes only platforms and languages 选剧台 knows, that a clip update needs a field and leaves the others alone, and how a 推荐文案's hashtags are read from what an admin types or pastes
 // @pos    -- unit tests for the admin request contract; no database
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import { describe, expect, it } from "vitest";
 
-import { assetUpdateSchema, dramaImportSchema, dramaInputSchema, dramaLookupSchema } from "./contracts.ts";
+import {
+  assetUpdateSchema,
+  dramaImportSchema,
+  dramaInputSchema,
+  dramaLookupSchema,
+  parseHashtags,
+  splitCaption,
+} from "./contracts.ts";
 
 const drama = { title: "Surf God's Revenge", platform: "reelshort", language: "en" };
 
@@ -93,5 +100,75 @@ describe("assetUpdateSchema", () => {
     expect(assetUpdateSchema.safeParse({ title: "x".repeat(201) }).success).toBe(false);
     expect(assetUpdateSchema.safeParse({ clipType: "vlog" }).success).toBe(false);
     expect(assetUpdateSchema.safeParse({ title: "A", status: "ready" }).success).toBe(false);
+  });
+
+  it("takes a 推荐文案 alone, trims it, and clears it when empty", () => {
+    expect(assetUpdateSchema.parse({ caption: "  🎬 EP1\nThe sea took her family.  ", hashtags: ["#FamilyLove", "MoboReels"] })).toEqual({
+      caption: "🎬 EP1\nThe sea took her family.",
+      hashtags: ["FamilyLove", "MoboReels"],
+    });
+    expect(assetUpdateSchema.parse({ caption: "   ", hashtags: [] })).toEqual({ caption: null, hashtags: [] });
+    expect(assetUpdateSchema.parse({ caption: null })).toEqual({ caption: null });
+    // Counted in characters, as Postgres counts them: an emoji is one.
+    expect(assetUpdateSchema.safeParse({ caption: "🎬".repeat(2200) }).success).toBe(true);
+    expect(assetUpdateSchema.safeParse({ caption: "a".repeat(2201) }).success).toBe(false);
+  });
+
+  it("refuses a hashtag that is not one, and more than 30", () => {
+    expect(assetUpdateSchema.safeParse({ hashtags: ["Family Love"] }).success).toBe(false);
+    expect(assetUpdateSchema.safeParse({ hashtags: ["#"] }).success).toBe(false);
+    expect(assetUpdateSchema.safeParse({ hashtags: ["love-story"] }).success).toBe(false);
+    expect(assetUpdateSchema.safeParse({ hashtags: Array.from({ length: 31 }, (_, i) => `t${i}`) }).success).toBe(false);
+    expect(assetUpdateSchema.parse({ hashtags: ["爱情", "Amor_Eterno", "MoboReels2026"] }).hashtags).toEqual([
+      "爱情",
+      "Amor_Eterno",
+      "MoboReels2026",
+    ]);
+  });
+});
+
+describe("parseHashtags", () => {
+  it("reads tags typed with or without #, split by spaces, commas or lines, each once", () => {
+    expect(parseHashtags("#FamilyLove #WitchPact, FantasyDrama，＃MoboReels\n#familylove")).toEqual({
+      tags: ["FamilyLove", "WitchPact", "FantasyDrama", "MoboReels"],
+      invalid: [],
+    });
+    expect(parseHashtags("  ")).toEqual({ tags: [], invalid: [] });
+  });
+
+  it("names what is not a hashtag instead of saving it", () => {
+    expect(parseHashtags("#Love #dark-fantasy 🎬 #")).toEqual({ tags: ["Love"], invalid: ["#dark-fantasy", "🎬", "#"] });
+  });
+});
+
+describe("splitCaption", () => {
+  it("moves the trailing #tag lines of a pasted post into the hashtags", () => {
+    const post = [
+      "🎬 A Thousand Wishes To Bring Them Back - EP1",
+      "",
+      "The sea took her husband and daughter. 🕯️💔",
+      "",
+      "How much would you sacrifice to see your family again?",
+      "",
+      "#FamilyLove #WitchPact #FantasyDrama #MoboReels",
+      "",
+    ].join("\r\n");
+    expect(splitCaption(post)).toEqual({
+      caption: [
+        "🎬 A Thousand Wishes To Bring Them Back - EP1",
+        "",
+        "The sea took her husband and daughter. 🕯️💔",
+        "",
+        "How much would you sacrifice to see your family again?",
+      ].join("\n"),
+      hashtags: "#FamilyLove #WitchPact #FantasyDrama #MoboReels",
+    });
+  });
+
+  it("keeps a # inside a sentence, and a caption with no tags as it is", () => {
+    expect(splitCaption("Episode #3 is the twist.\n#Twist")).toEqual({ caption: "Episode #3 is the twist.", hashtags: "#Twist" });
+    expect(splitCaption("Just words.")).toEqual({ caption: "Just words.", hashtags: "" });
+    expect(splitCaption("#OnlyTags #Here")).toEqual({ caption: "", hashtags: "#OnlyTags #Here" });
+    expect(splitCaption("")).toEqual({ caption: "", hashtags: "" });
   });
 });
