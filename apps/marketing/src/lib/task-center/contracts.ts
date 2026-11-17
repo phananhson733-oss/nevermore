@@ -1,5 +1,5 @@
 // @input  -- zod
-// @output -- claim channels, account platforms and statuses, drama audiences, clip types, suggested genres, the 选剧台 lookup's platforms and languages (and which platforms 查剧 also reads from their own site), the platform drama id shape, a calendar day (YYYY-MM-DD) check, upload limits, a clip's 推荐文案 limits and the hashtag parsing the admin editor and the server share, and the parsers admin and promoter requests go through
+// @output -- claim channels, account platforms and statuses, drama audiences, clip types, suggested genres, the 选剧台 lookup's platforms and languages (and which platforms 查剧 also reads from their own site), the platform drama id shape, a calendar day (YYYY-MM-DD) check, upload limits, a clip's 推荐文案 limits and the hashtag parsing the admin upload box, the clip editor and the server share, and the parsers admin and promoter requests go through
 // @pos    -- the task center's request contract; the SQL checks in db/tasks repeat these limits
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -228,49 +228,6 @@ export const dramaStatusInputSchema = z
   .object({ status: z.enum(DRAMA_STATUSES) })
   .strict();
 
-export const uploadRequestSchema = z
-  .object({
-    purpose: z.enum(["cover", "asset"]),
-    title: optionalText(200),
-    clipType: z
-      .enum(CLIP_TYPES)
-      .nullable()
-      .optional()
-      .transform((value) => value ?? null),
-    fileName: z.string().trim().min(1).max(255),
-    contentType: z.enum([...VIDEO_TYPES, ...IMAGE_TYPES]),
-    byteSize: z.number().int().min(1),
-  })
-  .strict()
-  .refine(
-    (value) =>
-      value.purpose === "asset" ||
-      (IMAGE_TYPES as readonly string[]).includes(value.contentType),
-    { message: "cover_must_be_image", path: ["contentType"] },
-  )
-  .refine(
-    (value) =>
-      value.byteSize <=
-      (isVideoType(value.contentType) ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES),
-    { message: "too_large", path: ["byteSize"] },
-  );
-export type UploadRequest = z.infer<typeof uploadRequestSchema>;
-
-export const uploadCompleteSchema = z.union([
-  z
-    .object({
-      purpose: z.literal("asset"),
-      assetId: z.string().uuid(),
-      // Set when the browser managed to cut and upload a still; optional so a
-      // page opened before posters existed still completes its upload.
-      posterKey: z.string().min(1).max(512).optional(),
-    })
-    .strict(),
-  z
-    .object({ purpose: z.literal("cover"), objectKey: z.string().min(1).max(512) })
-    .strict(),
-]);
-
 /** A clip's 推荐文案 at most this long: TikTok's caption limit. The SQL check repeats it. */
 export const MAX_CAPTION = 2200;
 /** At most this many hashtags under a clip. The SQL check repeats it. */
@@ -322,6 +279,74 @@ export function splitCaption(text: string): { readonly caption: string; readonly
   return { caption: lines.join("\n").trim(), hashtags: tagLines.join(" ") };
 }
 
+/** 推荐文案 as a request sends it: trimmed, empty clears it, counted in characters as Postgres counts them. */
+const captionField = z
+  .string()
+  .max(MAX_CAPTION * 2)
+  .nullable()
+  .optional()
+  .transform((value) => (value === undefined ? undefined : value === null ? null : value.trim() || null))
+  .refine((value) => value == null || [...value].length <= MAX_CAPTION, { message: "caption_too_long" });
+
+/** Hashtags as a request sends them, already split with parseHashtags; a # left on is dropped. */
+const hashtagsField = z
+  .array(
+    z
+      .string()
+      .trim()
+      .transform((tag) => tag.replace(/^[#＃]+/u, ""))
+      .refine((tag) => HASHTAG.test(tag), { message: "hashtag_invalid" }),
+  )
+  .max(MAX_HASHTAGS)
+  .optional();
+
+export const uploadRequestSchema = z
+  .object({
+    purpose: z.enum(["cover", "asset"]),
+    title: optionalText(200),
+    clipType: z
+      .enum(CLIP_TYPES)
+      .nullable()
+      .optional()
+      .transform((value) => value ?? null),
+    fileName: z.string().trim().min(1).max(255),
+    contentType: z.enum([...VIDEO_TYPES, ...IMAGE_TYPES]),
+    byteSize: z.number().int().min(1),
+    // The clip's 推荐文案, written in the upload box; a cover ignores them.
+    caption: captionField,
+    hashtags: hashtagsField,
+  })
+  .strict()
+  .refine(
+    (value) =>
+      value.purpose === "asset" ||
+      (IMAGE_TYPES as readonly string[]).includes(value.contentType),
+    { message: "cover_must_be_image", path: ["contentType"] },
+  )
+  .refine(
+    (value) =>
+      value.byteSize <=
+      (isVideoType(value.contentType) ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES),
+    { message: "too_large", path: ["byteSize"] },
+  );
+export type UploadRequest = z.infer<typeof uploadRequestSchema>;
+
+export const uploadCompleteSchema = z.union([
+  z
+    .object({
+      purpose: z.literal("asset"),
+      assetId: z.string().uuid(),
+      // Set when the browser managed to cut and upload a still; optional so a
+      // page opened before posters existed still completes its upload.
+      posterKey: z.string().min(1).max(512).optional(),
+    })
+    .strict(),
+  z
+    .object({ purpose: z.literal("cover"), objectKey: z.string().min(1).max(512) })
+    .strict(),
+]);
+
+
 /**
  * An admin retagging, renaming or writing a clip's 推荐文案: any of the fields;
  * a null type clears it, an empty caption clears it, an empty list clears the
@@ -331,23 +356,8 @@ export const assetUpdateSchema = z
   .object({
     clipType: z.enum(CLIP_TYPES).nullable().optional(),
     title: z.string().trim().min(1).max(200).optional(),
-    caption: z
-      .string()
-      .max(MAX_CAPTION * 2)
-      .nullable()
-      .optional()
-      .transform((value) => (value === undefined ? undefined : value === null ? null : value.trim() || null))
-      .refine((value) => value == null || [...value].length <= MAX_CAPTION, { message: "caption_too_long" }),
-    hashtags: z
-      .array(
-        z
-          .string()
-          .trim()
-          .transform((tag) => tag.replace(/^[#＃]+/u, ""))
-          .refine((tag) => HASHTAG.test(tag), { message: "hashtag_invalid" }),
-      )
-      .max(MAX_HASHTAGS)
-      .optional(),
+    caption: captionField,
+    hashtags: hashtagsField,
   })
   .strict()
   .refine(

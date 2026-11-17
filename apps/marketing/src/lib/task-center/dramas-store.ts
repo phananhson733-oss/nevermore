@@ -1,5 +1,5 @@
 // @input  -- a TaskDb and admin or visitor requests already parsed by contracts.ts
-// @output -- dramas (with their optional platform link) and their clip assets: the public grid, one card per published drama fronted by its first matching clip (filtered by a tag, typed in part and in any case, with this week's hot dramas, each drama's clip count, and each listed drama's details and clips with their types and stills) and its filter choices (tags included), the drama list and detail, the reader's drama page (/watch/<id>: cover, synopsis, trailer, whether there is a platform link, never the link itself), and the admin reads and writes (a clip's 推荐文案 and hashtags among them, which the dialog's clips carry too), including a drama imported from 查剧 (北斗 through the 选剧台 lookup, filled in from the theater's own page) and one already listed filled in again from it (从官网补全)
+// @output -- dramas (with their optional platform link) and their clip assets: the public grid, one card per published drama fronted by its first matching clip (filtered by a tag, typed in part and in any case, with this week's hot dramas, each drama's clip count, and each listed drama's details and clips with their types and stills) and its filter choices (tags included), the drama list and detail, the reader's drama page (/watch/<id>: cover, synopsis, trailer, whether there is a platform link, never the link itself), and the admin reads and writes (a clip's 推荐文案 and hashtags among them, set at upload or edited later, which the dialog's clips carry too), including a drama imported from 查剧 (北斗 through the 选剧台 lookup, filled in from the theater's own page) and one already listed filled in again from it (从官网补全)
 // @pos    -- every SQL statement on task_center.dramas and task_center.drama_assets
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -835,15 +835,19 @@ export async function createPendingAsset(
     readonly byteSize: number;
     readonly clipType: ClipType | null;
     readonly createdBy: string;
+    /** 推荐文案 typed in the upload box; absent is none, as an edit later can add. */
+    readonly caption?: string | null;
+    readonly hashtags?: readonly string[];
   },
 ): Promise<boolean> {
   const { rowCount } = await db.query(
     `insert into task_center.drama_assets
-       (id, drama_id, kind, title, object_key, content_type, byte_size, sort, clip_type, created_by)
+       (id, drama_id, kind, title, object_key, content_type, byte_size, sort, clip_type, created_by,
+        caption, hashtags)
      select $1, d.id, case when $4 like 'video/%' then 'video' else 'image' end,
             $3, $5, $4, $6,
             coalesce((select max(sort) + 1 from task_center.drama_assets where drama_id = d.id), 0),
-            $8, $7
+            $8, $7, $9, $10::text[]
        from task_center.dramas d where d.id = $2`,
     [
       asset.id,
@@ -854,6 +858,8 @@ export async function createPendingAsset(
       asset.byteSize,
       asset.createdBy,
       asset.clipType,
+      asset.caption ?? null,
+      asset.hashtags ?? [],
     ],
   );
   return rowCount === 1;

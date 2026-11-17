@@ -1,5 +1,5 @@
 // @input  -- the zod inputs in contracts.ts
-// @output -- proof that 题材 refuses audience words, that the platform link is optional and only a full https URL is taken, that 查剧 takes only platforms and languages 选剧台 knows, that a clip update needs a field and leaves the others alone, and how a 推荐文案's hashtags are read from what an admin types or pastes
+// @output -- proof that 题材 refuses audience words, that the platform link is optional and only a full https URL is taken, that 查剧 takes only platforms and languages 选剧台 knows, that a clip update needs a field and leaves the others alone, that an upload takes the same 推荐文案 and hashtags as an edit, and how a 推荐文案's hashtags are read from what an admin types or pastes
 // @pos    -- unit tests for the admin request contract; no database
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -12,6 +12,7 @@ import {
   dramaLookupSchema,
   parseHashtags,
   splitCaption,
+  uploadRequestSchema,
 } from "./contracts.ts";
 
 const drama = { title: "Surf God's Revenge", platform: "reelshort", language: "en" };
@@ -124,6 +125,28 @@ describe("assetUpdateSchema", () => {
       "Amor_Eterno",
       "MoboReels2026",
     ]);
+  });
+});
+
+describe("uploadRequestSchema 推荐文案", () => {
+  const clip = { purpose: "asset", title: null, clipType: "highlight", fileName: "ep1.mp4", contentType: "video/mp4", byteSize: 1_000 };
+
+  it("takes the caption and tags typed in the upload box, as an edit would", () => {
+    expect(uploadRequestSchema.parse({ ...clip, caption: "  🎬 EP1\nThe sea took her family. ", hashtags: ["#FamilyLove", "MoboReels"] })).toMatchObject({
+      caption: "🎬 EP1\nThe sea took her family.",
+      hashtags: ["FamilyLove", "MoboReels"],
+    });
+    expect(uploadRequestSchema.parse({ ...clip, caption: "  ", hashtags: [] })).toMatchObject({ caption: null, hashtags: [] });
+    // An upload without them still goes through.
+    const plain = uploadRequestSchema.parse(clip);
+    expect(plain.caption).toBeUndefined();
+    expect(plain.hashtags).toBeUndefined();
+  });
+
+  it("refuses what the clip editor refuses", () => {
+    expect(uploadRequestSchema.safeParse({ ...clip, caption: "a".repeat(2201) }).success).toBe(false);
+    expect(uploadRequestSchema.safeParse({ ...clip, hashtags: ["love-story"] }).success).toBe(false);
+    expect(uploadRequestSchema.safeParse({ ...clip, hashtags: Array.from({ length: 31 }, (_, i) => `t${i}`) }).success).toBe(false);
   });
 });
 

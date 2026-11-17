@@ -1,5 +1,5 @@
-// @input  -- POST {purpose: cover|asset, title, clipType, fileName, contentType, byteSize} from the admin uploader
-// @output -- a 15-minute signed PUT URL into R2 and the key it writes; an asset also gets a pending row, and a video a second URL for its poster still
+// @input  -- POST {purpose: cover|asset, title, clipType, fileName, contentType, byteSize, caption?, hashtags?} from the admin uploader
+// @output -- a 15-minute signed PUT URL into R2 and the key it writes; an asset also gets a pending row (with the 推荐文案 and hashtags typed in the upload box), and a video a second URL for its poster still
 // @pos    -- step 1 of an upload: the browser then PUTs the file straight to R2, never through this server
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -36,7 +36,8 @@ export async function POST(
   // Keys and the row's drama_id are lowercase; a hand-typed uppercase id
   // must build the same keys, or the still's check would refuse the row.
   const dramaId = (await context.params).dramaId.toLowerCase();
-  const mutation = await readAdminMutation(request, 2_048);
+  // Room for a 2200-character caption in UTF-8, as the clip editor allows.
+  const mutation = await readAdminMutation(request, 16_384);
   if (!mutation.ok) return mutation.response;
   if (!isUuid(dramaId)) return privateError("not_found", 404);
   const parsed = uploadRequestSchema.safeParse(mutation.value.body);
@@ -65,6 +66,8 @@ export async function POST(
         byteSize: upload.byteSize,
         clipType: upload.clipType,
         createdBy: mutation.value.email,
+        caption: upload.caption ?? null,
+        hashtags: upload.hashtags ?? [],
       });
       if (!created) return privateError("not_found", 404);
     } catch (error) {
