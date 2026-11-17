@@ -257,13 +257,15 @@ describe("dramas", () => {
       clipType: null,
       createdBy: ADMIN,
     });
+    expect(await updateAsset(db, second, { caption: "🎬 EP2\nShe waits for the last wish.", hashtags: ["MothersLove", "MoboReels"] })).toBe(true);
     const details = await listPlazaDramaDetails(db, [live, plain, live, draft]);
     expect(Object.keys(details).sort()).toEqual([live, plain].sort());
     expect(details[live]).toMatchObject({
       synopsis: "A long-lost heiress.",
       clips: [
-        { id: first, title: "One" },
-        { id: second, title: "Two" },
+        // No 推荐文案 written: nothing to copy.
+        { id: first, title: "One", caption: null, hashtags: [] },
+        { id: second, title: "Two", caption: "🎬 EP2\nShe waits for the last wish.", hashtags: ["MothersLove", "MoboReels"] },
       ],
     });
     expect(details[plain]).toEqual({ synopsis: null, clips: [] });
@@ -718,6 +720,22 @@ describe("assets", () => {
     expect(await getPublicAsset(db, id)).toMatchObject({ clipType: null, title: "Ep 1 hook" });
     expect(await getPublicAsset(db, id)).toMatchObject({ clipType: null });
     expect(await updateAsset(db, USER_A, { clipType: "recap" })).toBe(false);
+
+    // 推荐文案: written, then a retag leaves it, then cleared field by field.
+    expect(await updateAsset(db, id, { caption: "Was it a rescue?", hashtags: ["DarkFantasy"] })).toBe(true);
+    expect(await updateAsset(db, id, { clipType: "recap" })).toBe(true);
+    expect(await getPublicAsset(db, id)).toMatchObject({ clipType: "recap", caption: "Was it a rescue?", hashtags: ["DarkFantasy"] });
+    expect(await updateAsset(db, id, { caption: null })).toBe(true);
+    expect(await getPublicAsset(db, id)).toMatchObject({ caption: null, hashtags: ["DarkFantasy"] });
+    expect(await updateAsset(db, id, { hashtags: [] })).toBe(true);
+    expect(await getPublicAsset(db, id)).toMatchObject({ caption: null, hashtags: [] });
+    // The table holds the limits too, for anything that skips the route.
+    await expect(
+      db.query("update task_center.drama_assets set caption = '' where id = $1", [id]),
+    ).rejects.toThrow(/check/);
+    await expect(
+      db.query("update task_center.drama_assets set hashtags = array_fill('x'::text, array[31]) where id = $1", [id]),
+    ).rejects.toThrow(/check/);
     await expect(
       db.query("update task_center.drama_assets set clip_type = 'vlog' where id = $1", [id]),
     ).rejects.toThrow(/check/);

@@ -1,5 +1,5 @@
 // @input  -- a drama id, its status and assets; the admin status, refill, upload and asset APIs; R2 via signed PUT URLs
-// @output -- publish/take-down buttons (上架 as a large brand-gradient button), 从官网补全资料 (re-runs 查剧 for the drama and says where the details came from, how the cover went, or why nothing changed), each clip's title rename, the cover and clip uploaders (one button opens the file picker, a second picks a whole folder for clips, or files and folders are dropped on the box, and the upload starts as soon as they are picked; a batch goes up in file-name order so 第2集 comes before 第10集 and the clips are numbered that way, files of other types are skipped and named; progress with the batch position, one upload at a time, a still cut from each video in the browser), the upload's type set to 高光 until changed, per-clip type and delete
+// @output -- publish/take-down buttons (上架 as a large brand-gradient button), 从官网补全资料 (re-runs 查剧 for the drama and says where the details came from, how the cover went, or why nothing changed), each clip's title rename and its 推荐文案 editor (caption and hashtags; a caption pasted whole has its trailing #tag lines moved to the hashtags, and a word that is not a hashtag is named, not saved), the cover and clip uploaders (one button opens the file picker, a second picks a whole folder for clips, or files and folders are dropped on the box, and the upload starts as soon as they are picked; a batch goes up in file-name order so 第2集 comes before 第10集 and the clips are numbered that way, files of other types are skipped and named; progress with the batch position, one upload at a time, a still cut from each video in the browser), the upload's type set to 高光 until changed, per-clip type and delete
 // @pos    -- the interactive half of /admin/tasks/<id>
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
@@ -10,8 +10,12 @@ import { useRef, useState } from "react";
 import {
   CLIP_TYPES,
   IMAGE_TYPES,
+  MAX_CAPTION,
+  MAX_HASHTAGS,
   MAX_IMAGE_BYTES,
   MAX_VIDEO_BYTES,
+  parseHashtags,
+  splitCaption,
   VIDEO_TYPES,
   type ClipType,
   type DramaStatus,
@@ -297,6 +301,123 @@ export function AssetTitle({ assetId, title }: { assetId: string; title: string 
       </button>
       {error && <span className="text-[12.5px] text-brand-error">{error}</span>}
     </span>
+  );
+}
+
+const TEXT_FIELD =
+  "w-full rounded-[8px] border border-brand-border-strong bg-brand-bg px-3 py-2 text-[13.5px] leading-[1.6] text-text-dark-primary";
+
+/**
+ * A clip's 推荐文案: the caption and hashtags promoters copy from under the
+ * clip on /tasks. Folded to a one-line summary until 写推荐文案 / 改 opens it.
+ * Paste a whole post into the caption: its trailing #tag lines go to 标签.
+ */
+export function AssetCaption({
+  assetId,
+  caption,
+  hashtags,
+}: {
+  assetId: string;
+  caption: string | null;
+  hashtags: readonly string[];
+}) {
+  const router = useRouter();
+  const saved = { caption: caption ?? "", hashtags: hashtags.map((tag) => `#${tag}`).join(" ") };
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(saved.caption);
+  const [tags, setTags] = useState(saved.hashtags);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function reset(): void {
+    setEditing(false);
+    setText(saved.caption);
+    setTags(saved.hashtags);
+    setError(null);
+  }
+
+  async function save(): Promise<void> {
+    const split = splitCaption(text);
+    const parsed = parseHashtags(`${tags} ${split.hashtags}`);
+    if (parsed.invalid.length > 0) {
+      setError(`这些不是标签（只能有字母、数字和下划线）：${parsed.invalid.slice(0, 5).join(" ")}`);
+      return;
+    }
+    if (parsed.tags.length > MAX_HASHTAGS) {
+      setError(`标签最多 ${MAX_HASHTAGS} 个，现在有 ${parsed.tags.length} 个。`);
+      return;
+    }
+    if ([...split.caption].length > MAX_CAPTION) {
+      setError(`文案最多 ${MAX_CAPTION} 个字，现在有 ${[...split.caption].length} 个。`);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    const answer = await adminFetch(`/api/admin/tasks/assets/${assetId}`, "PUT", {
+      caption: split.caption === "" ? null : split.caption,
+      hashtags: parsed.tags,
+    });
+    setBusy(false);
+    if (!answer.ok) {
+      setError(describeError(answer));
+      return;
+    }
+    // What was saved, as it will read back: the moved #tag lines now sit in 标签.
+    setText(split.caption);
+    setTags(parsed.tags.map((tag) => `#${tag}`).join(" "));
+    setEditing(false);
+    router.refresh();
+  }
+
+  if (!editing) {
+    const empty = caption === null && hashtags.length === 0;
+    return (
+      <div className="flex min-w-0 basis-full items-baseline gap-2 pl-10 text-[12.5px]">
+        <span className="shrink-0 text-text-dark-secondary">推荐文案</span>
+        <span className="min-w-0 truncate text-text-dark-primary">
+          {empty ? "还没写" : [caption?.split("\n")[0] ?? "", hashtags.map((tag) => `#${tag}`).join(" ")].filter(Boolean).join(" · ")}
+        </span>
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="shrink-0 text-brand-accent-text hover:underline"
+        >
+          {empty ? "写推荐文案" : "改"}
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="basis-full space-y-2 pl-10">
+      <textarea
+        aria-label="推荐文案"
+        value={text}
+        rows={6}
+        autoFocus
+        disabled={busy}
+        onChange={(event) => setText(event.target.value)}
+        placeholder={"推荐文案，推广者发这条素材时用。比如：\n🎬 剧名 - EP1\n这一集讲了什么，一两句。\n结尾抛一个问题？\n\n整段带 #标签 粘贴也行，末尾的标签行会自动放进下面的标签。"}
+        className={TEXT_FIELD}
+      />
+      <input
+        aria-label="标签"
+        value={tags}
+        disabled={busy}
+        onChange={(event) => setTags(event.target.value)}
+        placeholder="标签：#FamilyLove #FantasyDrama #MoboReels（空格或逗号隔开，# 可省）"
+        className={`${TEXT_FIELD} h-9 py-0`}
+      />
+      <div className="flex flex-wrap items-center gap-3 text-[12.5px]">
+        <button type="button" disabled={busy} onClick={() => void save()} className={BUTTON}>
+          {busy ? "保存中…" : "保存"}
+        </button>
+        <button type="button" disabled={busy} onClick={reset} className="text-text-dark-secondary hover:underline">
+          取消
+        </button>
+        <span className="text-text-dark-secondary">文案和标签都清空再保存，就是不给推荐文案。</span>
+        {error && <span className="text-brand-error">{error}</span>}
+      </div>
+    </div>
   );
 }
 

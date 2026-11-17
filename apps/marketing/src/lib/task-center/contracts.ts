@@ -1,5 +1,5 @@
 // @input  -- zod
-// @output -- claim channels, account platforms and statuses, drama audiences, clip types, suggested genres, the 选剧台 lookup's platforms and languages (and which platforms 查剧 also reads from their own site), the platform drama id shape, a calendar day (YYYY-MM-DD) check, upload limits, and the parsers admin and promoter requests go through
+// @output -- claim channels, account platforms and statuses, drama audiences, clip types, suggested genres, the 选剧台 lookup's platforms and languages (and which platforms 查剧 also reads from their own site), the platform drama id shape, a calendar day (YYYY-MM-DD) check, upload limits, a clip's 推荐文案 limits and the hashtag parsing the admin editor and the server share, and the parsers admin and promoter requests go through
 // @pos    -- the task center's request contract; the SQL checks in db/tasks repeat these limits
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -271,14 +271,93 @@ export const uploadCompleteSchema = z.union([
     .strict(),
 ]);
 
-/** An admin retagging or renaming a clip: either field or both; a null type clears it. */
+/** A clip's 推荐文案 at most this long: TikTok's caption limit. The SQL check repeats it. */
+export const MAX_CAPTION = 2200;
+/** At most this many hashtags under a clip. The SQL check repeats it. */
+export const MAX_HASHTAGS = 30;
+/** One hashtag, stored without its #: letters (any script), digits and _, as TikTok and Instagram link them. */
+const HASHTAG = /^[\p{L}\p{M}\p{N}_]{1,100}$/u;
+
+/**
+ * Hashtags as an admin types or pastes them: "#FamilyLove #WitchPact",
+ * "FamilyLove, WitchPact" or one per line. Each loses its # (or a full-width
+ * ＃); a repeat in another case is dropped, the first spelling kept. What is
+ * not a hashtag (a dash, an emoji, "#") comes back in `invalid`, unchanged.
+ */
+export function parseHashtags(text: string): { readonly tags: readonly string[]; readonly invalid: readonly string[] } {
+  const tags: string[] = [];
+  const invalid: string[] = [];
+  const seen = new Set<string>();
+  for (const word of text.split(/[\s,，、;；]+/u)) {
+    if (word === "") continue;
+    const tag = word.replace(/^[#＃]+/u, "");
+    if (!HASHTAG.test(tag)) {
+      invalid.push(word);
+      continue;
+    }
+    const key = tag.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    tags.push(tag);
+  }
+  return { tags, invalid };
+}
+
+/**
+ * A caption pasted whole, hashtags and all, split in two: the trailing lines
+ * made only of #words become hashtags, the rest is the caption. A # inside a
+ * sentence stays in it. Blank lines at either end are dropped.
+ */
+export function splitCaption(text: string): { readonly caption: string; readonly hashtags: string } {
+  const lines = text.replace(/\r\n?/g, "\n").trimEnd().split("\n");
+  const tagLines: string[] = [];
+  for (;;) {
+    const last = lines.at(-1);
+    if (last === undefined) break;
+    const words = last.trim().split(/\s+/u).filter((word) => word !== "");
+    if (words.length > 0 && !words.every((word) => /^[#＃]\S/u.test(word))) break;
+    lines.pop();
+    if (words.length > 0) tagLines.unshift(words.join(" "));
+  }
+  return { caption: lines.join("\n").trim(), hashtags: tagLines.join(" ") };
+}
+
+/**
+ * An admin retagging, renaming or writing a clip's 推荐文案: any of the fields;
+ * a null type clears it, an empty caption clears it, an empty list clears the
+ * hashtags. The editor sends hashtags already split with parseHashtags.
+ */
 export const assetUpdateSchema = z
   .object({
     clipType: z.enum(CLIP_TYPES).nullable().optional(),
     title: z.string().trim().min(1).max(200).optional(),
+    caption: z
+      .string()
+      .max(MAX_CAPTION * 2)
+      .nullable()
+      .optional()
+      .transform((value) => (value === undefined ? undefined : value === null ? null : value.trim() || null))
+      .refine((value) => value == null || [...value].length <= MAX_CAPTION, { message: "caption_too_long" }),
+    hashtags: z
+      .array(
+        z
+          .string()
+          .trim()
+          .transform((tag) => tag.replace(/^[#＃]+/u, ""))
+          .refine((tag) => HASHTAG.test(tag), { message: "hashtag_invalid" }),
+      )
+      .max(MAX_HASHTAGS)
+      .optional(),
   })
   .strict()
-  .refine((value) => value.clipType !== undefined || value.title !== undefined, { message: "nothing_to_change" });
+  .refine(
+    (value) =>
+      value.clipType !== undefined ||
+      value.title !== undefined ||
+      value.caption !== undefined ||
+      value.hashtags !== undefined,
+    { message: "nothing_to_change" },
+  );
 export type AssetUpdate = z.infer<typeof assetUpdateSchema>;
 
 /**

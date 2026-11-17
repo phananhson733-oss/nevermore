@@ -1,5 +1,5 @@
 // @input  -- locale and drama id params; the task database; the verified session; R2 for the cover
-// @output -- one published drama laid out like RS Boost's resource page: cover, title, chips, 上线时间 (the theater's day, when known) · 共 N 集 · 前 M 集免费, synopsis; numbered free clip downloads with previews; the 推广链接 and 资源推广链接 (made for a signed-in visitor as the page opens, no 口令) and a link to the drama page the first opens, while PROMO_LINKS_VISIBLE is on; how it works (with a link to 我的推广 while PROMOTER_PAGES_VISIBLE is on); the episode list with paid locks
+// @output -- one published drama laid out like RS Boost's resource page: cover, title, chips, 上线时间 (the theater's day, when known) · 共 N 集 · 前 M 集免费, synopsis; numbered free clip downloads with previews, each with its 推荐文案 and hashtags to copy when it has them; the 推广链接 and 资源推广链接 (made for a signed-in visitor as the page opens, no 口令) and a link to the drama page the first opens, while PROMO_LINKS_VISIBLE is on; how it works (with a link to 我的推广 while PROMOTER_PAGES_VISIBLE is on); the episode list with paid locks
 // @pos    -- /tasks/<id>, where a promoter copies their links and downloads clips
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -8,6 +8,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { ClaimPanel } from "@/components/task-center/claim-panel";
+import { ClipCaption } from "@/components/task-center/clip-caption";
 import { ClipDownloads, DramaChips, DramaFacts, HowTo } from "@/components/task-center/drama-info";
 import { siteConfig } from "@/config/site";
 import { getServerAuthenticatedUser } from "@/lib/auth/server-auth-user";
@@ -166,6 +167,11 @@ export default async function TaskDetailPage({ params }: { params: Params }) {
                           {copy.download} · {formatBytes(asset.byteSize)}
                         </a>
                       </div>
+                      {(asset.caption !== null || asset.hashtags.length > 0) && (
+                        <div className="px-4 pb-4">
+                          <ClipCaption locale={locale} caption={asset.caption} hashtags={asset.hashtags} />
+                        </div>
+                      )}
                     </li>
                   ))}
                 </ul>

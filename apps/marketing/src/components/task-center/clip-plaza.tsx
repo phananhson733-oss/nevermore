@@ -1,5 +1,5 @@
 // @input  -- the page locale, one page of drama cards (each fronted by the drama's first clip; signed poster and cover URLs made on the server), each listed drama's public details and clips with their stills (no platform URLs), the visitor's links per drama
-// @output -- the grid, one card per drama, fronted by the drama's cover with a play button (the clip's still only when there is no cover; an image clip shows itself) and the title and meta under it with no second cover, with type, clip count and 本周爆款 badges (a clip named only by a UUID or hash shows no title); a card opens a wide two-column dialog: on the right the clip playing (first on a phone) with its own download under it; on the left, in MoboReels' order, the drama's cover with its title, its chips (language first, then 频道, genre and tags), 上线时间 (the theater's day) · 共 N 集 · 前 M 集免费, the full synopsis, the 推广链接 and 资源推广链接 (made for a signed-in visitor as the dialog opens, no 口令; not shown while PROMO_LINKS_VISIBLE is off), 系列资源 (one numbered button per clip that switches the player and its download to that clip), the how-to as an open box and a link to the drama's page
+// @output -- the grid, one card per drama, fronted by the drama's cover with a play button (the clip's still only when there is no cover; an image clip shows itself) and the title and meta under it with no second cover, with type, clip count and 本周爆款 badges (a clip named only by a UUID or hash shows no title); a card opens a wide two-column dialog: on the right the clip playing (first on a phone) with its own download under it; on the left, in MoboReels' order, the drama's cover with its title, its chips (language first, then 频道, genre and tags), 上线时间 (the theater's day) · 共 N 集 · 前 M 集免费, the full synopsis, the 推广链接 and 资源推广链接 (made for a signed-in visitor as the dialog opens, no 口令; not shown while PROMO_LINKS_VISIBLE is off), 系列资源 (one numbered button per clip that switches the player and its download to that clip), under it the playing clip's 推荐文案 and hashtags with a copy button when it has them, the how-to as an open box and a link to the drama's page
 // @pos    -- the body of /tasks, the task center's 素材广场
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
@@ -12,6 +12,7 @@ import type { ClipType, DramaAudience } from "../../lib/task-center/contracts.ts
 import { clipTitle, formatBytes, genreLabel, languageName, taskCopy } from "../../lib/task-center/copy.ts";
 import { PROMO_LINKS_VISIBLE } from "../../lib/task-center/visibility.ts";
 import { ClaimPanel, type LinkView } from "./claim-panel.tsx";
+import { ClipCaption } from "./clip-caption.tsx";
 import { DramaChips, DramaFacts, HowTo, type DownloadClip } from "./drama-info.tsx";
 
 export interface ClipCard {
@@ -43,6 +44,9 @@ export interface PlazaClip extends DownloadClip {
   readonly clipType: ClipType | null;
   /** Signed; the clip's still, or an image itself. Null shows the drama's cover. */
   readonly stillUrl: string | null;
+  /** 推荐文案 and hashtags (without the #) to post the clip with. */
+  readonly caption: string | null;
+  readonly hashtags: readonly string[];
 }
 
 /** What a drama's dialog shows beyond the card; built on the server, never with the platform's own URLs. */
@@ -104,6 +108,8 @@ export function ClipPlaza({
             size: formatBytes(pickedClip.byteSize),
           };
   const openName = playing === null ? null : clipTitle(playing.title);
+  // The playing clip's 推荐文案; the card's own clip is in the list too.
+  const playingClip = playing === null ? undefined : detail?.clips.find((clip) => clip.id === playing.id);
 
   useEffect(() => {
     if (open !== null && dialog.current?.open === false) dialog.current.showModal();
@@ -311,6 +317,16 @@ export function ClipPlaza({
                       })}
                     </ol>
                   </section>
+                )}
+
+                {/* Keyed by clip: switching clips resets "Copied". */}
+                {playingClip !== undefined && (
+                  <ClipCaption
+                    key={playingClip.id}
+                    locale={locale}
+                    caption={playingClip.caption}
+                    hashtags={playingClip.hashtags}
+                  />
                 )}
 
                 <section className="rounded-[10px] border border-brand-border-card bg-brand-panel-raised px-4 py-3.5">
