@@ -1,5 +1,5 @@
 // @input  -- locale and drama id params; the admin check; the drama and all its assets; R2 for the cover
-// @output -- the admin drama page: cover, title, episodes, pay start, tags, synopsis and where the details came from (a drama from 查剧 links to its page on the theater's site where there is a link to make: ReelShort, DramaBox, StardustTV, MoboReels, NetShort, YourChannel) up top, and 从官网补全资料 for a drama on a platform 查剧 knows (re-runs 查剧 and writes its details over the drama's); links to the promoter page and, once listed, the reader's drama page (no draft or 查剧 notes: the status line says draft); clip upload (files or a whole folder, in file-name order), each clip numbered as 系列资源 numbers it, rename, retag, its 推荐文案 (caption and hashtags) and delete; the publish switch under the clips, on the right (上架 as a large button); the platform-link panel hidden for now (SHOW_PROMO_LINK, still editable in the details form); the full details form folded away
+// @output -- the admin drama page: cover, title, episodes, pay start, tags, synopsis and where the details came from (a drama from 查剧 links to its page on the theater's site where there is a link to make: ReelShort, DramaBox, StardustTV, MoboReels, NetShort, YourChannel) up top, and 从官网补全资料 for a drama on a platform 查剧 knows (re-runs 查剧 and writes its details over the drama's); links to the promoter page and, once listed, the reader's drama page (no draft or 查剧 notes: the status line says draft); clip upload (files or a whole folder, in file-name order, listed first with the 系列资源 number each will get and its own 推荐文案 and 标签, then 开始上传), each clip numbered as 系列资源 numbers it, rename, retag, its 推荐文案 (caption and hashtags) and delete; the publish switch under the clips, on the right (上架 as a large button); the platform-link panel hidden for now (SHOW_PROMO_LINK, still editable in the details form); the full details form folded away
 // @pos    -- /admin/tasks/<id> (Chinese only); 404 for anyone not on TASK_ADMIN_EMAILS
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -175,7 +175,12 @@ export default async function AdminDramaPage({
           剪好的视频（MP4、MOV、WebM，单个不超过 4 GB）或图片。浏览器直接传到 R2，传完核对过大小才对推广者显示。同一部剧的素材在任务中心合成一张卡片，弹窗里按下面的编号列成系列资源 1、2、3。
         </p>
         <div className="mt-4">
-          <UploadControl dramaId={drama.id} purpose="asset" storageReady={r2 !== null} />
+          <UploadControl
+            dramaId={drama.id}
+            purpose="asset"
+            storageReady={r2 !== null}
+            readyClips={assets.filter((asset) => asset.status === "ready").length}
+          />
         </div>
         {assets.length > 0 && (
           <ul className="mt-6 divide-y divide-brand-border-card rounded-[8px] border border-brand-border-card">
